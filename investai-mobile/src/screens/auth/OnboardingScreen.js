@@ -1,36 +1,57 @@
-﻿import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { colors, typography } from '../../theme/theme';
+﻿import React from 'react';
+import { View, Text, StyleSheet, StatusBar } from 'react-native';
+import { useAppTheme } from '../../hooks/useAppTheme';
+import AppButton from '../../components/AppButton';
 
 export default function OnboardingScreen({ navigation }) {
-  const scheme = 'light'; // Defaulting to light as per theme setup
-  const themeColors = colors(scheme);
-  const themeTypography = typography(scheme);
+  const theme = useAppTheme();
 
   return (
-    <View style={[styles.container, { backgroundColor: themeColors.bgApp }]}>
-      <Text style={[styles.text, { color: themeColors.textPrimary }]}>Onboarding Screen</Text>
-      <TouchableOpacity
-        style={styles.button}
-        onPress={() => navigation.navigate('Login')}
-      >
-        <Text style={styles.buttonText}>Go to Login</Text>
-      </TouchableOpacity>
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <StatusBar barStyle={theme.isDark ? "light-content" : "dark-content"} />
+
+      <View style={styles.content}>
+        <Text style={[styles.title, { color: theme.colors.textPrimary, fontSize: theme.typography.sizes.h1 }]}>InvestAI</Text>
+        <Text style={[styles.subtitle, { color: theme.colors.textSecondary, fontSize: theme.typography.sizes.body1 }]}>
+          Your journey to smarter investing starts here.
+        </Text>
+      </View>
+
+      <View style={styles.footer}>
+        <AppButton
+          title="Get Started"
+          onPress={() => navigation.navigate('Login')}
+          style={styles.button}
+        />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  text: { fontSize: 24, fontWeight: 'bold', marginBottom: 20 },
-  button: {
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 30,
-    paddingVertical: 15,
-    borderRadius: 12,
+  container: {
+    flex: 1,
+    justifyContent: 'space-between',
+    padding: 32,
+    paddingTop: 100,
+    paddingBottom: 60,
   },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '700',
+  content: {
+    alignItems: 'center',
+  },
+  title: {
+    fontWeight: '800',
+    marginBottom: 16,
+    letterSpacing: -1,
+  },
+  subtitle: {
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  footer: {
+    width: '100%',
+  },
+  button: {
+    // Custom button tweaks if needed
   }
 });
