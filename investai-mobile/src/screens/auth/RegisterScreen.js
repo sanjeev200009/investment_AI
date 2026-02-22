@@ -1,11 +1,11 @@
 ﻿import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { colors, typography } from '../theme/theme';
+import { colors, typography } from '../../theme/theme';
 
-export default function OnboardingScreen() {
+export default function RegisterScreen() {
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>OnboardingScreen</Text>
+      <Text style={styles.text}>RegisterScreen</Text>
     </View>
   );
 }
