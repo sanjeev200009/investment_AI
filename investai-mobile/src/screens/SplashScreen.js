@@ -69,8 +69,8 @@ export default function SplashScreen({ navigation }) {
     const navigateNext = async () => {
         try {
             const token = await AsyncStorage.getItem('token');
-            navigation.replace(token ? 'MainTab' : 'Onboarding');
-        } catch { navigation.replace('Onboarding'); }
+            navigation.replace(token ? 'MainTab' : 'Auth');
+        } catch { navigation.replace('Auth'); }
     };
 
     const onSwipeComplete = () => {
