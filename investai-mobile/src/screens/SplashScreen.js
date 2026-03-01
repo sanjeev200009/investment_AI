@@ -69,8 +69,9 @@ export default function SplashScreen({ navigation }) {
     const navigateNext = async () => {
         try {
             const token = await AsyncStorage.getItem('token');
-            navigation.replace(token ? 'MainTab' : 'Auth');
-        } catch { navigation.replace('Auth'); }
+            // Navigate to Home (MainTab) as requested, or Auth if strictly needed later
+            navigation.replace('MainTab');
+        } catch { navigation.replace('MainTab'); }
     };
 
     const onSwipeComplete = () => {

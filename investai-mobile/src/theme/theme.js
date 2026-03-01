@@ -1,38 +1,38 @@
 // src/theme/theme.js
 export const lightPalette = {
-  primary: '#023e8a', // French Blue
-  primaryDark: '#03045e', // Deep Twilight
-  primaryLight: '#0077b6', // Bright Teal Blue
-  accent: '#00b4d8', // Turquoise Surf
-  bgApp: '#caf0f8', // Light Cyan
+  primary: '#0052FF',
+  primaryDark: '#0036A3',
+  primaryLight: '#3D82FF',
+  accent: '#00B4D8',
+  bgApp: '#F9FAFB',
   bgCard: '#FFFFFF',
-  textPrimary: '#03045e',
-  textSecond: '#023e8a',
-  textMuted: '#0077b6',
-  divider: '#90e0ef',
+  textPrimary: '#111827',
+  textSecond: '#4B5563',
+  textMuted: '#6B7280',
+  divider: '#E5E7EB',
   gradient: ['#FFFFFF', '#F1F5F9'],
-  curved: '#023e8a',
-  swipeBtn: '#023e8a',
+  curved: '#0052FF',
+  swipeBtn: '#0052FF',
   swipeInner: '#FFFFFF',
   coinGradient: ['#D4AF37', '#FFDF00', '#FFFACD'],
 };
 
 export const darkPalette = {
-  primary: '#1976D2', // Blue for buttons
-  primaryDark: '#040814', // Navy Deep
-  primaryLight: '#0A1931', // Navy Royal
-  accent: '#152A4A', // Lighter Navy
-  bgApp: '#040814',
-  bgCard: '#0A1931',
+  primary: '#0052FF',
+  primaryDark: '#020202',
+  primaryLight: '#0A0A0A',
+  accent: '#161616',
+  bgApp: '#0A0A0A',
+  bgCard: '#161616',
   textPrimary: '#FFFFFF',
   textSecond: '#E0E0E0',
   textMuted: 'rgba(255, 255, 255, 0.7)',
-  divider: 'rgba(255, 255, 255, 0.1)',
-  gradient: ['#040814', '#0A1931', '#152A4A'],
-  curved: '#060B1A',
-  swipeBtn: 'rgba(0, 0, 0, 0.4)',
-  swipeInner: '#1976D2',
-  coinGradient: ['#92400E', '#FACC15', '#FEF9C3'], // Yellow-600 via yellow-400 to yellow-200
+  divider: '#262626',
+  gradient: ['#0A0A0A', '#161616', '#262626'],
+  curved: '#0A0A0A',
+  swipeBtn: 'rgba(255, 255, 255, 0.1)',
+  swipeInner: '#0052FF',
+  coinGradient: ['#92400E', '#FACC15', '#FEF9C3'],
 };
 
 export const colors = (scheme) => scheme === 'dark' ? darkPalette : lightPalette;

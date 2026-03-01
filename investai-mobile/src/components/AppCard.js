@@ -6,8 +6,9 @@ import { useAppTheme } from '../hooks/useAppTheme';
 /**
  * Reusable card component that implements the design system tokens.
  * Handles the surface color, shadow, and border radius consistently.
+ * Now supports a '3d' variant with depth.
  */
-const AppCard = ({ children, style, ...props }) => {
+const AppCard = ({ children, style, variant = 'default', ...props }) => {
     const theme = useAppTheme();
 
     return (
@@ -17,7 +18,13 @@ const AppCard = ({ children, style, ...props }) => {
                 {
                     backgroundColor: theme.colors.surface,
                     borderRadius: theme.radii.xxl,
-                    ...theme.shadows
+                    ...theme.shadows,
+                    ...(variant === '3d' && {
+                        borderWidth: 1,
+                        borderColor: theme.colors.border,
+                        borderBottomWidth: 4,
+                        borderBottomColor: theme.isDark ? '#000' : 'rgba(0,0,0,0.1)',
+                    })
                 },
                 style
             ]}

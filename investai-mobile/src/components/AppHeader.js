@@ -17,10 +17,14 @@ import { useAppTheme } from '../hooks/useAppTheme';
  */
 const AppHeader = ({
     title,
+    children,
     onBack,
     rightAction,
     transparent = false,
-    style
+    style,
+    leftContainerStyle,
+    titleContainerStyle,
+    rightContainerStyle
 }) => {
     const theme = useAppTheme();
 
@@ -36,7 +40,7 @@ const AppHeader = ({
             style
         ]}>
             <View style={styles.content}>
-                <View style={styles.leftContainer}>
+                <View style={[styles.leftContainer, leftContainerStyle]}>
                     {onBack && (
                         <TouchableOpacity
                             onPress={onBack}
@@ -51,8 +55,9 @@ const AppHeader = ({
                     )}
                 </View>
 
-                <View style={styles.titleContainer}>
-                    {title && (
+                <View style={[styles.titleContainer, titleContainerStyle]}>
+                    {children}
+                    {!children && title && (
                         <Text style={[
                             styles.title,
                             { color: transparent ? '#FFFFFF' : theme.colors.textPrimary, fontSize: theme.typography.sizes.h4 }
@@ -62,7 +67,7 @@ const AppHeader = ({
                     )}
                 </View>
 
-                <View style={styles.rightContainer}>
+                <View style={[styles.rightContainer, rightContainerStyle]}>
                     {rightAction}
                 </View>
             </View>

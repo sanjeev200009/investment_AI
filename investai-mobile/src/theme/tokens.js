@@ -3,7 +3,7 @@
 export const palette = {
     // Brand Colors
     primary: {
-        main: '#1976D2',
+        main: '#0052FF',
         light: '#60A5FA',
         dark: '#0A192F',
         contrastText: '#FFFFFF',
@@ -11,24 +11,24 @@ export const palette = {
 
     // Neutral Colors (Light Theme)
     light: {
-        background: '#F3F4F6',
+        background: '#F9FAFB',
         surface: '#FFFFFF',
         field: '#F9FAFB',
         border: '#E5E7EB',
         textPrimary: '#111827',
-        textSecondary: '#6B7280',
+        textSecondary: '#4B5563',
         divider: '#E5E7EB',
     },
 
     // Neutral Colors (Dark Theme)
     dark: {
-        background: '#000000',
-        surface: '#121212',
+        background: '#0A0A0A',
+        surface: '#161616',
         field: '#1E1E1E',
-        border: '#1F2937',
+        border: '#262626',
         textPrimary: '#FFFFFF',
         textSecondary: '#9CA3AF',
-        divider: '#1F2937',
+        divider: '#262626',
     },
 
     // Semantic Colors
