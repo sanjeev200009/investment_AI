@@ -36,7 +36,7 @@ export default function TabNavigator() {
                 tabBarIcon: ({ focused, color, size }) => {
                     const icons = {
                         Home: 'grid-view',
-                        Markets: 'monitoring',
+                        Markets: 'bar-chart',
                         AIChat: 'smart-toy',
                         Portfolio: 'account-balance-wallet',
                         Profile: 'settings',
@@ -72,11 +72,11 @@ export default function TabNavigator() {
                 component={ChatScreen}
                 options={{
                     tabBarLabel: '',
-                    tabBarButton: (props) => (
+                    tabBarButton: ({ pointerEvents, ...props }) => (
                         <TouchableOpacity
                             {...props}
                             activeOpacity={0.8}
-                            style={styles.aiTabButton}
+                            style={[styles.aiTabButton, { pointerEvents }]}
                         />
                     )
                 }}
@@ -121,5 +121,6 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.4,
         shadowRadius: 10,
         elevation: 10,
+        boxShadow: '0 8 10 rgba(0, 82, 255, 0.4)',
     },
 });

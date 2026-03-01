@@ -64,5 +64,6 @@ export const shadows = {
     shadowOpacity: 0.08,
     shadowRadius: 3,
     elevation: 2,
+    boxShadow: '0 1 3 rgba(0, 0, 0, 0.08)',
   },
 };

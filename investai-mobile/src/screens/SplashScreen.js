@@ -59,7 +59,7 @@ export default function SplashScreen({ navigation }) {
     const popupAlpha = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        Animated.timing(fadeIn, { toValue: 1, duration: 900, useNativeDriver: true }).start();
+        Animated.timing(fadeIn, { toValue: 1, duration: 900, useNativeDriver: false }).start();
     }, []);
 
     // Derived values
@@ -184,7 +184,7 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255,255,255,0.05)',
     },
     coinWrapper: { width: 250, height: 250, position: 'relative', justifyContent: 'center', alignItems: 'center' },
-    coin: { justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)', elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 8 },
+    coin: { justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)', elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 8, boxShadow: '0 6 8 rgba(0, 0, 0, 0.25)' },
     centerCoin: { position: 'absolute', zIndex: 3 },
     topRightCoin: { position: 'absolute', top: -38, right: -18, zIndex: 2 },
     bottomLeftCoin: { position: 'absolute', bottom: -18, left: -38, zIndex: 2 },
@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
         letterSpacing: 0.4,
     },
     thumbWrap: { width: THUMB_SIZE, height: THUMB_SIZE },
-    thumb: { flex: 1, borderRadius: THUMB_SIZE / 2, justifyContent: 'center', alignItems: 'center', elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.28, shadowRadius: 5 },
+    thumb: { flex: 1, borderRadius: THUMB_SIZE / 2, justifyContent: 'center', alignItems: 'center', elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.28, shadowRadius: 5, boxShadow: '0 4 5 rgba(0, 0, 0, 0.28)' },
 
     overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.58)' },
     popup: { position: 'absolute', top: '32%', alignSelf: 'center', width: '80%', borderRadius: 28, overflow: 'hidden', elevation: 22, ...shadows.card },

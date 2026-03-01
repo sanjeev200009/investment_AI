@@ -86,6 +86,7 @@ export const shadows = {
         shadowOpacity: 0.1,
         shadowRadius: 8,
         elevation: 3,
+        boxShadow: '0 4 8 rgba(0, 0, 0, 0.1)',
     },
     dark: {
         shadowColor: '#000',
@@ -93,6 +94,7 @@ export const shadows = {
         shadowOpacity: 0.3,
         shadowRadius: 20,
         elevation: 8,
+        boxShadow: '0 10 20 rgba(0, 0, 0, 0.3)',
     },
 };
 
