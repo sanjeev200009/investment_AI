@@ -42,6 +42,7 @@ class RiskProfile(Base):
 	__tablename__ = "risk_profiles"
 	__table_args__ = (
 		CheckConstraint("score >= 0 AND score <= 100", name="ck_risk_profiles_score_range"),
+		CheckConstraint("category IN ('Low', 'Medium', 'High')", name="ck_risk_profiles_category_values"),
 	)
 
 	risk_id = Column(Integer, primary_key=True, index=True)
