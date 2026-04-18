@@ -5,3 +5,15 @@ dist/
 build/
 .env
 *.log
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# Alembic auto-migrations (keep alembic/ but ignore local cache)
+alembic/versions/__pycache__/
