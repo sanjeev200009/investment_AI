@@ -1,6 +1,5 @@
 # app/schemas/auth.py
 from pydantic import BaseModel, EmailStr, Field
-from uuid import UUID
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -17,10 +16,28 @@ class TokenResponse(BaseModel):
     user_id: str
     email: str
 
+class OTPVerifyRequest(BaseModel):
+    email: EmailStr
+    otp_code: str = Field(min_length=6, max_length=6)
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class VerifyResetOTPRequest(BaseModel):
+    email: EmailStr
+    otp_code: str = Field(min_length=6, max_length=6)
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    reset_token: str
+    new_password: str = Field(min_length=8)
+
 class UserOut(BaseModel):
-    user_id: UUID
+    user_id: str
     email: str
+    full_name: str | None
     role: str
+    is_email_verified: bool
 
     class Config:
         from_attributes = True

@@ -24,3 +24,20 @@ def create_access_token(subject: str, expires_delta: timedelta | None = None) ->
         settings.SECRET_KEY,
         algorithm=settings.ALGORITHM
     )
+
+import secrets
+
+# Simple in-memory store for reset tokens (use Redis in production)
+_reset_tokens: dict = {}
+
+def create_reset_token(email: str) -> str:
+    """Create a short-lived reset token after OTP verified."""
+    token = secrets.token_urlsafe(32)
+    _reset_tokens[token] = email
+    return token
+
+def verify_reset_token(token: str) -> str | None:
+    """Verify reset token and return email. Returns None if invalid."""
+    email = _reset_tokens.pop(token, None)
+    return email
+

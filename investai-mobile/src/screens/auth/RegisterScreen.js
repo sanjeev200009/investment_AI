@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -97,14 +97,12 @@ const RegisterScreen = ({ navigation }) => {
     setLoading(true);
 
     try {
-      await authApi.register({ name, email, password });
-      navigation.navigate('AuthSuccess', {
-        title: 'Welcome!',
-        message: 'Your account has been created successfully. Join the future of investing.',
-        buttonLabel: 'Back to Login'
-      });
+      await authApi.register({ email, password, full_name: name });
+      // Navigate to OTP screen, passing the email
+      navigation.navigate('OTPVerify', { email });
     } catch (error) {
-      Alert.alert('Registration Failed', error);
+      const msg = error?.response?.data?.detail || 'Registration failed';
+      Alert.alert('Error', msg);
     } finally {
       setLoading(false);
     }
