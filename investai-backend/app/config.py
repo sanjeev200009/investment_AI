@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     # Firebase Cloud Messaging
     FCM_SERVER_KEY: str = ''
 
+    # Brevo Mail
+    BREVO_SMTP_HOST: str = 'smtp-relay.brevo.com'
+    BREVO_SMTP_PORT: int = 587
+    BREVO_SMTP_USER: str = ''
+    BREVO_SMTP_PASSWORD: str = ''
+    BREVO_FROM_EMAIL: str = 'noreply@yourdomain.com'
+    BREVO_FROM_NAME: str = 'InvestAI'
+
+    FRONTEND_URL: str = 'http://localhost:19006'
+
 
 @lru_cache
 def get_settings() -> Settings:
