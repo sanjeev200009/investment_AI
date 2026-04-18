@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from typing import List
 from app.schemas.chat import ChatSession, ChatMessage, ChatSessionCreate
 
-router = APIRouter()
+router = APIRouter(prefix='/chat', tags=['Chat'])
 
 @router.get("/sessions", response_model=List[ChatSession])
 def get_sessions():

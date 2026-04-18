@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from typing import List
 from app.schemas.stock import MarketData, NewsSentiment, PricePrediction
 
-router = APIRouter()
+router = APIRouter(prefix='/stocks', tags=['Stocks'])
 
 @router.get("/market", response_model=List[MarketData])
 def get_market_data():

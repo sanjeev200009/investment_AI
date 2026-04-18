@@ -1,46 +1,39 @@
 # app/dependencies.py
-from collections.abc import Generator
-
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+from jose import JWTError, jwt
 
-from app.config import get_settings
 from app.database import SessionLocal
+from app.config import get_settings
 from app.models.user import User
 
 settings = get_settings()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"/api/{settings.API_VERSION}/auth/login")
 
+bearer_scheme = HTTPBearer()
 
-def get_db() -> Generator:
-    """Yield a database session and ensure it closes after use."""
+def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
-
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db)
 ) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    token = credentials.credentials
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id: str = payload.get("sub")
+        user_id: str = payload.get('sub')
         if user_id is None:
-            raise credentials_exception
+            raise HTTPException(status_code=401, detail='Invalid token')
     except JWTError:
-        raise credentials_exception
-
+        raise HTTPException(status_code=401, detail='Invalid or expired token')
+    
     user = db.query(User).filter(User.user_id == user_id).first()
-    if user is None:
-        raise credentials_exception
+    if not user:
+        raise HTTPException(status_code=404, detail='User not found')
+    
     return user

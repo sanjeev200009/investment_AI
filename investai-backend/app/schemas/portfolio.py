@@ -1,36 +1,28 @@
+# app/schemas/portfolio.py
 from pydantic import BaseModel
-from typing import List, Optional
 from datetime import datetime
-from uuid import UUID
+from typing import List
 
-class PortfolioHoldingBase(BaseModel):
+class HoldingCreate(BaseModel):
     symbol: str
-    shares: float
-    average_price: float
+    quantity: float
+    avg_buy_price: float
 
-class PortfolioHoldingCreate(PortfolioHoldingBase):
-    portfolio_id: int
-
-class PortfolioHolding(PortfolioHoldingBase):
+class HoldingOut(HoldingCreate):
     holding_id: int
-    current_price: Optional[float] = None
-    market_value: Optional[float] = None
+    portfolio_id: int
 
     class Config:
         from_attributes = True
 
-class PortfolioBase(BaseModel):
+class PortfolioCreate(BaseModel):
     name: str
-    description: Optional[str] = None
 
-class PortfolioCreate(PortfolioBase):
-    pass
-
-class Portfolio(PortfolioBase):
+class PortfolioOut(BaseModel):
     portfolio_id: int
-    user_id: UUID
+    name: str
     created_at: datetime
-    holdings: List[PortfolioHolding] = []
+    holdings: List[HoldingOut] = []
 
     class Config:
         from_attributes = True

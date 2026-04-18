@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from typing import List
 
-router = APIRouter()
+router = APIRouter(prefix='/notifications', tags=['Notifications'])
 
 @router.get("/")
 def get_notifications():

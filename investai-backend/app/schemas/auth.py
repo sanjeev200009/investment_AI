@@ -1,22 +1,26 @@
+# app/schemas/auth.py
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
 from uuid import UUID
 
-class Token(BaseModel):
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8)
+    full_name: str = Field(min_length=2)
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class TokenResponse(BaseModel):
     access_token: str
-    token_type: str
+    token_type: str = 'bearer'
+    user_id: str
+    email: str
 
-class TokenData(BaseModel):
-    email: Optional[str] = None
-    user_id: Optional[UUID] = None
+class UserOut(BaseModel):
+    user_id: UUID
+    email: str
+    role: str
 
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
-
-class UserCreate(BaseModel):
-    email: EmailStr
-    password: str
-    full_name: str
-    age: Optional[int] = None
-    occupation: Optional[str] = None
+    class Config:
+        from_attributes = True
