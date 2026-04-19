@@ -29,11 +29,8 @@ class Settings(BaseSettings):
     # Firebase Cloud Messaging
     FCM_SERVER_KEY: str = ''
 
-    # Brevo Mail
-    BREVO_SMTP_HOST: str = 'smtp-relay.brevo.com'
-    BREVO_SMTP_PORT: int = 587
-    BREVO_SMTP_USER: str = ''
-    BREVO_SMTP_PASSWORD: str = ''
+    # Brevo Mail (Using HTTP API)
+    BREVO_API_KEY: str = ''
     BREVO_FROM_EMAIL: str = 'noreply@yourdomain.com'
     BREVO_FROM_NAME: str = 'InvestAI'
 

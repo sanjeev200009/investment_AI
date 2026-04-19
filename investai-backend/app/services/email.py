@@ -1,8 +1,5 @@
-# app/services/email.py
-import smtplib
+import httpx
 import logging
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 from app.config import get_settings
 
@@ -10,28 +7,36 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 def _send(to_email: str, subject: str, html: str) -> bool:
-    """Core send function via Brevo SMTP."""
-    if not settings.BREVO_SMTP_PASSWORD:
-        logger.warning('BREVO_SMTP_PASSWORD not set — skipping email')
+    """Core send function via Brevo HTTP API."""
+    if not settings.BREVO_API_KEY:
+        logger.warning('BREVO_API_KEY not set — skipping email')
         return False
-    try:
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = f'{settings.BREVO_FROM_NAME} <{settings.BREVO_FROM_EMAIL}>'
-        msg['To'] = to_email
-        msg.attach(MIMEText(html, 'html', 'utf-8'))
+    
+    url = "https://api.brevo.com/v3/smtp/email"
+    headers = {
+        "accept": "application/json",
+        "api-key": settings.BREVO_API_KEY,
+        "content-type": "application/json"
+    }
+    payload = {
+        "sender": {
+            "name": settings.BREVO_FROM_NAME,
+            "email": settings.BREVO_FROM_EMAIL
+        },
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "htmlContent": html
+    }
 
-        with smtplib.SMTP(settings.BREVO_SMTP_HOST, settings.BREVO_SMTP_PORT) as s:
-            s.ehlo()
-            s.starttls()
-            s.ehlo()
-            s.login(settings.BREVO_SMTP_USER, settings.BREVO_SMTP_PASSWORD)
-            s.sendmail(settings.BREVO_FROM_EMAIL, [to_email], msg.as_string())
+    try:
+        with httpx.Client() as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
             
-        logger.info('Email sent to %s: %s', to_email, subject)
+        logger.info('Email sent successfully to %s: %s', to_email, subject)
         return True
-    except smtplib.SMTPAuthenticationError:
-        logger.error('Brevo auth failed — check BREVO_SMTP_USER + PASSWORD')
+    except httpx.HTTPStatusError as e:
+        logger.error('Brevo API error (%s): %s', e.response.status_code, e.response.text)
         return False
     except Exception as e:
         logger.error('Email error: %s', str(e))

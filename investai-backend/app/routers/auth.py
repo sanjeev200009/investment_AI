@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from supabase import create_client
 
 from app.dependencies import get_db, get_current_user
-from app.models.user import User
+from app.models import User
 from app.schemas.auth import (RegisterRequest, LoginRequest,
                               TokenResponse, UserOut, OTPVerifyRequest,
                               ForgotPasswordRequest, ResetPasswordRequest, VerifyResetOTPRequest)
@@ -34,21 +34,24 @@ async def register(
     Account created but NOT usable until OTP verified.
     Sends 6-digit OTP to email.
     """
-    supabase = get_supabase()
-
     # Check if email already registered and verified
     existing = db.query(User).filter(User.email == payload.email).first()
     if existing and existing.is_email_verified:
         raise HTTPException(400, 'Email already registered and verified')
 
+    # Use admin client to bypass Supabase's default confirmation email
+    # because we handle OTP verification internally via Brevo
+    admin_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+
     try:
-        supabase.auth.sign_up({
+        admin_client.auth.admin.create_user({
             'email': payload.email,
             'password': payload.password,
-            'options': {'data': {'full_name': payload.full_name}}
+            'email_confirm': True,
+            'user_metadata': {'full_name': payload.full_name}
         })
     except Exception as e:
-        if 'already registered' not in str(e).lower():
+        if 'already' not in str(e).lower():
             raise HTTPException(400, f'Registration error: {str(e)}')
 
     # Update full_name (trigger already created public.users row)
