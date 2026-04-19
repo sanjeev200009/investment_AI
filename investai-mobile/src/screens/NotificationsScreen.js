@@ -1,9 +1,22 @@
-﻿import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, Platform, Animated } from 'react-native';
+// src/screens/NotificationsScreen.js
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  StatusBar,
+  Dimensions,
+  Animated
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Swipeable } from 'react-native-gesture-handler';
+import { Swipeable, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BlurView } from 'expo-blur';
 import { useAppTheme } from '../hooks/useAppTheme';
+import AppHeader from '../components/AppHeader';
+import ActionFeedbackModal from '../components/ActionFeedbackModal';
 
 const NOTIFICATIONS_DATA = [
   {
@@ -64,16 +77,13 @@ const NotificationCard = ({ item, onDelete }) => {
   if (type === 'down') dotColor = '#FF3B30';
 
   const renderRightActions = (progress, dragX) => {
-    const trans = dragX.interpolate({
-      inputRange: [-80, 0],
-      outputRange: [0, 80],
-      extrapolate: 'clamp',
-    });
     return (
-      <TouchableOpacity style={styles.deleteAction} onPress={() => onDelete(item.id)}>
-        <Animated.View style={{ transform: [{ translateX: 0 }] }}>
-          <MaterialIcons name="delete" size={24} color="#FFFFFF" />
-        </Animated.View>
+      <TouchableOpacity 
+        style={styles.deleteAction} 
+        onPress={() => onDelete(item.id)}
+        activeOpacity={0.8}
+      >
+        <MaterialIcons name="delete" size={24} color="#FFFFFF" />
       </TouchableOpacity>
     );
   };
@@ -84,8 +94,8 @@ const NotificationCard = ({ item, onDelete }) => {
     <Swipeable
       renderRightActions={renderRightActions}
       friction={2}
+      containerStyle={styles.swipeContainer}
       rightThreshold={40}
-      onSwipeableOpen={() => onDelete(item.id)}
     >
       <View style={[
         styles.card,
@@ -118,82 +128,83 @@ export default function NotificationsScreen({ navigation }) {
   const theme = useAppTheme();
   const [activeTab, setActiveTab] = useState('Price Alerts');
   const [notifications, setNotifications] = useState(NOTIFICATIONS_DATA);
+  const [showFeedback, setShowFeedback] = useState(false);
 
   const categories = ['Price Alerts', 'News', 'Educational', 'System'];
-
-  const deleteNotification = (id) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
-  };
-
   const bgColor = theme.isDark ? theme.colors.background : '#F2F2F7';
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]}>
-      <StatusBar barStyle={theme.isDark ? 'light-content' : 'dark-content'} />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top']}>
+        <StatusBar barStyle={theme.isDark ? 'light-content' : 'dark-content'} />
 
-      {/* iOS Style Sticky Header */}
-      <View style={[styles.header, { backgroundColor: theme.isDark ? 'rgba(10, 10, 10, 0.8)' : 'rgba(242, 242, 247, 0.8)' }]}>
-        <View style={styles.topActions}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <MaterialIcons name="arrow-back-ios" size={20} color="#1565c1" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setNotifications([])}>
-            <Text style={[styles.actionText, { color: '#1565c1' }]}>Mark All Read</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={[styles.largeTitle, { color: theme.colors.textPrimary }]}>Notifications</Text>
-      </View>
-
-      {/* Pill Categories */}
-      <View style={[styles.pillContainer, { borderBottomColor: theme.colors.divider }]}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.pillScroll}
-        >
-          {categories.map(cat => (
-            <TouchableOpacity
-              key={cat}
-              style={[
-                styles.pill,
-                { backgroundColor: activeTab === cat ? '#1A237E' : (theme.isDark ? theme.colors.surface : '#FFFFFF') },
-                activeTab !== cat && { borderColor: theme.colors.divider, borderWidth: 1 }
-              ]}
-              onPress={() => setActiveTab(cat)}
-            >
-              <Text style={[
-                styles.pillText,
-                { color: activeTab === cat ? '#FFFFFF' : (theme.isDark ? '#9CA3AF' : '#475569') }
-              ]}>
-                {cat}
-              </Text>
+        <AppHeader 
+          title="Notifications" 
+          onBack={() => navigation.goBack()}
+          rightAction={
+            <TouchableOpacity onPress={() => setShowFeedback(true)}>
+              <MaterialIcons name="done-all" size={24} color={theme.colors.primary} />
             </TouchableOpacity>
-          ))}
+          }
+        />
+
+        {/* Categories Tab Bar */}
+        <View style={styles.pillContainer}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.pillScroll}
+          >
+                {categories.map(cat => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[
+                      styles.pill,
+                      { backgroundColor: activeTab === cat ? '#1A237E' : (theme.isDark ? theme.colors.surface : '#FFFFFF') },
+                      activeTab !== cat && { borderColor: theme.colors.divider, borderWidth: 1 }
+                    ]}
+                    onPress={() => setActiveTab(cat)}
+                  >
+                    <Text style={[
+                      styles.pillText,
+                      { color: activeTab === cat ? '#FFFFFF' : (theme.isDark ? '#9CA3AF' : '#475569') }
+                    ]}>
+                      {cat}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+          </ScrollView>
+        </View>
+
+        <ScrollView 
+          showsVerticalScrollIndicator={false} 
+          contentContainerStyle={styles.scrollContent}
+        >
+          {notifications.length > 0 ? (
+            notifications.map(item => (
+              <NotificationCard
+                key={item.id}
+                item={item}
+                onDelete={(id) => setNotifications(prev => prev.filter(n => n.id !== id))}
+              />
+            ))
+          ) : (
+            <View style={styles.emptyState}>
+              <MaterialIcons name="notifications-none" size={64} color={theme.colors.textMuted} />
+              <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No notifications yet</Text>
+            </View>
+          )}
         </ScrollView>
-      </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {notifications.length > 0 ? (
-          notifications.map(item => (
-            <NotificationCard
-              key={item.id}
-              item={item}
-              onDelete={deleteNotification}
-            />
-          ))
-        ) : (
-          <View style={styles.emptyState}>
-            <MaterialIcons name="notifications-none" size={64} color={theme.colors.textMuted} />
-            <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No notifications yet</Text>
-          </View>
-        )}
-      </ScrollView>
-
-      {/* Visual Home Indicator Mockup */}
-      <View style={styles.homeIndicatorWrapper}>
-        <View style={[styles.homeIndicator, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)' }]} />
-      </View>
-    </SafeAreaView>
+        <ActionFeedbackModal 
+          visible={showFeedback} 
+          onClose={() => setShowFeedback(false)}
+          title="Cleared"
+          message="All notifications have been marked as read."
+          type="success"
+        />
+      </SafeAreaView>
+    </GestureHandlerRootView>
   );
 }
 
@@ -201,32 +212,50 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 20,
+  stickyHeader: {
+    zIndex: 10,
   },
-  topActions: {
+  blurHeader: {
+    paddingTop: 10,
+    paddingBottom: 4,
+  },
+  headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    marginBottom: 12,
+  },
+  timeText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  statusIcons: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    gap: 6,
   },
-  backBtn: {
-    paddingVertical: 5,
+  headerContent: {
+    paddingHorizontal: 20,
+    marginBottom: 15,
   },
-  actionText: {
-    fontSize: 16,
-    fontWeight: '500',
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
   },
   largeTitle: {
-    fontSize: 34,
+    fontSize: 32,
     fontWeight: '800',
-    letterSpacing: -1,
+    letterSpacing: -0.5,
+  },
+  actionText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   pillContainer: {
+    paddingBottom: 12,
     borderBottomWidth: 1,
-    paddingBottom: 15,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
   },
   pillScroll: {
     paddingHorizontal: 20,
@@ -247,28 +276,29 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
     paddingBottom: 40,
-    flexGrow: 1,
+  },
+  swipeContainer: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#FF3B30', // Revealed background
   },
   deleteAction: {
     backgroundColor: '#FF3B30',
     justifyContent: 'center',
     alignItems: 'center',
     width: 80,
-    borderRadius: 12,
     height: '100%',
-    marginBottom: 12, // Match card gap
   },
   card: {
     padding: 16,
-    borderRadius: 12,
-    marginBottom: 12, // Space between cards
+    borderRadius: 16,
   },
   iosShadow: {
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
   },
   cardContent: {
     flexDirection: 'row',
@@ -291,7 +321,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   cardTitle: {
     fontSize: 15,
@@ -299,19 +329,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cardTime: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '500',
     marginLeft: 8,
   },
   cardSubtitle: {
     fontSize: 14,
     lineHeight: 19,
+    opacity: 0.9,
   },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 100,
+    paddingTop: 120,
   },
   emptyText: {
     marginTop: 16,
@@ -319,11 +350,10 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   homeIndicatorWrapper: {
-    position: 'absolute',
-    bottom: 8,
-    left: 0,
-    right: 0,
+    height: 20,
+    justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'transparent',
   },
   homeIndicator: {
     width: 120,

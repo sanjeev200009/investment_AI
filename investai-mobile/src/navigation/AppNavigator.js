@@ -5,19 +5,14 @@ import TabNavigator from './TabNavigator';
 import AuthNavigator from './AuthNavigator';
 import SplashScreen from '../screens/SplashScreen';
 import FinancialAssessmentScreen from '../screens/FinancialAssessmentScreen';
-import StockDetailScreen from '../screens/StockDetailScreen';
-import WatchlistScreen from '../screens/WatchlistScreen';
-import NotificationsScreen from '../screens/NotificationsScreen';
-import LearnScreen from '../screens/LearnScreen';
 
 import { useAuthStore } from '../store/authStore';
-
 import { ActivityIndicator, View } from 'react-native';
 
 const Stack = createStackNavigator();
 
 const AppNavigator = () => {
-    const { isAuthenticated, isLoading } = useAuthStore();
+    const { isAuthenticated, isLoading, hasCompletedAssessment } = useAuthStore();
 
     if (isLoading) {
         return (
@@ -31,14 +26,14 @@ const AppNavigator = () => {
         <Stack.Navigator screenOptions={{ headerShown: false }}>
             {!isAuthenticated ? (
                 <Stack.Screen name='Auth' component={AuthNavigator} />
+            ) : !hasCompletedAssessment ? (
+                <Stack.Screen name='Assessment' component={FinancialAssessmentScreen} />
             ) : (
                 <>
+                    {/* The TabNavigator now hosts all main screens, keeping the tab bar visible */}
                     <Stack.Screen name='MainTab' component={TabNavigator} />
-                    <Stack.Screen name='Assessment' component={FinancialAssessmentScreen} />
-                    <Stack.Screen name='StockDetail' component={StockDetailScreen} />
-                    <Stack.Screen name='Watchlist' component={WatchlistScreen} />
-                    <Stack.Screen name='Notifications' component={NotificationsScreen} />
-                    <Stack.Screen name='Learn' component={LearnScreen} />
+                    
+                    {/* Modals or Global screens that should hide the tab bar can still go here if needed */}
                 </>
             )}
         </Stack.Navigator>

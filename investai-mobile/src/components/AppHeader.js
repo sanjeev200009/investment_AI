@@ -13,14 +13,16 @@ import { useAppTheme } from '../hooks/useAppTheme';
 
 /**
  * Reusable Header component for navigation screens.
- * Handles back navigation, title, and right-side actions.
+ * Handles back navigation, title, right-side actions, and custom children.
  */
 const AppHeader = ({
     title,
     onBack,
     rightAction,
     transparent = false,
-    style
+    style,
+    children,
+    titleContainerStyle
 }) => {
     const theme = useAppTheme();
 
@@ -31,7 +33,7 @@ const AppHeader = ({
                 backgroundColor: transparent ? 'transparent' : theme.colors.surface,
                 borderBottomColor: transparent ? 'transparent' : theme.colors.divider,
                 borderBottomWidth: transparent ? 0 : 1,
-                paddingTop: Platform.OS === 'ios' ? 44 : StatusBar.currentHeight,
+                paddingTop: Platform.OS === 'ios' ? 44 : (StatusBar.currentHeight || 0),
             },
             style
         ]}>
@@ -51,19 +53,21 @@ const AppHeader = ({
                     )}
                 </View>
 
-                <View style={styles.titleContainer}>
-                    {title && (
-                        <Text style={[
-                            styles.title,
-                            { color: transparent ? '#FFFFFF' : theme.colors.textPrimary, fontSize: theme.typography.sizes.h4 }
-                        ]}>
-                            {title}
-                        </Text>
+                <View style={[styles.titleContainer, titleContainerStyle]}>
+                    {children ? children : (
+                        title ? (
+                            <Text style={[
+                                styles.title,
+                                { color: transparent ? '#FFFFFF' : theme.colors.textPrimary, fontSize: theme.typography.sizes.h4 }
+                            ]}>
+                                {title}
+                            </Text>
+                        ) : null
                     )}
                 </View>
 
                 <View style={styles.rightContainer}>
-                    {rightAction}
+                    {rightAction || null}
                 </View>
             </View>
         </View>
@@ -79,7 +83,7 @@ const styles = StyleSheet.create({
         height: 64,
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
+        paddingHorizontal: 20,
     },
     leftContainer: {
         flex: 1,

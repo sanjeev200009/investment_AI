@@ -51,9 +51,12 @@ export const typography = (scheme) => {
 };
 
 export const spacing = {
-  screenPad: 16,
-  cardRadius: 12,
-  buttonH: 52,
+  screenPad: 20,
+  screenPadding: 20,
+  cardPad: 20,
+  cardRadius: 16,
+  xxl: 24,
+  buttonH: 54,
   touchMin: 48,
 };
 

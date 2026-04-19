@@ -1,5 +1,6 @@
 # app/dependencies.py
 import uuid
+import logging
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -9,6 +10,7 @@ from app.database import SessionLocal
 from app.config import get_settings
 from app.models.user import User
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 bearer_scheme = HTTPBearer()
 
@@ -32,9 +34,12 @@ def get_current_user(
     try:
         user_response = admin_client.auth.get_user(token)
         if not user_response or not user_response.user:
+            logger.error("Supabase verification failed: No user in response")
             raise HTTPException(status_code=401, detail='Invalid token')
         supabase_user_id = user_response.user.id
-    except Exception:
+        logger.info(f"Supabase token verified for user: {supabase_user_id}")
+    except Exception as e:
+        logger.error(f"Supabase verification exception: {str(e)}")
         raise HTTPException(status_code=401, detail='Invalid or expired token')
 
     # 2. Find user in local database
@@ -42,6 +47,7 @@ def get_current_user(
     user = db.query(User).filter(User.user_id == uid).first()
     
     if not user:
+        logger.warning(f"User {uid} verified by Supabase but not found in local DB")
         raise HTTPException(status_code=404, detail='User not found')
     
     return user
