@@ -1,253 +1,169 @@
 """
 Web Scraping Pipeline for InvestAI
-Handles CSE stock data and financial news scraping.
+Handles CSE stock data and financial news scraping with DB persistence.
 """
-
 import httpx
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from bs4 import BeautifulSoup
+from sqlalchemy.orm import Session
+from app.models.stock import MarketData, NewsSentiment
+from app.database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
-# ─────────────────────────────────────────────
-#  CSE Scraper
-# ─────────────────────────────────────────────
-
-CSE_TRADE_SUMMARY_URL = "https://www.cse.lk/pages/trade-summary/trade-summary.component.html"
+CSE_TRADE_SUMMARY_URL = (
+"https://www.cse.lk/pages/trade-summary/trade-summary.component.html"
+)
 
 NEWS_SOURCES = [
-    "https://www.marketwatch.com/investing",
-    "https://www.investing.com/news/stock-market-news",
-    "https://www.ft.lk/financial-news",          # Lanka Financial Times
-    "https://www.dailymirror.lk/business/",       # Daily Mirror Business
+"https://www.ft.lk/financial-news",
+"https://www.dailymirror.lk/business/",
+"https://economynext.com/sri-lanka-stock-market/",
 ]
 
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "en-US,en;q=0.9",
+"User-Agent": (
+"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+"AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+),
+"Accept-Language": "en-US,en;q=0.9",
 }
 
+# ■■ CSE Scraper ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+async def scrape_and_save_cse(db: Session) -> int:
+    """Scrape CSE data and upsert into market_data table."""
+    records = await scrape_cse_data()
+    saved = 0
+    for rec in records:
+        row = MarketData(
+            symbol=rec['symbol'],
+            price=rec['last_price'],
+            change=rec.get('change'),
+            change_pct=rec.get('change_pct'),
+            volume=rec.get('volume'),
+            market_cap=rec.get('market_cap'),
+            recorded_at=datetime.now(timezone.utc),
+        )
+        db.add(row)
+        saved += 1
+    db.commit()
+    logger.info('Saved %d CSE records', saved)
+    return saved
 
 async def scrape_cse_data() -> list[dict]:
-    """
-    Scrapes the CSE trade summary page.
-    Returns a list of dicts with keys:
-        symbol, company_name, last_price, change, change_pct, volume, market_cap, scraped_at
-    """
+    """Returns list of stock dicts from CSE trade summary."""
     results = []
-
     try:
-        async with httpx.AsyncClient(headers=HEADERS, timeout=30) as client:
-            response = await client.get(CSE_TRADE_SUMMARY_URL)
+        async with httpx.AsyncClient(headers=HEADERS, timeout=30) as c:
+            response = await c.get(CSE_TRADE_SUMMARY_URL)
             response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'lxml')
+            table = soup.find('table') or soup.find('table', {'class': True})
+            if not table:
+                logger.warning('CSE: no table found')
+                return results
 
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        # CSE trade summary table rows
-        table = soup.find("table", {"id": "trade-summary-table"})
-        if not table:
-            # Fallback: find any table with stock-like headers
-            table = soup.find("table")
-
-        if not table:
-            logger.warning("CSE: Could not find trade summary table.")
-            return results
-
-        rows = table.find_all("tr")[1:]  # Skip header row
-
-        for row in rows:
-            cols = row.find_all("td")
-            if len(cols) < 6:
-                continue
-
-            try:
-                record = {
-                    "symbol":       _clean(cols[0].text),
-                    "company_name": _clean(cols[1].text),
-                    "last_price":   _to_float(cols[2].text),
-                    "change":       _to_float(cols[3].text),
-                    "change_pct":   _to_float(cols[4].text.replace("%", "")),
-                    "volume":       _to_int(cols[5].text),
-                    "market_cap":   _to_float(cols[6].text) if len(cols) > 6 else None,
-                    "scraped_at":   datetime.utcnow().isoformat(),
-                }
-
-                # Basic validation: skip rows with no price
-                if record["last_price"] is None or record["symbol"] == "":
-                    continue
-
-                results.append(record)
-
-            except Exception as row_err:
-                logger.debug("CSE row parse error: %s", row_err)
-                continue
-
-        logger.info("CSE scraper: fetched %d stock records.", len(results))
-
-    except httpx.HTTPStatusError as e:
-        logger.error("CSE HTTP error %s: %s", e.response.status_code, e)
-    except httpx.RequestError as e:
-        logger.error("CSE request error: %s", e)
+            for row in table.find_all('tr')[1:]:
+                cols = row.find_all('td')
+                if len(cols) < 6: continue
+                try:
+                    rec = {
+                        'symbol': _clean(cols[0].text),
+                        'last_price': _to_float(cols[2].text),
+                        'change': _to_float(cols[3].text),
+                        'change_pct': _to_float(cols[4].text.replace('%','')),
+                        'volume': _to_float(cols[5].text),
+                        'market_cap': _to_float(cols[6].text) if len(cols)>6 else None,
+                    }
+                    if rec['last_price'] and rec['symbol']:
+                        results.append(rec)
+                except Exception as e:
+                    logger.debug('Row parse error: %s', e)
     except Exception as e:
-        logger.error("CSE unexpected error: %s", e)
-
+        logger.error('CSE scrape failed: %s', e)
     return results
 
+# ■■ News Scraper ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+async def scrape_and_save_news(db: Session, symbol: str = None) -> int:
+    """Scrape news and save to news_sentiment table, deduplicating by URL."""
+    articles = await scrape_news(symbol)
+    saved = 0
+    for art in articles:
+        existing = db.query(NewsSentiment).filter(
+            NewsSentiment.url == art['url']
+        ).first()
+        if existing: continue
 
-# ─────────────────────────────────────────────
-#  News Scraper
-# ─────────────────────────────────────────────
-
-async def scrape_news(symbol: Optional[str] = None) -> list[dict]:
-    """
-    Scrapes financial news headlines from configured sources.
-    Optionally filter articles that mention a specific stock symbol.
-    Returns a list of dicts with keys:
-        title, url, source, summary, published_at, symbol (if matched), scraped_at
-    """
-    all_articles = []
-
-    async with httpx.AsyncClient(headers=HEADERS, timeout=30) as client:
-        for source_url in NEWS_SOURCES:
-            articles = await _scrape_single_news_source(client, source_url, symbol)
-            all_articles.extend(articles)
-
-    # Deduplicate by URL
-    seen_urls = set()
-    unique_articles = []
-    for article in all_articles:
-        if article["url"] not in seen_urls:
-            seen_urls.add(article["url"])
-            unique_articles.append(article)
-
-    logger.info("News scraper: fetched %d unique articles.", len(unique_articles))
-    return unique_articles
-
-
-async def _scrape_single_news_source(
-    client: httpx.AsyncClient,
-    source_url: str,
-    symbol: Optional[str]
-) -> list[dict]:
-    """Scrapes a single news source and returns parsed articles."""
-    articles = []
-
-    try:
-        response = await client.get(source_url)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        # Generic extraction: look for <article> tags or <h2>/<h3> inside common wrappers
-        raw_items = (
-            soup.find_all("article")
-            or soup.find_all("div", class_=lambda c: c and "article" in c.lower())
-            or soup.find_all("li", class_=lambda c: c and "article" in c.lower())
+        row = NewsSentiment(
+            symbol=art.get('symbol') or symbol or 'GENERAL',
+            headline=art['title'][:500],
+            url=art['url'][:1000],
+            source=art.get('source', '')[:120],
+            summary=art.get('summary', '')[:500],
+            published_at=None,
         )
+        db.add(row)
+        saved += 1
+    db.commit()
+    logger.info('Saved %d news articles', saved)
+    return saved
 
-        for item in raw_items[:20]:  # Cap at 20 per source
-            title_tag = item.find(["h1", "h2", "h3", "h4"])
-            link_tag  = item.find("a", href=True)
-            summary_tag = item.find("p")
+async def scrape_news(symbol: str = None) -> list[dict]:
+    all_articles = []
+    async with httpx.AsyncClient(headers=HEADERS, timeout=30) as client:
+        for src in NEWS_SOURCES:
+            arts = await _scrape_single_news_source(client, src, symbol)
+            all_articles.extend(arts)
 
-            title   = _clean(title_tag.text) if title_tag else ""
-            url     = _resolve_url(source_url, link_tag["href"]) if link_tag else source_url
-            summary = _clean(summary_tag.text) if summary_tag else ""
+    seen, unique = set(), []
+    for a in all_articles:
+        if a['url'] not in seen:
+            seen.add(a['url'])
+            unique.append(a)
+    return unique
 
-            if not title:
-                continue
+async def _scrape_single_news_source(client, source_url, symbol):
+    articles = []
+    try:
+        r = await client.get(source_url)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, 'lxml')
+        items = (soup.find_all('article') or
+                 soup.find_all('div', class_=lambda c: c and 'article' in c.lower()))
 
-            # If filtering by symbol, skip unrelated articles
-            if symbol and symbol.upper() not in (title + summary).upper():
-                continue
+        for item in items[:20]:
+            title_tag = item.find(['h1','h2','h3','h4'])
+            link_tag = item.find('a', href=True)
+            summary_t = item.find('p')
+
+            title = _clean(title_tag.text) if title_tag else ''
+            url = _resolve_url(source_url, link_tag['href']) if link_tag else source_url
+            summary = _clean(summary_t.text)[:300] if summary_t else ''
+
+            if not title: continue
+            if symbol and symbol.upper() not in (title+summary).upper(): continue
 
             articles.append({
-                "title":        title,
-                "url":          url,
-                "source":       source_url,
-                "summary":      summary[:300],   # Truncate for DB
-                "published_at": _extract_date(item),
-                "symbol":       symbol or None,
-                "scraped_at":   datetime.utcnow().isoformat(),
+                'title': title,
+                'url': url,
+                'source': source_url,
+                'summary': summary,
+                'symbol': symbol or None
             })
-
-    except httpx.HTTPStatusError as e:
-        logger.warning("News source %s returned HTTP %s", source_url, e.response.status_code)
-    except httpx.RequestError as e:
-        logger.warning("News source %s request error: %s", source_url, e)
     except Exception as e:
-        logger.warning("News source %s parse error: %s", source_url, e)
-
+        logger.warning('Source %s failed: %s', source_url, e)
     return articles
 
+# ■■ Helpers ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+def _clean(t): return ' '.join(t.split()).strip()
 
-# ─────────────────────────────────────────────
-#  Data Validation
-# ─────────────────────────────────────────────
+def _to_float(t):
+    try: return float(t.replace(',','').strip())
+    except: return None
 
-def validate_market_record(record: dict) -> bool:
-    """
-    Validates a CSE market data record before DB insert.
-    Returns True if valid, False otherwise.
-    """
-    if not record.get("symbol"):
-        return False
-    if record.get("last_price") is None or record["last_price"] <= 0:
-        return False
-    if not isinstance(record.get("volume"), int):
-        return False
-    return True
-
-
-def validate_news_record(record: dict) -> bool:
-    """
-    Validates a news article record before DB insert.
-    Returns True if valid, False otherwise.
-    """
-    if not record.get("title") or len(record["title"]) < 5:
-        return False
-    if not record.get("url"):
-        return False
-    return True
-
-
-# ─────────────────────────────────────────────
-#  Helpers
-# ─────────────────────────────────────────────
-
-def _clean(text: str) -> str:
-    return " ".join(text.split()).strip()
-
-
-def _to_float(text: str) -> Optional[float]:
-    try:
-        return float(text.replace(",", "").strip())
-    except (ValueError, AttributeError):
-        return None
-
-
-def _to_int(text: str) -> Optional[int]:
-    try:
-        return int(text.replace(",", "").strip())
-    except (ValueError, AttributeError):
-        return None
-
-
-def _resolve_url(base: str, href: str) -> str:
-    if href.startswith("http"):
-        return href
+def _resolve_url(base, href):
+    if href.startswith('http'): return href
     from urllib.parse import urljoin
     return urljoin(base, href)
-
-
-def _extract_date(tag) -> Optional[str]:
-    """Try to extract a published date from time/meta tags."""
-    time_tag = tag.find("time")
-    if time_tag and time_tag.get("datetime"):
-        return time_tag["datetime"]
-    return None

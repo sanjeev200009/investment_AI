@@ -27,7 +27,14 @@ class Settings(BaseSettings):
     API_VERSION: str = 'v1'
 
     # Firebase Cloud Messaging
+    FIREBASE_CREDENTIALS_PATH: str = 'firebase-key.json'
     FCM_SERVER_KEY: str = ''
+
+    # AI Agent
+    ANTHROPIC_API_KEY: str = ''
+    OPENAI_API_KEY: str = ''
+    GOOGLE_API_KEY: str = ''
+    GROQ_API_KEY: str = ''
 
     # Brevo Mail (Using HTTP API)
     BREVO_API_KEY: str = ''

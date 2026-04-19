@@ -10,6 +10,7 @@ import {
     KeyboardAvoidingView,
     Platform,
     ScrollView,
+    Alert,
 } from 'react-native';
 import Animated, {
     useSharedValue,
@@ -24,13 +25,18 @@ import { useAppTheme } from '../../hooks/useAppTheme';
 import AppButton from '../../components/AppButton';
 import AppCard from '../../components/AppCard';
 import AppHeader from '../../components/AppHeader';
+import { authApi } from '../../api/authApi';
 
 const { height } = Dimensions.get('window');
 
 const OTPVerificationScreen = ({ navigation, route }) => {
     const theme = useAppTheme();
-    const [otp, setOtp] = useState(['', '', '', '']);
+    const { email } = route.params || {};
+    
+    // Backend uses 6 digits
+    const [otp, setOtp] = useState(['', '', '', '', '', '']);
     const [timer, setTimer] = useState(59);
+    const [loading, setLoading] = useState(false);
     const inputs = useRef([]);
 
     // Animation values
@@ -61,14 +67,39 @@ const OTPVerificationScreen = ({ navigation, route }) => {
         setOtp(newOtp);
 
         // Auto-focus next input
-        if (value && index < 3) {
+        if (value && index < 5) {
             inputs.current[index + 1].focus();
         }
     };
 
-    const handleVerify = () => {
-        // Navigate to Reset Password
-        navigation.navigate('ResetPassword');
+    const handleVerify = async () => {
+        const fullOtp = otp.join('');
+        if (fullOtp.length < 6) {
+            Alert.alert('Error', 'Please enter the complete 6-digit code');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            await authApi.verifyOTP(email, fullOtp);
+            // On success, go to AuthSuccess then Login
+            navigation.replace('AuthSuccess');
+        } catch (error) {
+            const msg = error?.response?.data?.detail || 'Verification failed. Please check the code.';
+            Alert.alert('Verification Error', msg);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleResend = async () => {
+        try {
+            await authApi.resendOTP(email);
+            setTimer(59);
+            Alert.alert('Sent', 'A new verification code has been sent to your email.');
+        } catch (error) {
+            Alert.alert('Error', 'Failed to resend code. Please try again later.');
+        }
     };
 
     return (
@@ -90,7 +121,8 @@ const OTPVerificationScreen = ({ navigation, route }) => {
                         <View style={styles.formHeader}>
                             <Text style={[styles.title, { color: theme.colors.textPrimary, fontSize: theme.typography.sizes.h3 }]}>Verification</Text>
                             <Text style={[styles.subText, { color: theme.colors.textSecondary }]}>
-                                Enter the 4-digit code sent to your email address.
+                                Enter the 6-digit code sent to{"\n"}
+                                <Text style={{ fontWeight: '700', color: theme.colors.primary }}>{email}</Text>
                             </Text>
                         </View>
 
@@ -127,7 +159,7 @@ const OTPVerificationScreen = ({ navigation, route }) => {
                                 {timer > 0 ? `Resend code in 00:${timer.toString().padStart(2, '0')}` : "Didn't receive code?"}
                             </Text>
                             {timer === 0 && (
-                                <TouchableOpacity onPress={() => setTimer(59)}>
+                                <TouchableOpacity onPress={handleResend}>
                                     <Text style={[styles.resendLink, { color: theme.colors.primary }]}> Resend Now</Text>
                                 </TouchableOpacity>
                             )}
@@ -136,8 +168,9 @@ const OTPVerificationScreen = ({ navigation, route }) => {
                         <AppButton
                             title="Verify & Proceed"
                             onPress={handleVerify}
+                            loading={loading}
                             style={styles.verifyButton}
-                            disabled={otp.some(d => !d)}
+                            disabled={otp.some(d => !d) || loading}
                         />
                     </AppCard>
                 </Animated.View>
@@ -183,10 +216,10 @@ const styles = StyleSheet.create({
         marginBottom: 32,
     },
     otpInput: {
-        width: 64,
-        height: 64,
+        width: 48,
+        height: 56,
         textAlign: 'center',
-        fontSize: 24,
+        fontSize: 22,
         fontWeight: '700',
     },
     timerContainer: {

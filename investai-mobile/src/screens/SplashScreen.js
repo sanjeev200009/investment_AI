@@ -66,11 +66,8 @@ export default function SplashScreen({ navigation }) {
     const labelOpacity = thumbX.interpolate({ inputRange: [0, SWIPE_RANGE * 0.45], outputRange: [1, 0], extrapolate: 'clamp' });
     const trackBg = trackColor.interpolate({ inputRange: [0, 1], outputRange: [c.swipeBtn, scheme === 'dark' ? 'rgba(255,255,255,0.22)' : c.primaryLight] });
 
-    const navigateNext = async () => {
-        try {
-            const token = await AsyncStorage.getItem('token');
-            navigation.replace(token ? 'MainTab' : 'Auth');
-        } catch { navigation.replace('Auth'); }
+    const navigateNext = () => {
+        navigation.navigate('Login');
     };
 
     const onSwipeComplete = () => {

@@ -1,18 +1,19 @@
 # app/dependencies.py
-from fastapi import Depends, HTTPException, status
+import uuid
+from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from jose import JWTError, jwt
-
-from jose import JWTError, jwt
+from supabase import create_client
 
 from app.database import SessionLocal
 from app.config import get_settings
 from app.models.user import User
 
 settings = get_settings()
-
 bearer_scheme = HTTPBearer()
+
+# Initialize Supabase client once for performance
+admin_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
 
 def get_db():
     db = SessionLocal()
@@ -23,20 +24,24 @@ def get_db():
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> User:
     token = credentials.credentials
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id: str = payload.get('sub')
-        if user_id is None:
-            raise HTTPException(status_code=401, detail='Invalid token')
-    except JWTError:
-        raise HTTPException(status_code=401, detail='Invalid or expired token')
     
-    user = db.query(User).filter(User.user_id == user_id).first()
+    # 1. Verify token with Supabase (source of truth for auth)
+    try:
+        user_response = admin_client.auth.get_user(token)
+        if not user_response or not user_response.user:
+            raise HTTPException(status_code=401, detail='Invalid token')
+        supabase_user_id = user_response.user.id
+    except Exception:
+        raise HTTPException(status_code=401, detail='Invalid or expired token')
+
+    # 2. Find user in local database
+    uid = uuid.UUID(str(supabase_user_id))
+    user = db.query(User).filter(User.user_id == uid).first()
+    
     if not user:
         raise HTTPException(status_code=404, detail='User not found')
     
     return user
-

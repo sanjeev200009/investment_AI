@@ -1,5 +1,4 @@
-import 'react-native-gesture-handler';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
@@ -21,11 +20,17 @@ import {
 } from '@expo-google-fonts/roboto';
 import * as SplashScreenLib from 'expo-splash-screen';
 import AppNavigator from './src/navigation/AppNavigator';
+import { useAuthStore } from './src/store/authStore';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreenLib.preventAutoHideAsync();
 
 export default function App() {
+  const restoreSession = useAuthStore(state => state.restoreSession);
+
+  useEffect(() => {
+    restoreSession();
+  }, []);
   const [fontsLoaded] = useFonts({
     Roboto_100Thin,
     Roboto_100Thin_Italic,

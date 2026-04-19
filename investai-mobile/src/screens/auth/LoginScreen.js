@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -31,11 +31,13 @@ import AppInput from '../../components/AppInput';
 import AppCard from '../../components/AppCard';
 import { authApi } from '../../api/authApi';
 import { validateEmail, validatePassword } from '../../utils/validation';
+import { useAuthStore } from '../../store/authStore';
 
 const { width, height } = Dimensions.get('window');
 
 const LoginScreen = ({ navigation }) => {
   const theme = useAppTheme();
+  const login = useAuthStore(state => state.login);
 
   // Form State
   const [email, setEmail] = useState('');
@@ -94,10 +96,11 @@ const LoginScreen = ({ navigation }) => {
 
     try {
       const result = await authApi.login(email, password);
-      // In a real app, you'd save the token and navigate to Home
-      navigation.navigate('Assessment');
+      // Save session to store (which triggers navigation)
+      await login(result.access_token, result);
     } catch (error) {
-      Alert.alert('Login Failed', error);
+      const msg = error?.response?.data?.detail || 'Invalid email or password';
+      Alert.alert('Login Failed', msg);
     } finally {
       setLoading(false);
     }

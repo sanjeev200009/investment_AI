@@ -10,18 +10,20 @@ import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
 import OTPVerificationScreen from '../screens/auth/OTPVerificationScreen';
 import ResetPasswordScreen from '../screens/auth/ResetPasswordScreen';
 import AuthSuccessScreen from '../screens/auth/AuthSuccessScreen';
+import SplashScreen from '../screens/SplashScreen';
 
 const Stack = createStackNavigator();
 
 const AuthNavigator = () => {
     return (
         <Stack.Navigator
-            initialRouteName="Onboarding"
+            initialRouteName="Splash"
             screenOptions={{
                 headerShown: false,
                 gestureEnabled: true,
             }}
         >
+            <Stack.Screen name="Splash" component={SplashScreen} />
             <Stack.Screen name="Onboarding" component={OnboardingScreen} />
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />

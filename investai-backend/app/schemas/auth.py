@@ -1,5 +1,5 @@
-# app/schemas/auth.py
 from pydantic import BaseModel, EmailStr, Field
+from uuid import UUID
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -33,7 +33,7 @@ class ResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=8)
 
 class UserOut(BaseModel):
-    user_id: str
+    user_id: UUID
     email: str
     full_name: str | None
     role: str

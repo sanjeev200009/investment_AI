@@ -99,7 +99,7 @@ const RegisterScreen = ({ navigation }) => {
     try {
       await authApi.register({ email, password, full_name: name });
       // Navigate to OTP screen, passing the email
-      navigation.navigate('OTPVerify', { email });
+      navigation.navigate('OTPVerification', { email });
     } catch (error) {
       const msg = error?.response?.data?.detail || 'Registration failed';
       Alert.alert('Error', msg);
