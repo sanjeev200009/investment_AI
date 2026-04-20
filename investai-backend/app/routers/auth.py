@@ -2,18 +2,19 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from supabase import create_client
+from datetime import timedelta
+import logging
 
 from app.dependencies import get_db, get_current_user
-from app.models import User
+from app.models.user import User
 from app.schemas.auth import (RegisterRequest, LoginRequest,
-                              TokenResponse, UserOut, OTPVerifyRequest,
-                              ForgotPasswordRequest, ResetPasswordRequest, VerifyResetOTPRequest)
+                               TokenResponse, UserOut, OTPVerifyRequest,
+                               ForgotPasswordRequest, ResetPasswordRequest, VerifyResetOTPRequest)
 from app.config import get_settings
-from app.services.email import (send_registration_otp,
+from app.services.email_service import (send_registration_otp,
                                 send_welcome_email, send_reset_otp)
 from app.services.otp import create_otp, verify_otp
 from app.utils.security import create_reset_token, verify_reset_token
-import logging
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -31,34 +32,70 @@ async def register(
 ):
     """
     Step 1 of 2: Register the user.
-    Account created but NOT usable until OTP verified.
+    Account created in Supabase but NOT usable locally until OTP verified.
     Sends 6-digit OTP to email.
     """
+    admin_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+
     # Check if email already registered and verified
     existing = db.query(User).filter(User.email == payload.email).first()
     if existing and existing.is_email_verified:
         raise HTTPException(400, 'Email already registered and verified')
 
-    # Use admin client to bypass Supabase's default confirmation email
-    # because we handle OTP verification internally via Brevo
-    admin_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
-
+    user_id = None
     try:
-        admin_client.auth.admin.create_user({
+        sb_response = admin_client.auth.admin.create_user({
             'email': payload.email,
             'password': payload.password,
             'email_confirm': True,
             'user_metadata': {'full_name': payload.full_name}
         })
+        # Extract user_id from various possible response formats
+        sb_user = getattr(sb_response, 'user', sb_response)
+        user_id = getattr(sb_user, 'id', None)
+        if not user_id and isinstance(sb_user, dict):
+            user_id = sb_user.get('id')
+            
     except Exception as e:
-        if 'already' not in str(e).lower():
+        error_msg = str(e).lower()
+        if 'already' in error_msg:
+            # User exists in Supabase. We must fetch them to get their ID for the local sync.
+            try:
+                users_res = admin_client.auth.admin.list_users()
+                user_list = getattr(users_res, 'users', users_res)
+                target = next((u for u in user_list if u.email == payload.email), None)
+                if target:
+                    user_id = target.id
+            except Exception as inner_e:
+                logger.error(f"Failed to fetch existing user from Supabase: {str(inner_e)}")
+        
+        if not user_id:
+            db.rollback()
             raise HTTPException(400, f'Registration error: {str(e)}')
 
-    # Update full_name (trigger already created public.users row)
-    user = db.query(User).filter(User.email == payload.email).first()
-    if user and payload.full_name:
-        user.full_name = payload.full_name
-        db.commit()
+    # Final Local sync
+    try:
+        if not existing:
+            # Check if THIS user_id is already in the DB under a different email (cleanup)
+            dup_id = db.query(User).filter(User.user_id == user_id).first()
+            if dup_id:
+                db.delete(dup_id)
+                db.commit()
+            
+            new_user = User(
+                user_id=user_id,
+                email=payload.email,
+                full_name=payload.full_name,
+                password_hash="[MANAGED_BY_SUPABASE]",
+                is_email_verified=False
+            )
+            db.add(new_user)
+            db.commit()
+    except Exception as db_e:
+        db.rollback()
+        logger.error(f"Local sync failed: {str(db_e)}")
+        # If it's a duplicate ID error, we might be in a race condition. 
+        # But we've already done our best to clean it up.
 
     # Generate and send OTP
     otp = create_otp(db, payload.email, purpose='register')
@@ -115,14 +152,13 @@ async def resend_otp(
     otp = create_otp(db, payload.email, purpose='register')
     background_tasks.add_task(
         send_registration_otp, payload.email, otp, user.full_name or '')
-
     return {'message': 'New OTP sent to your email'}
 
 @router.post('/login', response_model=TokenResponse)
 async def login(payload: LoginRequest, db: Session = Depends(get_db)):
     """
-    Login. Blocked if email not verified.
-    Returns Supabase JWT for local verification by other endpoints.
+    Login. Blocked if email not verified locally.
+    Returns Supabase JWT for authenticated access.
     """
     # Check verification BEFORE calling Supabase
     user = db.query(User).filter(User.email == payload.email).first()
@@ -158,10 +194,10 @@ async def forgot_password(
 ):
     """
     Step 1: User enters their email.
-    Sends 6-digit OTP to that email for password reset.
+    Sends 6-digit OTP for password reset.
     """
     user = db.query(User).filter(User.email == payload.email).first()
-    # Always return success — never reveal if email exists
+    # Always return success message for security (don't reveal user existence)
     if user:
         otp = create_otp(db, payload.email, purpose='reset_password')
         background_tasks.add_task(send_reset_otp, payload.email, otp)
@@ -178,14 +214,13 @@ async def verify_reset_otp_endpoint(
 ):
     """
     Step 2: User enters the OTP from their email.
-    Returns a reset_token needed for the final step.
+    Returns a reset_token needed for the final reset action.
     """
     ok = verify_otp(db, payload.email, payload.otp_code, purpose='reset_password')
     if not ok:
         raise HTTPException(400, 'Invalid or expired OTP. Request a new one.')
-
-    reset_token = create_reset_token(payload.email)
     
+    reset_token = create_reset_token(payload.email)
     return {
         'message': 'OTP verified.',
         'reset_token': reset_token,
@@ -228,4 +263,4 @@ def me(current_user: User = Depends(get_current_user)):
 
 @router.post('/logout')
 def logout():
-    return {'message': 'Logged out — delete token from AsyncStorage'}
+    return {'message': 'Logged out successfully'}

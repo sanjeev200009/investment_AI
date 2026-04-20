@@ -98,8 +98,8 @@ const RegisterScreen = ({ navigation }) => {
 
     try {
       await authApi.register({ email, password, full_name: name });
-      // Navigate to OTP screen, passing the email
-      navigation.navigate('OTPVerification', { email });
+      // Navigate to OTP screen, passing the email and flow type
+      navigation.navigate('OTPVerification', { email, type: 'register' });
     } catch (error) {
       const msg = error?.response?.data?.detail || 'Registration failed';
       Alert.alert('Error', msg);

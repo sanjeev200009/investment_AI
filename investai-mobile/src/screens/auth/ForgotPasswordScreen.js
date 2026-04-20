@@ -92,7 +92,7 @@ const ForgotPasswordScreen = ({ navigation }) => {
         try {
             await authApi.sendResetOTP(email);
             // Linear Flow: Forgot -> OTP -> Reset -> Success
-            navigation.navigate('OTPVerification', { email });
+            navigation.navigate('OTPVerification', { email, type: 'reset' });
         } catch (err) {
             Alert.alert('Error', err);
         } finally {

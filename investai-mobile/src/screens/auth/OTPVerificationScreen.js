@@ -31,7 +31,7 @@ const { height } = Dimensions.get('window');
 
 const OTPVerificationScreen = ({ navigation, route }) => {
     const theme = useAppTheme();
-    const { email } = route.params || {};
+    const { email, type } = route.params || {};
     
     // Backend uses 6 digits
     const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -81,9 +81,19 @@ const OTPVerificationScreen = ({ navigation, route }) => {
 
         setLoading(true);
         try {
-            await authApi.verifyOTP(email, fullOtp);
-            // On success, go to AuthSuccess then Login
-            navigation.replace('AuthSuccess');
+            if (type === 'reset') {
+                const response = await authApi.verifyResetOTP(email, fullOtp);
+                // On success, go to ResetPassword with the token
+                navigation.navigate('ResetPassword', { 
+                    email, 
+                    resetToken: response.reset_token 
+                });
+            } else {
+                // Default: Registration verify
+                await authApi.verifyOTP(email, fullOtp);
+                // On success, go to AuthSuccess then Login
+                navigation.replace('AuthSuccess');
+            }
         } catch (error) {
             const msg = error?.response?.data?.detail || 'Verification failed. Please check the code.';
             Alert.alert('Verification Error', msg);
