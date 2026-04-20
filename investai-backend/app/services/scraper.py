@@ -13,22 +13,30 @@ from app.database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
-CSE_TRADE_SUMMARY_URL = (
-"https://www.cse.lk/pages/trade-summary/trade-summary.component.html"
-)
+CSE_TRADE_SUMMARY_URL = "https://www.cse.lk/api/tradeSummary"
 
 NEWS_SOURCES = [
-"https://www.ft.lk/financial-news",
-"https://www.dailymirror.lk/business/",
-"https://economynext.com/sri-lanka-stock-market/",
+    "https://www.ft.lk/Financial-Services/42",
+    "https://www.dailymirror.lk/business",
+    "https://economynext.com/markets/",
 ]
 
-HEADERS = {
-"User-Agent": (
-"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-"AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
-),
-"Accept-Language": "en-US,en;q=0.9",
+DEFAULT_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+}
+
+CSE_HEADERS = {
+    **DEFAULT_HEADERS,
+    "Accept": "application/json, text/plain, */*",
+    "Origin": "https://www.cse.lk",
+    "Referer": "https://www.cse.lk/equity/trade-summary",
 }
 
 # ■■ CSE Scraper ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
@@ -53,34 +61,27 @@ async def scrape_and_save_cse(db: Session) -> int:
     return saved
 
 async def scrape_cse_data() -> list[dict]:
-    """Returns list of stock dicts from CSE trade summary."""
+    """Returns list of stock dicts from CSE trade summary API."""
     results = []
     try:
-        async with httpx.AsyncClient(headers=HEADERS, timeout=30) as c:
-            response = await c.get(CSE_TRADE_SUMMARY_URL)
+        async with httpx.AsyncClient(headers=CSE_HEADERS, timeout=60) as c:
+            response = await c.post(CSE_TRADE_SUMMARY_URL)
             response.raise_for_status()
-            soup = BeautifulSoup(response.text, 'lxml')
-            table = soup.find('table') or soup.find('table', {'class': True})
-            if not table:
-                logger.warning('CSE: no table found')
-                return results
-
-            for row in table.find_all('tr')[1:]:
-                cols = row.find_all('td')
-                if len(cols) < 6: continue
+            data = response.json()
+            
+            raw_records = data.get('reqTradeSummery', [])
+            for rec in raw_records:
                 try:
-                    rec = {
-                        'symbol': _clean(cols[0].text),
-                        'last_price': _to_float(cols[2].text),
-                        'change': _to_float(cols[3].text),
-                        'change_pct': _to_float(cols[4].text.replace('%','')),
-                        'volume': _to_float(cols[5].text),
-                        'market_cap': _to_float(cols[6].text) if len(cols)>6 else None,
-                    }
-                    if rec['last_price'] and rec['symbol']:
-                        results.append(rec)
-                except Exception as e:
-                    logger.debug('Row parse error: %s', e)
+                    results.append({
+                        'symbol': rec.get('symbol', '').strip(),
+                        'last_price': float(rec.get('price', 0)),
+                        'change': float(rec.get('change', 0)),
+                        'change_pct': float(rec.get('percentageChange', 0)),
+                        'volume': float(rec.get('sharevolume', 0)),
+                        'market_cap': float(rec.get('marketCap', 0)) if rec.get('marketCap') else None,
+                    })
+                except (ValueError, TypeError) as e:
+                    logger.debug('Record parse error: %s', e)
     except Exception as e:
         logger.error('CSE scrape failed: %s', e)
     return results
@@ -112,7 +113,7 @@ async def scrape_and_save_news(db: Session, symbol: str = None) -> int:
 
 async def scrape_news(symbol: str = None) -> list[dict]:
     all_articles = []
-    async with httpx.AsyncClient(headers=HEADERS, timeout=30) as client:
+    async with httpx.AsyncClient(headers=DEFAULT_HEADERS, timeout=30) as client:
         for src in NEWS_SOURCES:
             arts = await _scrape_single_news_source(client, src, symbol)
             all_articles.extend(arts)
@@ -130,20 +131,25 @@ async def _scrape_single_news_source(client, source_url, symbol):
         r = await client.get(source_url)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, 'lxml')
-        items = (soup.find_all('article') or
-                 soup.find_all('div', class_=lambda c: c and 'article' in c.lower()))
-
-        for item in items[:20]:
-            title_tag = item.find(['h1','h2','h3','h4'])
-            link_tag = item.find('a', href=True)
-            summary_t = item.find('p')
-
-            title = _clean(title_tag.text) if title_tag else ''
-            url = _resolve_url(source_url, link_tag['href']) if link_tag else source_url
-            summary = _clean(summary_t.text)[:300] if summary_t else ''
-
+        # Daily Mirror and FT often use <h3> for headlines within an <a> tag
+        # EconomyNext uses <h3><a>
+        headlines = soup.find_all('h3')
+        for h3 in headlines[:20]:
+            title = _clean(h3.text)
             if not title: continue
-            if symbol and symbol.upper() not in (title+summary).upper(): continue
+            
+            # Find the link: usually it's the parent or a child <a>
+            link_tag = h3.find('a', href=True) or h3.find_parent('a', href=True)
+            if not link_tag: continue
+            
+            url = _resolve_url(source_url, link_tag['href'])
+            
+            # Try to find a summary nearby (p tag)
+            summary_tag = h3.find_next('p') or h3.find_parent().find_next('p')
+            summary = _clean(summary_tag.text)[:300] if summary_tag else ''
+
+            if symbol and symbol.upper() not in (title + summary).upper():
+                continue
 
             articles.append({
                 'title': title,

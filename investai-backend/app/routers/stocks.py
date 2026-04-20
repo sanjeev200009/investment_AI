@@ -5,7 +5,7 @@ from typing import List, Optional
 from app.dependencies import get_db, get_current_user
 from app.models.stock import MarketData as MarketDataModel, NewsSentiment as NewsSentimentModel
 from app.models.user import User
-from app.schemas.stock import MarketData, NewsSentiment, PricePrediction
+from app.schemas.stock import MarketData, NewsSentiment, PricePrediction, ScrapeResponse, SentimentSummary
 
 router = APIRouter(prefix='/stocks', tags=['Stocks'])
 
@@ -52,7 +52,7 @@ def get_stock_news(
         .all()
     )
 
-@router.post('/scrape', status_code=202)
+@router.post('/scrape', status_code=202, response_model=ScrapeResponse, tags=['Scraper'])
 def trigger_scrape(
     background_tasks: BackgroundTasks,
     symbol: Optional[str] = None,
@@ -64,9 +64,13 @@ def trigger_scrape(
         scrape_stock_news.delay(symbol)
     else:
         scrape_cse_market_data.delay()
-    return {'message': 'Scrape task queued', 'symbol': symbol or 'ALL'}
+    return {
+        'message': 'Scrape task queued',
+        'symbol': symbol or 'ALL',
+        'saved_count': 0  # Celery tasks are async, so count is 0 here
+    }
 
-@router.get('/sentiment/{symbol}')
+@router.get('/sentiment/{symbol}', response_model=SentimentSummary)
 def get_sentiment_summary(
     symbol: str,
     db: Session = Depends(get_db),

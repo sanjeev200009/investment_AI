@@ -41,3 +41,15 @@ class PricePrediction(PricePredictionBase):
 
     class Config:
         from_attributes = True
+
+class ScrapeResponse(BaseModel):
+    message: str
+    symbol: Optional[str] = None
+    saved_count: Optional[int] = None
+
+class SentimentSummary(BaseModel):
+    symbol: str
+    count: int
+    avg_score: float
+    label: str
+    recent_headlines: list[str]
