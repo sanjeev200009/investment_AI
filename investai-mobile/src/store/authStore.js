@@ -38,6 +38,9 @@ export const useAuthStore = create((set) => ({
         const savedEdu = await AsyncStorage.getItem('education_enabled');
         if (token) {
             try {
+                // Set token in state FIRST so axios interceptor can see it
+                set({ token });
+                
                 // Fetch fresh user data from backend
                 const user = await authApi.getMe();
                 const assessmentDone = await AsyncStorage.getItem('assessment_completed');

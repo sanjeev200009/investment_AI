@@ -184,6 +184,7 @@ async def login(payload: LoginRequest, db: Session = Depends(get_db)):
         token_type='bearer',
         user_id=str(auth_response.user.id),
         email=auth_response.user.email,
+        full_name=user.full_name,
     )
 
 @router.post('/forgot-password')

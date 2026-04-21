@@ -1,6 +1,6 @@
 // src/api/axiosConfig.js
 import axios from 'axios';
-import { useAuthStore } from '../store/authStore';
+// import { useAuthStore } from '../store/authStore'; // Removed to break circular dependency
 
 const api = axios.create({
     baseURL: process.env.EXPO_PUBLIC_API_BASE_URL,
@@ -10,12 +10,15 @@ const api = axios.create({
 
 // Attach JWT to every request automatically
 api.interceptors.request.use(config => {
+    // Import store dynamically to avoid circular dependency
+    const { useAuthStore } = require('../store/authStore');
     const token = useAuthStore.getState().token;
+    
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
-        console.log(`[API Request] ${config.method.toUpperCase()} ${config.url} - Token Present`);
+        console.log(`[API Request] ${config.method.toUpperCase()} ${config.url} - Token: ${token.substring(0, 10)}... (Verified)`);
     } else {
-        console.log(`[API Request] ${config.method.toUpperCase()} ${config.url} - NO TOKEN`);
+        console.log(`[API Request] ${config.method.toUpperCase()} ${config.url} - NO TOKEN FOUND`);
     }
     return config;
 });

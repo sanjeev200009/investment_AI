@@ -14,6 +14,8 @@ from app.database import SessionLocal
 logger = logging.getLogger(__name__)
 
 CSE_TRADE_SUMMARY_URL = "https://www.cse.lk/api/tradeSummary"
+CSE_MARKET_STATUS_URL = "https://www.cse.lk/api/marketStatus"
+
 
 NEWS_SOURCES = [
     "https://www.ft.lk/Financial-Services/42",
@@ -84,7 +86,26 @@ async def scrape_cse_data() -> list[dict]:
                     logger.debug('Record parse error: %s', e)
     except Exception as e:
         logger.error('CSE scrape failed: %s', e)
+
+    if not results:
+        status = await get_market_status()
+        if status:
+            logger.info('Market is currently in "%s" status - No trade records available yet.', status)
+        else:
+            logger.warning('No CSE trade records found and market status could not be determined.')
+            
     return results
+
+async def get_market_status() -> Optional[str]:
+    """Checks the current status of the CSE market."""
+    try:
+        async with httpx.AsyncClient(headers=CSE_HEADERS, timeout=10) as c:
+            r = await c.post(CSE_MARKET_STATUS_URL)
+            if r.status_code == 200:
+                return r.json().get('status')
+    except Exception as e:
+        logger.debug('Failed to fetch market status: %s', e)
+    return None
 
 # ■■ News Scraper ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 async def scrape_and_save_news(db: Session, symbol: str = None) -> int:
