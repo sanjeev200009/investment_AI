@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     API_VERSION: str = 'v1'
 
+    # CORS Security
+    CORS_ALLOWED_ORIGINS: str = 'http://localhost:3000,http://localhost:19006,http://localhost:8081,http://127.0.0.1:3000'
+
     # Firebase Cloud Messaging
     FIREBASE_CREDENTIALS_PATH: str = 'firebase-key.json'
     FCM_SERVER_KEY: str = ''
