@@ -1,9 +1,11 @@
 import TouchableTick from '../components/TouchableTick';
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
+import { useAuth, useUser } from '@clerk/clerk-expo';
+import axios from 'axios';
 
 const colors = {
   background: '#faf9fc',
@@ -63,6 +65,32 @@ const Sparkline = ({ type }) => {
 };
 
 export default function WatchlistScreen({ navigation }) {
+  const { getToken } = useAuth();
+  const { user: clerkUser } = useUser();
+  const [watchlist, setWatchlist] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchWatchlist() {
+      try {
+        const token = await getToken();
+        const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+        const res = await axios.get(`${baseUrl}/stocks/market?limit=50`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        // Sort by volume descending as a proxy for "active" watchlist stocks
+        const sorted = res.data.sort((a,b) => b.volume - a.volume).slice(0, 10);
+        setWatchlist(sorted);
+      } catch (err) {
+        console.error("Failed to fetch watchlist", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchWatchlist();
+  }, []);
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
@@ -72,7 +100,7 @@ export default function WatchlistScreen({ navigation }) {
         <View style={styles.headerLeft}>
           <View style={styles.avatarContainer}>
             <Image
-              source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDDa3cQcIjXoyP021tAFMl_zjrDDmaIz3C9LAsqV4mR4TGV84xro9ZduAuJhnlH_H4WAWF_6BGvig8MwPu-t4WbULnUAjST-Aov3H32h5pqwEPzleEcsMp8GeXIQqomlQ-mOZvhItUsUZp4GFv1KYC33NMmA_HfqBAeHAgGdNC8PXXGTTWo95RX5TpPch0HD7xy4gg_WVGy3gi_yb3UcByzSspdVF1Dm6n3lcu7nwPiZlM-LZOCv1rO8AHrOOuhG1h4u2-hvVNqAXA' }}
+              source={{ uri: clerkUser?.imageUrl || "https://ui-avatars.com/api/?name=User&background=random" }}
               style={styles.avatar}
             />
           </View>
@@ -98,121 +126,47 @@ export default function WatchlistScreen({ navigation }) {
         </View>
 
         <View style={styles.cardsGrid}>
-          {/* AAPL Card */}
-          <TouchableTick style={styles.card}>
-            <View style={styles.cardTop}>
-              <View style={styles.cardHeaderLeft}>
-                <View style={styles.tickerBox}>
-                  <Text style={styles.tickerBoxText}>AAPL</Text>
-                </View>
-                <View>
-                  <Text style={styles.companyName}>Apple Inc.</Text>
-                  <Text style={styles.sectorText}>Technology</Text>
-                </View>
-              </View>
-              <MaterialIcons name="star" size={20} color={colors.primary} />
-            </View>
-            <View style={styles.cardBottom}>
-              <View>
-                <Text style={styles.priceText}>$189.43</Text>
-                <View style={styles.changeBadgePos}>
-                  <MaterialIcons name="trending-up" size={16} color={colors.primary} />
-                  <Text style={styles.changeTextPos}>+1.24%</Text>
-                </View>
-              </View>
-              <View style={styles.sparklineContainer}>
-                <Sparkline type="positive" />
-              </View>
-            </View>
-          </TouchableTick>
-
-          {/* MSFT Card */}
-          <TouchableTick style={styles.card}>
-            <View style={styles.cardTop}>
-              <View style={styles.cardHeaderLeft}>
-                <View style={styles.tickerBox}>
-                  <Text style={styles.tickerBoxText}>MSFT</Text>
-                </View>
-                <View>
-                  <Text style={styles.companyName}>Microsoft Corp.</Text>
-                  <Text style={styles.sectorText}>Technology</Text>
-                </View>
-              </View>
-              <MaterialIcons name="star" size={20} color={colors.primary} />
-            </View>
-            <View style={styles.cardBottom}>
-              <View>
-                <Text style={styles.priceText}>$415.20</Text>
-                <View style={styles.changeBadgePos}>
-                  <MaterialIcons name="trending-up" size={16} color={colors.primary} />
-                  <Text style={styles.changeTextPos}>+0.85%</Text>
-                </View>
-              </View>
-              <View style={styles.sparklineContainer}>
-                <Sparkline type="positive" />
-              </View>
-            </View>
-          </TouchableTick>
-
-          {/* TSLA Card */}
-          <TouchableTick style={styles.card}>
-            <View style={styles.cardTop}>
-              <View style={styles.cardHeaderLeft}>
-                <View style={styles.tickerBox}>
-                  <Text style={styles.tickerBoxText}>TSLA</Text>
-                </View>
-                <View>
-                  <Text style={styles.companyName}>Tesla Inc.</Text>
-                  <Text style={styles.sectorText}>Automotive</Text>
-                </View>
-              </View>
-              <MaterialIcons name="star" size={20} color={colors.primary} />
-            </View>
-            <View style={styles.cardBottom}>
-              <View>
-                <Text style={styles.priceText}>$175.34</Text>
-                <View style={styles.changeBadgeNeg}>
-                  <MaterialIcons name="trending-down" size={16} color={colors.error} />
-                  <Text style={styles.changeTextNeg}>-2.14%</Text>
-                </View>
-              </View>
-              <View style={styles.sparklineContainer}>
-                <Sparkline type="negative" />
-              </View>
-            </View>
-            <View style={styles.aiAlertChip}>
-              <MaterialIcons name="psychology" size={12} color={colors.onPrimary} />
-              <Text style={styles.aiAlertText}>Volatility Alert</Text>
-            </View>
-          </TouchableTick>
-
-          {/* NVDA Card */}
-          <TouchableTick style={styles.card}>
-            <View style={styles.cardTop}>
-              <View style={styles.cardHeaderLeft}>
-                <View style={styles.tickerBox}>
-                  <Text style={styles.tickerBoxText}>NVDA</Text>
-                </View>
-                <View>
-                  <Text style={styles.companyName}>NVIDIA Corp.</Text>
-                  <Text style={styles.sectorText}>Technology</Text>
-                </View>
-              </View>
-              <MaterialIcons name="star" size={20} color={colors.primary} />
-            </View>
-            <View style={styles.cardBottom}>
-              <View>
-                <Text style={styles.priceText}>$885.12</Text>
-                <View style={styles.changeBadgePos}>
-                  <MaterialIcons name="trending-up" size={16} color={colors.primary} />
-                  <Text style={styles.changeTextPos}>+3.45%</Text>
-                </View>
-              </View>
-              <View style={styles.sparklineContainer}>
-                <Sparkline type="positive" />
-              </View>
-            </View>
-          </TouchableTick>
+          {loading ? (
+             <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+          ) : watchlist.map((stock, idx) => {
+             const isPositive = stock.change_pct >= 0;
+             return (
+               <TouchableTick key={idx} style={styles.card}>
+                 <View style={styles.cardTop}>
+                   <View style={styles.cardHeaderLeft}>
+                     <View style={styles.tickerBox}>
+                       <Text style={styles.tickerBoxText}>{stock.symbol}</Text>
+                     </View>
+                     <View>
+                       <Text style={styles.companyName}>{stock.name || stock.symbol}</Text>
+                       <Text style={styles.sectorText}>CSE Listed</Text>
+                     </View>
+                   </View>
+                   <MaterialIcons name="star" size={20} color={colors.primary} />
+                 </View>
+                 <View style={styles.cardBottom}>
+                   <View>
+                     <Text style={styles.priceText}>LKR {Number(stock.price).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</Text>
+                     <View style={isPositive ? styles.changeBadgePos : styles.changeBadgeNeg}>
+                       <MaterialIcons name={isPositive ? "trending-up" : "trending-down"} size={16} color={isPositive ? colors.primary : colors.error} />
+                       <Text style={isPositive ? styles.changeTextPos : styles.changeTextNeg}>
+                         {isPositive ? '+' : ''}{Number(stock.change_pct).toFixed(2)}%
+                       </Text>
+                     </View>
+                   </View>
+                   <View style={styles.sparklineContainer}>
+                     <Sparkline type={isPositive ? "positive" : "negative"} />
+                   </View>
+                 </View>
+                 {Math.abs(stock.change_pct) > 5 && (
+                   <View style={styles.aiAlertChip}>
+                     <MaterialIcons name="psychology" size={12} color={colors.onPrimary} />
+                     <Text style={styles.aiAlertText}>Volatility Alert</Text>
+                   </View>
+                 )}
+               </TouchableTick>
+             );
+          })}
         </View>
 
         {/* Quick Add */}

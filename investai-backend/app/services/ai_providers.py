@@ -109,3 +109,28 @@ class OpenAIProvider(BaseAIProvider):
             max_tokens=1024,
         )
         return response.choices[0].message.content
+
+class OpenRouterProvider(BaseAIProvider):
+    def __init__(self):
+        self.client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=settings.OPENROUTER_API_KEY,
+        ) if settings.OPENROUTER_API_KEY else None
+
+    @property
+    def name(self) -> str:
+        return "OpenRouter"
+
+    def generate_response(self, system_prompt: str, messages: List[Dict[str, str]]) -> str:
+        if not self.client:
+            raise ValueError("OpenRouter API key not set")
+        
+        full_messages = [{"role": "system", "content": system_prompt}] + messages
+        
+        response = self.client.chat.completions.create(
+            model="google/gemini-2.5-flash",
+            messages=full_messages,
+            max_tokens=1024,
+            timeout=15.0
+        )
+        return response.choices[0].message.content

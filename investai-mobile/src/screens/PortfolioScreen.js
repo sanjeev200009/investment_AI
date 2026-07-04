@@ -1,9 +1,11 @@
 import TouchableTick from '../components/TouchableTick';
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar } from 'react-native';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar, ActivityIndicator, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
+import { useAuth, useUser } from '@clerk/clerk-expo';
+import axios from 'axios';
 
 const colors = {
   background: '#faf9fc',
@@ -28,35 +30,158 @@ const colors = {
 
 export default function PortfolioScreen({ navigation }) {
   const { user } = useAuthStore();
+  const { getToken } = useAuth();
+  const { user: clerkUser } = useUser();
   
-  const [portfolioValue, setPortfolioValue] = useState(11000);
+  const [portfolios, setPortfolios] = useState([]);
+  const [holdings, setHoldings] = useState([]);
+  const [marketData, setMarketData] = useState({});
+  const [loading, setLoading] = useState(true);
 
-  // Count up animation
-  useEffect(() => {
-    let finalValue = 12480.50;
-    let startValue = finalValue * 0.9;
-    const duration = 1000;
-    let startTime = null;
-    let animationFrame;
+  // Modal State
+  const [isAddModalVisible, setAddModalVisible] = useState(false);
+  const [addSymbol, setAddSymbol] = useState('');
+  const [addQuantity, setAddQuantity] = useState('');
+  const [addPrice, setAddPrice] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const updateCount = (currentTime) => {
-      if (!startTime) startTime = currentTime;
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
+  const fetchData = useCallback(async () => {
+    try {
+      const token = await getToken();
+      const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
       
-      const easeProgress = progress * (2 - progress); // ease out quad
-      const currentVal = startValue + ((finalValue - startValue) * easeProgress);
+      const portRes = await axios.get(`${baseUrl}/portfolio`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       
-      setPortfolioValue(currentVal);
-
-      if (progress < 1) {
-        animationFrame = requestAnimationFrame(updateCount);
+      const marketRes = await axios.get(`${baseUrl}/stocks/market?limit=200`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      setPortfolios(portRes.data || []);
+      let allHoldings = [];
+      if (portRes.data && portRes.data.length > 0) {
+        portRes.data.forEach(p => {
+           allHoldings = [...allHoldings, ...p.holdings];
+        });
       }
+      setHoldings(allHoldings);
+      
+      const marketMap = {};
+      marketRes.data.forEach(stock => {
+         marketMap[stock.symbol] = stock;
+      });
+      setMarketData(marketMap);
+    } catch (err) {
+      console.error("Failed to fetch portfolio data", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [getToken]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleAddSubmit = async () => {
+    if(!addSymbol || !addQuantity || !addPrice) return;
+    setIsSubmitting(true);
+    try {
+        const token = await getToken();
+        const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+        let pId = portfolios?.[0]?.portfolio_id;
+        
+        if (!pId) {
+            const createRes = await axios.post(`${baseUrl}/portfolio/`, { name: 'My Primary Portfolio' }, { headers: { Authorization: `Bearer ${token}` }});
+            pId = createRes.data.portfolio_id;
+        }
+        
+        await axios.post(`${baseUrl}/portfolio/${pId}/holdings`, {
+            symbol: addSymbol.toUpperCase(),
+            quantity: Number(addQuantity),
+            avg_buy_price: Number(addPrice)
+        }, { headers: { Authorization: `Bearer ${token}` }});
+        
+        setAddModalVisible(false);
+        setAddSymbol('');
+        setAddQuantity('');
+        setAddPrice('');
+        fetchData();
+    } catch(err) {
+        console.error("Failed to add holding", err);
+    } finally {
+        setIsSubmitting(false);
+    }
+  };
+
+  const stats = useMemo(() => {
+    let totalValue = 0;
+    let totalCost = 0;
+    
+    const sectors = { 'Finance': 0, 'Manufacturing': 0, 'Capital Goods': 0, 'Energy': 0, 'Healthcare': 0, 'Other': 0 };
+    const financeMap = ['SAMP', 'HNB', 'COMB', 'SEYB', 'NDB', 'NTB', 'PABC', 'DFCC'];
+    const mfgMap = ['EXPO', 'RCL', 'TKYO', 'ACL', 'LWL', 'GLAS', 'TJL'];
+    const capMap = ['JKH', 'HAYL', 'SPEN', 'AEL', 'RICH', 'HEMS'];
+    const nrgMap = ['LIOC', 'LAUG', 'LGL', 'WIND'];
+    const hltMap = ['ASIR', 'NHL', 'CHL', 'AMSL'];
+
+    const getSector = (sym) => {
+      if (financeMap.some(f => sym.startsWith(f))) return 'Finance';
+      if (mfgMap.some(m => sym.startsWith(m))) return 'Manufacturing';
+      if (capMap.some(c => sym.startsWith(c))) return 'Capital Goods';
+      if (nrgMap.some(e => sym.startsWith(e))) return 'Energy';
+      if (hltMap.some(h => sym.startsWith(h))) return 'Healthcare';
+      return 'Other';
     };
     
-    animationFrame = requestAnimationFrame(updateCount);
-    return () => cancelAnimationFrame(animationFrame);
-  }, []);
+    const enrichedHoldings = holdings.map(h => {
+       const market = marketData[h.symbol] || { price: h.avg_buy_price, change_pct: 0, name: h.symbol };
+       const currentPrice = market.price || h.avg_buy_price;
+       const val = currentPrice * h.quantity;
+       const cost = h.avg_buy_price * h.quantity;
+       
+       totalValue += val;
+       totalCost += cost;
+       
+       const sector = getSector(h.symbol);
+       sectors[sector] += val;
+       
+       return {
+          ...h,
+          currentPrice,
+          marketChange: market.change_pct || 0,
+          name: market.name || h.symbol,
+          currentValue: val,
+          pnl: val - cost,
+          pnlPct: cost > 0 ? ((val - cost) / cost) * 100 : 0
+       };
+    });
+    
+    const totalPnl = totalValue - totalCost;
+    const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
+    
+    enrichedHoldings.sort((a,b) => b.currentValue - a.currentValue);
+    
+    const sectorAllocations = [];
+    Object.keys(sectors).forEach(sec => {
+       if (sectors[sec] > 0) {
+          sectorAllocations.push({
+             name: sec,
+             val: sectors[sec],
+             pct: (sectors[sec] / totalValue) * 100
+          });
+       }
+    });
+    sectorAllocations.sort((a,b) => b.pct - a.pct);
+    
+    return {
+       totalValue,
+       totalPnl,
+       totalPnlPct,
+       enrichedHoldings,
+       sectorAllocations
+    };
+  }, [holdings, marketData]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -67,7 +192,7 @@ export default function PortfolioScreen({ navigation }) {
         <View style={styles.headerLeft}>
           <View style={styles.avatarContainer}>
             <Image
-              source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBNFzfNPRrxUCxZZJXRl6ffGYJNVX9PuaZj-11SJfvMior8-ccm0w2YpZzni5gi9FLcP8razcqFuKpItl4C7V7RPNajZ4s4Z_MR6ZTii8bm0_Ysf5pR7308AdNtG78DaJFNeLulSabW2p1PaK1R3ctAtN9YPYMZYMlbV55WXy8wIFSZ3Pf2vjfYk3lVdwqJIriy5gtft6VN4xZkMfoUHaMlzTmbp9DCj2NmxDH7g_1NgxzJ5z6aQzkDWdBmSfP5Kg-ITOZtUEzrMhM' }}
+              source={{ uri: clerkUser?.imageUrl || "https://ui-avatars.com/api/?name=User&background=random" }}
               style={styles.avatar}
             />
           </View>
@@ -86,9 +211,9 @@ export default function PortfolioScreen({ navigation }) {
             <Text style={styles.pageTitle}>My Portfolio</Text>
             <Text style={styles.pageSubtitle}>Real-time performance tracking</Text>
           </View>
-          <TouchableTick style={styles.depositBtn}>
+          <TouchableTick style={styles.depositBtn} onPress={() => setAddModalVisible(true)}>
             <MaterialIcons name="add" size={18} color={colors.onPrimary} />
-            <Text style={styles.depositBtnText}>Deposit</Text>
+            <Text style={styles.depositBtnText}>Add Asset</Text>
           </TouchableTick>
         </View>
 
@@ -101,14 +226,18 @@ export default function PortfolioScreen({ navigation }) {
             </View>
           </View>
           
-          <Text style={styles.portfolioValue}>{portfolioValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</Text>
+          <Text style={styles.portfolioValue}>{stats.totalValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</Text>
           
           <View style={styles.plRow}>
-            <View style={styles.plBadge}>
-              <MaterialIcons name="trending-up" size={16} color={colors.success} />
-              <Text style={styles.plBadgeText}>+4.2%</Text>
+            <View style={[styles.plBadge, { backgroundColor: stats.totalPnl >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)' }]}>
+              <MaterialIcons name={stats.totalPnl >= 0 ? "trending-up" : "trending-down"} size={16} color={stats.totalPnl >= 0 ? colors.success : colors.error} />
+              <Text style={[styles.plBadgeText, { color: stats.totalPnl >= 0 ? colors.success : colors.error }]}>
+                {stats.totalPnl >= 0 ? '+' : ''}{stats.totalPnlPct.toFixed(2)}%
+              </Text>
             </View>
-            <Text style={styles.plText}>Today's P&L: +LKR 524.18</Text>
+            <Text style={styles.plText}>
+              All time P&L: {stats.totalPnl >= 0 ? '+' : ''}LKR {stats.totalPnl.toFixed(2)}
+            </Text>
           </View>
         </View>
 
@@ -131,126 +260,133 @@ export default function PortfolioScreen({ navigation }) {
         <View style={styles.card}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Top Holdings</Text>
-            <TouchableTick style={styles.seeAllBtn}>
-              <Text style={styles.seeAllText}>See all</Text>
-              <MaterialIcons name="chevron-right" size={18} color={colors.onSurfaceVariant} />
-            </TouchableTick>
+            {stats.enrichedHoldings.length > 3 && (
+              <TouchableTick style={styles.seeAllBtn}>
+                <Text style={styles.seeAllText}>See all</Text>
+                <MaterialIcons name="chevron-right" size={18} color={colors.onSurfaceVariant} />
+              </TouchableTick>
+            )}
           </View>
 
           <View style={styles.holdingsList}>
-            {/* Item 1 */}
-            <TouchableTick style={styles.holdingItem}>
-              <View style={styles.holdingItemLeft}>
-                <View style={styles.holdingIconBox}>
-                  <Text style={styles.holdingIconText}>AAPL</Text>
+            {loading ? (
+               <ActivityIndicator size="small" color={colors.primary} />
+            ) : stats.enrichedHoldings.length === 0 ? (
+               <Text style={{color: colors.onSurfaceVariant, textAlign: 'center'}}>No holdings in your portfolio.</Text>
+            ) : stats.enrichedHoldings.slice(0, 3).map((item, idx) => (
+              <TouchableTick key={idx} style={styles.holdingItem}>
+                <View style={styles.holdingItemLeft}>
+                  <View style={[styles.holdingIconBox, { backgroundColor: item.marketChange >= 0 ? '#E8F5E9' : '#FCE4EC' }]}>
+                    <Text style={[styles.holdingIconText, { color: item.marketChange >= 0 ? '#2E7D32' : '#C2185B' }]}>
+                      {item.symbol.charAt(0)}
+                    </Text>
+                  </View>
+                  <View>
+                    <Text style={styles.holdingName}>{item.symbol}</Text>
+                    <Text style={styles.holdingShares}>{item.quantity} Shares</Text>
+                  </View>
                 </View>
-                <View>
-                  <Text style={styles.holdingName}>Apple Inc.</Text>
-                  <Text style={styles.holdingShares}>14.5 Shares</Text>
+                <View style={styles.holdingItemRight}>
+                  <Text style={styles.holdingPrice}>LKR {item.currentPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</Text>
+                  <View style={styles.holdingChangeRow}>
+                    <MaterialIcons name={item.pnlPct >= 0 ? "arrow-drop-up" : "arrow-drop-down"} size={18} color={item.pnlPct >= 0 ? colors.success : colors.error} />
+                    <Text style={[styles.holdingChangeText, { color: item.pnlPct >= 0 ? colors.success : colors.error }]}>
+                      {item.pnlPct > 0 ? '+' : ''}{item.pnlPct.toFixed(1)}%
+                    </Text>
+                  </View>
                 </View>
-              </View>
-              <View style={styles.holdingItemRight}>
-                <Text style={styles.holdingPrice}>LKR 4,250.00</Text>
-                <View style={styles.holdingChangeRow}>
-                  <MaterialIcons name="arrow-drop-up" size={18} color={colors.success} />
-                  <Text style={[styles.holdingChangeText, { color: colors.success }]}>+1.2%</Text>
-                </View>
-              </View>
-            </TouchableTick>
-
-            {/* Item 2 */}
-            <TouchableTick style={styles.holdingItem}>
-              <View style={styles.holdingItemLeft}>
-                <View style={styles.holdingIconBox}>
-                  <Text style={styles.holdingIconText}>MSFT</Text>
-                </View>
-                <View>
-                  <Text style={styles.holdingName}>Microsoft Corp.</Text>
-                  <Text style={styles.holdingShares}>8.2 Shares</Text>
-                </View>
-              </View>
-              <View style={styles.holdingItemRight}>
-                <Text style={styles.holdingPrice}>LKR 3,120.40</Text>
-                <View style={styles.holdingChangeRow}>
-                  <MaterialIcons name="arrow-drop-up" size={18} color={colors.success} />
-                  <Text style={[styles.holdingChangeText, { color: colors.success }]}>+0.8%</Text>
-                </View>
-              </View>
-            </TouchableTick>
-
-            {/* Item 3 */}
-            <TouchableTick style={styles.holdingItem}>
-              <View style={styles.holdingItemLeft}>
-                <View style={styles.holdingIconBox}>
-                  <Text style={styles.holdingIconText}>JNJ</Text>
-                </View>
-                <View>
-                  <Text style={styles.holdingName}>Johnson & Johnson</Text>
-                  <Text style={styles.holdingShares}>22.0 Shares</Text>
-                </View>
-              </View>
-              <View style={styles.holdingItemRight}>
-                <Text style={styles.holdingPrice}>LKR 2,450.10</Text>
-                <View style={styles.holdingChangeRow}>
-                  <MaterialIcons name="arrow-drop-down" size={18} color={colors.error} />
-                  <Text style={[styles.holdingChangeText, { color: colors.error }]}>-0.4%</Text>
-                </View>
-              </View>
-            </TouchableTick>
+              </TouchableTick>
+            ))}
           </View>
         </View>
 
         {/* Sector Allocation Card */}
-        <View style={[styles.card, { marginBottom: 30 }]}>
-          <Text style={styles.sectionTitle}>Sector Allocation</Text>
-          
-          <View style={styles.donutContainer}>
-            {/* Minimal CSS representation of conic-gradient via borders */}
-            <View style={[styles.donutRing, { borderTopColor: '#1c3d5a', borderRightColor: '#dae3f5', borderBottomColor: '#89a8ca', borderLeftColor: '#e1e2e4' }]}>
-               <View style={styles.donutInner}>
-                  <Text style={styles.donutCenterLabel}>Tech</Text>
-                  <Text style={styles.donutCenterValue}>45%</Text>
-               </View>
+        {stats.sectorAllocations.length > 0 && (
+          <View style={[styles.card, { marginBottom: 30 }]}>
+            <Text style={styles.sectionTitle}>Sector Allocation</Text>
+            
+            <View style={styles.donutContainer}>
+              <View style={[styles.donutRing, { borderTopColor: '#1c3d5a', borderRightColor: '#dae3f5', borderBottomColor: '#89a8ca', borderLeftColor: '#e1e2e4' }]}>
+                 <View style={styles.donutInner}>
+                    <Text style={styles.donutCenterLabel}>{stats.sectorAllocations[0].name}</Text>
+                    <Text style={styles.donutCenterValue}>{stats.sectorAllocations[0].pct.toFixed(0)}%</Text>
+                 </View>
+              </View>
+            </View>
+
+            <View style={styles.legendContainer}>
+              {stats.sectorAllocations.map((sec, idx) => (
+                <View key={idx} style={styles.legendRow}>
+                  <View style={styles.legendLeft}>
+                    <View style={[styles.legendDot, { backgroundColor: ['#1c3d5a', '#dae3f5', '#89a8ca', '#e1e2e4', '#F5A623', '#ba1a1a'][idx % 6] }]} />
+                    <Text style={styles.legendText}>{sec.name}</Text>
+                  </View>
+                  <Text style={styles.legendValue}>{sec.pct.toFixed(0)}%</Text>
+                </View>
+              ))}
             </View>
           </View>
-
-          <View style={styles.legendContainer}>
-            <View style={styles.legendRow}>
-              <View style={styles.legendLeft}>
-                <View style={[styles.legendDot, { backgroundColor: '#1c3d5a' }]} />
-                <Text style={styles.legendText}>Technology</Text>
-              </View>
-              <Text style={styles.legendValue}>45%</Text>
-            </View>
-
-            <View style={styles.legendRow}>
-              <View style={styles.legendLeft}>
-                <View style={[styles.legendDot, { backgroundColor: '#dae3f5' }]} />
-                <Text style={styles.legendText}>Finance</Text>
-              </View>
-              <Text style={styles.legendValue}>30%</Text>
-            </View>
-
-            <View style={styles.legendRow}>
-              <View style={styles.legendLeft}>
-                <View style={[styles.legendDot, { backgroundColor: '#89a8ca' }]} />
-                <Text style={styles.legendText}>Healthcare</Text>
-              </View>
-              <Text style={styles.legendValue}>15%</Text>
-            </View>
-
-            <View style={styles.legendRow}>
-              <View style={styles.legendLeft}>
-                <View style={[styles.legendDot, { backgroundColor: '#e1e2e4' }]} />
-                <Text style={styles.legendText}>Consumer</Text>
-              </View>
-              <Text style={styles.legendValue}>10%</Text>
-            </View>
-          </View>
-
-        </View>
+        )}
 
       </ScrollView>
+
+      <Modal visible={isAddModalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Holding</Text>
+              <TouchableTick onPress={() => setAddModalVisible(false)}>
+                <MaterialIcons name="close" size={24} color={colors.onSurfaceVariant} />
+              </TouchableTick>
+            </View>
+            
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Symbol (e.g. JKH)</Text>
+              <TextInput
+                style={styles.textInput}
+                value={addSymbol}
+                onChangeText={setAddSymbol}
+                placeholder="Enter stock symbol"
+                autoCapitalize="characters"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Quantity</Text>
+              <TextInput
+                style={styles.textInput}
+                value={addQuantity}
+                onChangeText={setAddQuantity}
+                placeholder="Number of shares"
+                keyboardType="numeric"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Average Buy Price (LKR)</Text>
+              <TextInput
+                style={styles.textInput}
+                value={addPrice}
+                onChangeText={setAddPrice}
+                placeholder="e.g. 150.00"
+                keyboardType="numeric"
+              />
+            </View>
+
+            <TouchableTick 
+              style={[styles.saveBtn, { opacity: isSubmitting ? 0.7 : 1 }]} 
+              onPress={handleAddSubmit}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.saveBtnText}>Save Holding</Text>
+              )}
+            </TouchableTick>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -527,7 +663,61 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: 2,
+    gap: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontFamily: 'Satoshi-Bold',
+    color: colors.onSurface,
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Medium',
+    color: colors.onSurfaceVariant,
+    marginBottom: 8,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    fontFamily: 'Satoshi-Regular',
+    backgroundColor: colors.surfaceLowest,
+  },
+  saveBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+  saveBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontFamily: 'Satoshi-Bold',
   },
   holdingChangeText: {
     fontSize: 12,

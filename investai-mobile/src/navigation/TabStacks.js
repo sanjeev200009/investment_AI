@@ -4,6 +4,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 
 import HomeScreen from '../screens/HomeScreen';
 import StockBrowseScreen from '../screens/StockBrowseScreen';
+import AllTopMoversScreen from '../screens/AllTopMoversScreen';
 import PortfolioScreen from '../screens/PortfolioScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
@@ -34,6 +35,7 @@ export const MarketsStack = () => (
         <Stack.Screen name="MarketsMain" component={StockBrowseScreen} />
         <Stack.Screen name="StockDetail" component={StockDetailScreen} />
         <Stack.Screen name="Watchlist" component={WatchlistScreen} />
+        <Stack.Screen name="AllTopMovers" component={AllTopMoversScreen} />
     </Stack.Navigator>
 );
 

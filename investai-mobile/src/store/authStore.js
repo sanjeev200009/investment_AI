@@ -11,6 +11,7 @@ export const useAuthStore = create((set) => ({
     isEducationEnabled: false,
     hasCompletedAssessment: false,
     userAssessment: null,
+    hasCompletedProfileSetup: false,
 
     login: async (token, user) => {
         await AsyncStorage.setItem('token', token);
@@ -76,8 +77,25 @@ export const useAuthStore = create((set) => ({
         set({ hasCompletedAssessment: completed });
     },
     setAssessmentResults: async (results) => {
+        try {
+            await authApi.updateRiskProfile(results);
+        } catch (err) {
+            console.warn("Failed to sync risk profile to backend:", err);
+        }
         await AsyncStorage.setItem('assessment_completed', 'true');
         await AsyncStorage.setItem('user_assessment', JSON.stringify(results));
         set({ userAssessment: results, hasCompletedAssessment: true });
+    },
+
+    checkProfileSetup: async (userId) => {
+        if (!userId) return;
+        const done = await AsyncStorage.getItem(`profile_setup_done_${userId}`);
+        set({ hasCompletedProfileSetup: done === 'true' });
+    },
+
+    setProfileSetupDone: async (userId) => {
+        if (!userId) return;
+        await AsyncStorage.setItem(`profile_setup_done_${userId}`, 'true');
+        set({ hasCompletedProfileSetup: true });
     },
 }));

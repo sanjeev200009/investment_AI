@@ -33,6 +33,7 @@ import { authApi } from '../../api/authApi';
 import { validateEmail, validatePassword, validateFullName, validateConfirmPassword } from '../../utils/validation';
 import { useSignUp, useOAuth } from '@clerk/clerk-expo';
 import * as WebBrowser from 'expo-web-browser';
+import { useWarmUpBrowser } from '../../hooks/useWarmUpBrowser';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -40,6 +41,7 @@ const { width, height } = Dimensions.get('window');
 
 const RegisterScreen = ({ navigation }) => {
   const theme = useAppTheme();
+  useWarmUpBrowser();
   const { isLoaded, signUp, setActive } = useSignUp();
   const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
 

@@ -1,7 +1,7 @@
 // src/navigation/TabNavigator.js
 import React, { useEffect, useRef } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { View, Text, StyleSheet, Platform, Animated } from 'react-native';
 import { useAppTheme } from '../hooks/useAppTheme';
 
@@ -27,7 +27,7 @@ const AnimatedTabItem = ({ focused, routeName, theme }) => {
             <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: -24 }}>
                 <View style={[styles.aiButtonContainer, { borderColor: theme.colors.background }]}>
                     <View style={[styles.aiButton, { backgroundColor: theme.colors.primary }]}>
-                        <MaterialIcons name='smart-toy' size={28} color="#FFFFFF" />
+                        <Ionicons name='sparkles' size={24} color="#FFFFFF" />
                     </View>
                 </View>
                 <Text style={{ fontSize: 11, fontFamily: 'Satoshi-Bold', color: theme.colors.textSecondary, marginTop: 4 }}>AI</Text>
@@ -36,10 +36,10 @@ const AnimatedTabItem = ({ focused, routeName, theme }) => {
     }
 
     const icons = {
-        Home: 'home',
-        Markets: 'explore',
-        Portfolio: 'pie-chart',
-        Alerts: 'notifications',
+        Home: focused ? 'home' : 'home-outline',
+        Markets: focused ? 'compass' : 'compass-outline',
+        Portfolio: focused ? 'pie-chart' : 'pie-chart-outline',
+        Alerts: focused ? 'notifications' : 'notifications-outline',
     };
     
     const labels = {
@@ -64,23 +64,29 @@ const AnimatedTabItem = ({ focused, routeName, theme }) => {
     });
 
     return (
-        <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 6, paddingHorizontal: 16 }}>
-            <Animated.View style={[StyleSheet.absoluteFillObject, { 
-                backgroundColor: '#cfe5ff', // Slight blue color
-                borderRadius: 12, 
-                opacity,
-                transform: [{ scale }],
-                zIndex: 0
-            }]} />
+        <View style={{ alignItems: 'center', justifyContent: 'center', height: 52, width: 68 }}>
+            {focused && (
+                <Animated.View style={{ 
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: theme.isDark ? 'rgba(25, 118, 210, 0.2)' : '#cfe5ff', 
+                    borderRadius: 12, 
+                    opacity,
+                    transform: [{ scale }],
+                }} />
+            )}
             
-            <View style={{ alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
-                <MaterialIcons name={iconName} size={24} color={color} />
+            <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name={iconName} size={24} color={color} />
                 <Text style={{ 
-                    fontSize: 11, 
+                    fontSize: 12, 
                     fontFamily: focused ? 'Satoshi-Bold' : 'Satoshi-Medium', 
                     color: color, 
-                    marginTop: 2 
-                }}>
+                    marginTop: 4 
+                }} numberOfLines={1}>
                     {label}
                 </Text>
             </View>
@@ -96,11 +102,11 @@ export default function TabNavigator() {
             screenOptions={({ route }) => ({
                 tabBarShowLabel: false,
                 tabBarStyle: {
-                    height: Platform.OS === 'ios' ? 88 : 68,
+                    height: Platform.OS === 'ios' ? 88 : 74,
                     backgroundColor: theme.colors.background,
                     borderTopColor: theme.colors.divider,
                     borderTopWidth: 1,
-                    paddingBottom: Platform.OS === 'ios' ? 30 : 8,
+                    paddingBottom: Platform.OS === 'ios' ? 30 : 12,
                     paddingTop: 8,
                     // Modern subtle shadow for the tab bar
                     ...Platform.select({

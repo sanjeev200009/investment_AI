@@ -1,6 +1,6 @@
 import TouchableTick from '../components/TouchableTick';
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar, TextInput, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '@clerk/clerk-expo';
@@ -33,6 +33,10 @@ const colors = {
 export default function StockBrowseScreen({ navigation }) {
   const [stocks, setStocks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeChip, setActiveChip] = useState('All Sectors');
+  const [sortModalVisible, setSortModalVisible] = useState(false);
+  const [sortOption, setSortOption] = useState('none');
   const { getToken } = useAuth();
 
   useEffect(() => {
@@ -40,7 +44,7 @@ export default function StockBrowseScreen({ navigation }) {
       try {
         const token = await getToken();
         const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-        const res = await axios.get(`${baseUrl}/stocks/market?limit=10`, {
+        const res = await axios.get(`${baseUrl}/stocks/market?limit=100`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStocks(res.data);
@@ -58,6 +62,49 @@ export default function StockBrowseScreen({ navigation }) {
     }
     fetchStocks();
   }, []);
+
+  const filteredStocks = React.useMemo(() => {
+    let result = [...stocks];
+    
+    if (activeChip !== 'All Sectors') {
+      if (activeChip === 'Finance') {
+        const finance = ['SAMP', 'HNB', 'COMB', 'SEYB', 'NDB', 'NTB', 'PABC', 'DFCC'];
+        result = result.filter(s => finance.some(f => s.symbol.startsWith(f)));
+      } else if (activeChip === 'Manufacturing') {
+        const mfg = ['EXPO', 'RCL', 'TKYO', 'ACL', 'LWL', 'GLAS', 'TJL'];
+        result = result.filter(s => mfg.some(m => s.symbol.startsWith(m)));
+      } else if (activeChip === 'Capital Goods') {
+        const capital = ['JKH', 'HAYL', 'SPEN', 'AEL', 'RICH', 'HEMS'];
+        result = result.filter(s => capital.some(c => s.symbol.startsWith(c)));
+      } else if (activeChip === 'Energy') {
+        const energy = ['LIOC', 'LAUG', 'LGL', 'WIND'];
+        result = result.filter(s => energy.some(e => s.symbol.startsWith(e)));
+      } else if (activeChip === 'Healthcare') {
+        const health = ['ASIR', 'NHL', 'CHL', 'AMSL'];
+        result = result.filter(s => health.some(h => s.symbol.startsWith(h)));
+      }
+    }
+
+    if (searchQuery.trim().length > 0) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(s => 
+        s.symbol.toLowerCase().includes(q) || 
+        (s.name && s.name.toLowerCase().includes(q))
+      );
+    }
+    
+    if (sortOption === 'gainers') {
+      result.sort((a, b) => b.change_pct - a.change_pct);
+    } else if (sortOption === 'losers') {
+      result.sort((a, b) => a.change_pct - b.change_pct);
+    } else if (sortOption === 'priceHigh') {
+      result.sort((a, b) => b.price - a.price);
+    } else if (sortOption === 'priceLow') {
+      result.sort((a, b) => a.price - b.price);
+    }
+    
+    return result;
+  }, [stocks, searchQuery, activeChip, sortOption]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -98,30 +145,28 @@ export default function StockBrowseScreen({ navigation }) {
               style={styles.searchInput}
               placeholder="Search stocks, ETFs, or sectors..."
               placeholderTextColor={colors.onSurfaceVariant}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
             />
           </View>
-          <TouchableTick style={styles.tuneBtn}>
+          <TouchableTick style={styles.tuneBtn} onPress={() => setSortModalVisible(true)}>
             <MaterialIcons name="tune" size={24} color={colors.onSurface} />
           </TouchableTick>
         </View>
 
         {/* Chips */}
         <ScrollView style={{ marginTop: 36 }} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
-          <TouchableTick style={[styles.chip, styles.chipActive]}>
-            <Text style={[styles.chipText, styles.chipTextActive]}>All Sectors</Text>
-          </TouchableTick>
-          <TouchableTick style={[styles.chip, styles.chipInactive]}>
-            <Text style={[styles.chipText, styles.chipTextInactive]}>Technology</Text>
-          </TouchableTick>
-          <TouchableTick style={[styles.chip, styles.chipInactive]}>
-            <Text style={[styles.chipText, styles.chipTextInactive]}>Healthcare</Text>
-          </TouchableTick>
-          <TouchableTick style={[styles.chip, styles.chipInactive]}>
-            <Text style={[styles.chipText, styles.chipTextInactive]}>Energy</Text>
-          </TouchableTick>
-          <TouchableTick style={[styles.chip, styles.chipInactive]}>
-            <Text style={[styles.chipText, styles.chipTextInactive]}>Finance</Text>
-          </TouchableTick>
+          {['All Sectors', 'Finance', 'Manufacturing', 'Capital Goods', 'Energy', 'Healthcare'].map(chip => (
+            <TouchableTick 
+              key={chip}
+              style={[styles.chip, activeChip === chip ? styles.chipActive : styles.chipInactive]}
+              onPress={() => setActiveChip(chip)}
+            >
+              <Text style={[styles.chipText, activeChip === chip ? styles.chipTextActive : styles.chipTextInactive]}>
+                {chip}
+              </Text>
+            </TouchableTick>
+          ))}
         </ScrollView>
 
         {/* AI Insight Card */}
@@ -142,7 +187,7 @@ export default function StockBrowseScreen({ navigation }) {
         {/* Top Movers */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Top Movers</Text>
-          <TouchableTick>
+          <TouchableTick onPress={() => navigation.navigate('AllTopMovers')}>
             <Text style={styles.seeAllText}>See All</Text>
           </TouchableTick>
         </View>
@@ -150,7 +195,9 @@ export default function StockBrowseScreen({ navigation }) {
         <View style={styles.listContainer}>
           {loading ? (
             <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
-          ) : stocks.map((stock, idx) => (
+          ) : filteredStocks.length === 0 ? (
+            <Text style={{ textAlign: 'center', marginTop: 20, color: colors.onSurfaceVariant }}>No stocks found.</Text>
+          ) : filteredStocks.slice(0, 10).map((stock, idx) => (
             <TouchableTick 
               key={idx}
               style={styles.listItem}
@@ -181,6 +228,44 @@ export default function StockBrowseScreen({ navigation }) {
         </View>
 
       </ScrollView>
+
+      {/* Sort Modal */}
+      <Modal visible={sortModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Sort By</Text>
+            
+            <TouchableTick style={styles.sortOption} onPress={() => { setSortOption('none'); setSortModalVisible(false); }}>
+              <Text style={[styles.sortOptionText, sortOption === 'none' && styles.sortOptionTextActive]}>Default (None)</Text>
+              {sortOption === 'none' && <MaterialIcons name="check" size={20} color={colors.primary} />}
+            </TouchableTick>
+            
+            <TouchableTick style={styles.sortOption} onPress={() => { setSortOption('gainers'); setSortModalVisible(false); }}>
+              <Text style={[styles.sortOptionText, sortOption === 'gainers' && styles.sortOptionTextActive]}>Top Gainers</Text>
+              {sortOption === 'gainers' && <MaterialIcons name="check" size={20} color={colors.primary} />}
+            </TouchableTick>
+            
+            <TouchableTick style={styles.sortOption} onPress={() => { setSortOption('losers'); setSortModalVisible(false); }}>
+              <Text style={[styles.sortOptionText, sortOption === 'losers' && styles.sortOptionTextActive]}>Top Losers</Text>
+              {sortOption === 'losers' && <MaterialIcons name="check" size={20} color={colors.primary} />}
+            </TouchableTick>
+            
+            <TouchableTick style={styles.sortOption} onPress={() => { setSortOption('priceHigh'); setSortModalVisible(false); }}>
+              <Text style={[styles.sortOptionText, sortOption === 'priceHigh' && styles.sortOptionTextActive]}>Price (High to Low)</Text>
+              {sortOption === 'priceHigh' && <MaterialIcons name="check" size={20} color={colors.primary} />}
+            </TouchableTick>
+            
+            <TouchableTick style={styles.sortOption} onPress={() => { setSortOption('priceLow'); setSortModalVisible(false); }}>
+              <Text style={[styles.sortOptionText, sortOption === 'priceLow' && styles.sortOptionTextActive]}>Price (Low to High)</Text>
+              {sortOption === 'priceLow' && <MaterialIcons name="check" size={20} color={colors.primary} />}
+            </TouchableTick>
+
+            <TouchableTick style={styles.modalCloseBtn} onPress={() => setSortModalVisible(false)}>
+              <Text style={styles.modalCloseBtnText}>Close</Text>
+            </TouchableTick>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -456,7 +541,53 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   itemChangeText: {
-    fontSize: 12,
-    fontFamily: 'Satoshi-Bold',
-  }
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.onSurface,
+    marginBottom: 16,
+  },
+  sortOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surfaceHigh,
+  },
+  sortOptionText: {
+    fontSize: 16,
+    color: colors.onSurfaceVariant,
+  },
+  sortOptionTextActive: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  modalCloseBtn: {
+    marginTop: 24,
+    backgroundColor: colors.surfaceVariant,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalCloseBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
 });

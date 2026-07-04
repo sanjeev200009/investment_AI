@@ -1,14 +1,18 @@
 import TouchableTick from '../components/TouchableTick';
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, SafeAreaView, Switch, Platform, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, SafeAreaView, Switch, Platform, StatusBar, Modal, TextInput, ActivityIndicator } from 'react-native';
 import { useAppTheme } from '../hooks/useAppTheme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import AppHeader from '../components/AppHeader';
+import { useAuth, useUser } from '@clerk/clerk-expo';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function ProfileScreen({ navigation }) {
     const theme = useAppTheme();
     const { user, logout, isEducationEnabled, setEducationEnabled } = useAuthStore();
+    const { signOut } = useAuth();
+    const { user: clerkUser } = useUser();
     const isDark = theme.isDark;
 
     // Adaptive colors based on theme.tokens
@@ -29,9 +33,60 @@ export default function ProfileScreen({ navigation }) {
     });
 
     const [biometric, setBiometric] = useState(true);
+    
+    // Profile Editing State
+    const [editModalVisible, setEditModalVisible] = useState(false);
+    const [firstName, setFirstName] = useState(clerkUser?.firstName || '');
+    const [lastName, setLastName] = useState(clerkUser?.lastName || '');
+    const [isSaving, setIsSaving] = useState(false);
+    const [isUploadingImage, setIsUploadingImage] = useState(false);
 
     const handleLogout = async () => {
-        await logout();
+        await logout();   // clear Zustand store + AsyncStorage
+        await signOut();  // end the Clerk session → triggers <SignedOut> → redirects to auth
+    };
+
+    const pickImage = async () => {
+        try {
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.5,
+                base64: true,
+            });
+
+            if (!result.canceled && result.assets[0].base64) {
+                setIsUploadingImage(true);
+                const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
+                await clerkUser?.setProfileImage({ file: base64Image });
+            }
+        } catch (error) {
+            console.error("Error uploading image:", error);
+        } finally {
+            setIsUploadingImage(false);
+        }
+    };
+
+    const saveProfile = async () => {
+        try {
+            setIsSaving(true);
+            await clerkUser?.update({
+                firstName,
+                lastName
+            });
+            setEditModalVisible(false);
+        } catch (error) {
+            console.error("Error updating profile:", error);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const openEditModal = () => {
+        setFirstName(clerkUser?.firstName || '');
+        setLastName(clerkUser?.lastName || '');
+        setEditModalVisible(true);
     };
 
     const renderSettingItem = ({ icon, label, rightElement, onPress, isLast }) => (
@@ -55,8 +110,8 @@ export default function ProfileScreen({ navigation }) {
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-            <AppHeader 
-                title="Profile & Settings" 
+            <AppHeader
+                title="Profile & Settings"
                 onBack={navigation.canGoBack() ? () => navigation.goBack() : null}
             />
 
@@ -64,16 +119,27 @@ export default function ProfileScreen({ navigation }) {
                 {/* User Profile Section */}
                 <View style={styles.profileSection}>
                     <View style={styles.avatarWrapper}>
-                        <Image
-                            source={{ uri: "https://lh3.googleusercontent.com/aida-public/AB6AXuChaExWtlG1lTmRTx_x_UZVPhWuAUabzgVGro4H_Iu2Ww0P44yoLgfSFUAeky0An7I5qPPXaM1m8fvxJeLnpGH3662-Nm3Sk3i3sQsQYx4EIf9S3Sk-PrH3Rd6hLEKFZlw8pFfvF_PkdS9mcwcQ0GHBHch3IogwaoPaP6e6NsWYgOZ_q1ul0ufLmw5e7FsCkxHb445rNQYc-KvbGcbhZ692oMs4oEzWXIb4JmBRiQMVVpKYTpFxlrR-1jjkQShPnYity1Rc510Mj68" }}
-                            style={[styles.avatar, { borderColor: isDark ? colors.border : '#FFFFFF' }]}
-                        />
-                        <TouchableTick style={[styles.cameraBtn, { backgroundColor: colors.primary, borderColor: isDark ? colors.background : '#FFFFFF' }]}>
+                        {isUploadingImage ? (
+                            <View style={[styles.avatar, { borderColor: isDark ? colors.border : '#FFFFFF', justifyContent: 'center', alignItems: 'center', backgroundColor: colors.surface }]}>
+                                <ActivityIndicator color={colors.primary} />
+                            </View>
+                        ) : (
+                            <Image
+                                source={{ uri: clerkUser?.imageUrl || "https://ui-avatars.com/api/?name=User&background=random" }}
+                                style={[styles.avatar, { borderColor: isDark ? colors.border : '#FFFFFF' }]}
+                            />
+                        )}
+                        <TouchableTick onPress={pickImage} style={[styles.cameraBtn, { backgroundColor: colors.primary, borderColor: isDark ? colors.background : '#FFFFFF' }]}>
                             <MaterialIcons name="photo-camera" size={18} color="#FFFFFF" />
                         </TouchableTick>
                     </View>
-                    <Text style={[styles.userName, { color: colors.textPrimary }]}>{user?.full_name || 'User'}</Text>
-                    <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{user?.email || 'email@example.com'}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={[styles.userName, { color: colors.textPrimary }]}>{clerkUser?.fullName || 'User'}</Text>
+                        <TouchableTick onPress={openEditModal} style={{ padding: 4 }}>
+                            <MaterialIcons name="edit" size={18} color={colors.primary} />
+                        </TouchableTick>
+                    </View>
+                    <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{clerkUser?.primaryEmailAddress?.emailAddress || 'email@example.com'}</Text>
                 </View>
 
                 {/* Preferences Section */}
@@ -178,6 +244,54 @@ export default function ProfileScreen({ navigation }) {
                     <Text style={[styles.versionText, { color: colors.textSecondary }]}>InvestAI v2.4.0 • Built for Smart Investing</Text>
                 </View>
             </ScrollView>
+
+            {/* Edit Profile Modal */}
+            <Modal visible={editModalVisible} animationType="slide" transparent={true}>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                        <View style={styles.modalHeader}>
+                            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Edit Profile</Text>
+                            <TouchableTick onPress={() => setEditModalVisible(false)} style={styles.closeModalBtn}>
+                                <MaterialIcons name="close" size={24} color={colors.textSecondary} />
+                            </TouchableTick>
+                        </View>
+                        
+                        <View style={styles.inputGroup}>
+                            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>First Name</Text>
+                            <TextInput
+                                style={[styles.textInput, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface }]}
+                                value={firstName}
+                                onChangeText={setFirstName}
+                                placeholder="Enter first name"
+                                placeholderTextColor={colors.textSecondary}
+                            />
+                        </View>
+
+                        <View style={styles.inputGroup}>
+                            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Last Name</Text>
+                            <TextInput
+                                style={[styles.textInput, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface }]}
+                                value={lastName}
+                                onChangeText={setLastName}
+                                placeholder="Enter last name"
+                                placeholderTextColor={colors.textSecondary}
+                            />
+                        </View>
+
+                        <TouchableTick 
+                            style={[styles.saveBtn, { backgroundColor: colors.primary, opacity: isSaving ? 0.7 : 1 }]} 
+                            onPress={saveProfile}
+                            disabled={isSaving}
+                        >
+                            {isSaving ? (
+                                <ActivityIndicator color="#FFFFFF" />
+                            ) : (
+                                <Text style={styles.saveBtnText}>Save Changes</Text>
+                            )}
+                        </TouchableTick>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -342,4 +456,57 @@ const styles = StyleSheet.create({
         fontSize: 12,
         marginTop: 16,
     },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    modalContent: {
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        borderWidth: 1,
+        borderBottomWidth: 0,
+        padding: 24,
+        paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 24,
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: '700',
+    },
+    closeModalBtn: {
+        padding: 4,
+    },
+    inputGroup: {
+        marginBottom: 16,
+    },
+    inputLabel: {
+        fontSize: 14,
+        fontWeight: '500',
+        marginBottom: 8,
+    },
+    textInput: {
+        borderWidth: 1,
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        fontSize: 16,
+    },
+    saveBtn: {
+        borderRadius: 12,
+        paddingVertical: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 16,
+    },
+    saveBtnText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '700',
+    }
 });

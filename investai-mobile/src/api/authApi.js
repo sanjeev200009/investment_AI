@@ -34,4 +34,8 @@ export const authApi = {
     const { data } = await api.get('/auth/me');
     return data;
   },
+  updateRiskProfile: async (results) => {
+    const { data } = await api.post('/me/risk-profile', results);
+    return data;
+  },
 };

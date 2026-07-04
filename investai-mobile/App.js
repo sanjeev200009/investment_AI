@@ -19,31 +19,13 @@ import {
   Roboto_800ExtraBold
 } from '@expo-google-fonts/roboto';
 import * as SplashScreenLib from 'expo-splash-screen';
+import { ClerkProvider, ClerkLoaded } from '@clerk/clerk-expo';
+import tokenCache from './src/utils/tokenCache';
 import AppNavigator from './src/navigation/AppNavigator';
 import { useAuthStore } from './src/store/authStore';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreenLib.preventAutoHideAsync();
-
-import { ClerkProvider, ClerkLoaded } from '@clerk/clerk-expo';
-import * as SecureStore from 'expo-secure-store';
-
-const tokenCache = {
-  async getToken(key) {
-    try {
-      return SecureStore.getItemAsync(key);
-    } catch (err) {
-      return null;
-    }
-  },
-  async saveToken(key, value) {
-    try {
-      return SecureStore.setItemAsync(key, value);
-    } catch (err) {
-      return;
-    }
-  },
-};
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 

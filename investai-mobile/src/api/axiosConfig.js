@@ -4,7 +4,7 @@ import axios from 'axios';
 
 const api = axios.create({
     baseURL: process.env.EXPO_PUBLIC_API_BASE_URL,
-    timeout: 15000,
+    timeout: 60000, // Increased to 60 seconds for AI endpoints
     headers: { 'Content-Type': 'application/json' },
 });
 

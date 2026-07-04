@@ -87,63 +87,31 @@ async def summarise_article(headline: str, body: str) -> str | None:
         logger.warning("LLM summarisation failed: %s", e)
         return None
 
-from sqlalchemy.orm import Session
-from app.models.stock import NewsSentiment as NewsSentimentModel
-
-async def score_unseen_news(db: Session, symbol: str | None = None) -> int:
-    """Score all news items that don't have a sentiment_score yet."""
-    query = db.query(NewsSentimentModel).filter(NewsSentimentModel.sentiment_score.is_(None))
+async def score_unseen_news(db, symbol: str = None) -> int:
+    from app.models.stock import NewsSentiment
+    query = db.query(NewsSentiment).filter(NewsSentiment.sentiment_score == None)
     if symbol:
-        query = query.filter(NewsSentimentModel.symbol == symbol.upper())
-    
+        query = query.filter(NewsSentiment.symbol == symbol)
     unscored = query.all()
-    scored_count = 0
-    
-    for news in unscored:
-        text_to_score = f"{news.headline} {news.summary or ''}"
-        score, label = await analyse_text(text_to_score)
-        news.sentiment_score = score
-        news.sentiment_label = label
-        scored_count += 1
-        
-    if scored_count > 0:
-        db.commit()
-        
-    return scored_count
+    count = 0
+    for row in unscored:
+        text = f"{row.headline}. {row.summary or ''}"
+        score, label = await analyse_text(text)
+        row.sentiment_score = score
+        row.sentiment_label = label
+        count += 1
+    db.commit()
+    return count
 
-def get_symbol_sentiment_summary(db: Session, symbol: str) -> dict:
-    """Aggregate sentiment for a symbol."""
-    from sqlalchemy import func
-    
-    result = db.query(
-        func.count(NewsSentimentModel.news_id).label('count'),
-        func.avg(NewsSentimentModel.sentiment_score).label('avg_score')
-    ).filter(
-        NewsSentimentModel.symbol == symbol.upper(),
-        NewsSentimentModel.sentiment_score.isnot(None)
-    ).first()
-    
-    count = result.count or 0
-    avg_score = result.avg_score or 0.0
-    
-    if avg_score >= 0.05:
-        label = "positive"
-    elif avg_score <= -0.05:
-        label = "negative"
-    else:
-        label = "neutral"
-        
-    recent_news = db.query(NewsSentimentModel.headline).filter(
-        NewsSentimentModel.symbol == symbol.upper()
-    ).order_by(NewsSentimentModel.published_at.desc()).limit(3).all()
-    
-    headlines = [n[0] for n in recent_news]
-    
-    return {
-        "symbol": symbol.upper(),
-        "count": count,
-        "avg_score": round(avg_score, 4),
-        "label": label,
-        "recent_headlines": headlines
-    }
+def get_symbol_sentiment_summary(db, symbol: str):
+    from app.models.stock import NewsSentiment
+    rows = db.query(NewsSentiment).filter(NewsSentiment.symbol == symbol).all()
+    if not rows:
+        return {"symbol": symbol, "average_score": 0.0, "overall_label": "neutral", "article_count": 0}
+    scores = [r.sentiment_score for r in rows if r.sentiment_score is not None]
+    avg = sum(scores) / len(scores) if scores else 0.0
+    label = "neutral"
+    if avg >= 0.05: label = "positive"
+    elif avg <= -0.05: label = "negative"
+    return {"symbol": symbol, "average_score": avg, "overall_label": label, "article_count": len(rows)}
 

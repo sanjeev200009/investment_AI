@@ -50,6 +50,8 @@ export default function HomeScreen({ navigation }) {
   // AI Insights Swipeable Stack State
   const [insightIndex, setInsightIndex] = useState(0);
   const swipePosition = useRef(new Animated.ValueXY()).current;
+  const [activeChip, setActiveChip] = useState('All Markets');
+  const [allStocks, setAllStocks] = useState([]);
   
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -63,6 +65,13 @@ export default function HomeScreen({ navigation }) {
           }
         });
         setDashboardData(res.data);
+        const stocksRes = await axios.get(`${baseUrl}/stocks/market?limit=50`, {
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': 'true'
+          }
+        });
+        setAllStocks(stocksRes.data);
       } catch (e) {
         console.error("Dashboard fetch error", e);
         // Fallback data so the UI doesn't break if API/DB is unreachable
@@ -95,6 +104,11 @@ export default function HomeScreen({ navigation }) {
             { symbol: 'EXPO.N0000', price: 145.00, change_pct: 2.1 }
           ]
         });
+        setAllStocks([
+          { symbol: 'SAMP.N0000', price: 78.50, change_pct: 1.2, volume: 10000 },
+          { symbol: 'JKH.N0000', price: 195.25, change_pct: -0.5, volume: 15000 },
+          { symbol: 'EXPO.N0000', price: 145.00, change_pct: 2.1, volume: 20000 }
+        ]);
       } finally {
         setLoading(false);
       }
@@ -103,10 +117,38 @@ export default function HomeScreen({ navigation }) {
   }, []);
 
   const AI_INSIGHTS = dashboardData?.insights || [];
+  
+  const filteredStocks = React.useMemo(() => {
+    if (allStocks.length === 0) return dashboardData?.watchlist_preview || [];
+    let filtered = [...allStocks];
+    if (activeChip === 'Top Movers') {
+      filtered = filtered.sort((a, b) => (b.change_pct || 0) - (a.change_pct || 0));
+    } else if (activeChip === 'Banking') {
+      const banking = ['SAMP', 'HNB', 'COMB', 'SEYB', 'NDB', 'NTB', 'PABC', 'DFCC'];
+      filtered = filtered.filter(s => banking.some(b => s.symbol.startsWith(b)));
+    } else if (activeChip === 'Manufacturing') {
+      const mfg = ['EXPO', 'RCL', 'TKYO', 'ACL', 'LWL', 'GLAS', 'TJL'];
+      filtered = filtered.filter(s => mfg.some(m => s.symbol.startsWith(m)));
+    } else if (activeChip === 'Capital Goods') {
+      const capital = ['JKH', 'HAYL', 'SPEN', 'AEL', 'RICH', 'HEMS'];
+      filtered = filtered.filter(s => capital.some(c => s.symbol.startsWith(c)));
+    } else if (activeChip === 'AI Picks') {
+      filtered = filtered.sort(() => 0.5 - Math.random());
+    } else {
+      filtered = filtered.sort((a, b) => (b.volume || 0) - (a.volume || 0));
+    }
+    return filtered.slice(0, Math.min(6, filtered.length));
+  }, [allStocks, activeChip, dashboardData]);
+
+  const insightsLengthRef = useRef(AI_INSIGHTS.length);
+  useEffect(() => {
+    insightsLengthRef.current = AI_INSIGHTS.length;
+  }, [AI_INSIGHTS]);
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (evt, gestureState) => Math.abs(gestureState.dx) > 5,
       onPanResponderMove: (evt, gestureState) => {
         swipePosition.setValue({ x: gestureState.dx, y: 0 });
       },
@@ -117,7 +159,7 @@ export default function HomeScreen({ navigation }) {
             duration: 200,
             useNativeDriver: false
           }).start(() => {
-            setInsightIndex((prev) => (prev + 1) % AI_INSIGHTS.length);
+            setInsightIndex((prev) => (prev + 1) % (insightsLengthRef.current || 1));
             swipePosition.setValue({ x: 0, y: 0 });
           });
         } else if (gestureState.dx < -120) {
@@ -126,7 +168,7 @@ export default function HomeScreen({ navigation }) {
             duration: 200,
             useNativeDriver: false
           }).start(() => {
-            setInsightIndex((prev) => (prev + 1) % AI_INSIGHTS.length);
+            setInsightIndex((prev) => (prev + 1) % (insightsLengthRef.current || 1));
             swipePosition.setValue({ x: 0, y: 0 });
           });
         } else {
@@ -140,47 +182,77 @@ export default function HomeScreen({ navigation }) {
   ).current;
 
   const renderInsightsStack = () => {
-    return AI_INSIGHTS.map((item, i) => {
-      let relIndex = i - insightIndex;
-      if (relIndex < 0) relIndex += AI_INSIGHTS.length;
+    if (!AI_INSIGHTS || AI_INSIGHTS.length === 0) return null;
 
-      if (relIndex > 1) return null;
+    // Ensure we always have a positive, valid index
+    const safeIndex = Math.abs(insightIndex) % AI_INSIGHTS.length;
+    const topItem = AI_INSIGHTS[safeIndex];
+    const nextItem = AI_INSIGHTS[(safeIndex + 1) % AI_INSIGHTS.length];
 
-      const isTop = relIndex === 0;
+    if (!topItem) return null; // Failsafe
 
-      const animatedStyle = isTop ? {
-        transform: [
-          { translateX: swipePosition.x },
-          { rotate: swipePosition.x.interpolate({ inputRange: [-width/2, 0, width/2], outputRange: ['-5deg', '0deg', '5deg'] }) }
-        ],
-        zIndex: 99
-      } : {
-        transform: [
-          { scale: swipePosition.x.interpolate({ inputRange: [-width/2, 0, width/2], outputRange: [1, 0.95, 1], extrapolate: 'clamp' }) },
-          { translateY: swipePosition.x.interpolate({ inputRange: [-width/2, 0, width/2], outputRange: [0, 15, 0], extrapolate: 'clamp' }) }
-        ],
-        zIndex: 1,
-        opacity: swipePosition.x.interpolate({ inputRange: [-width/2, 0, width/2], outputRange: [1, 0.5, 1], extrapolate: 'clamp' })
-      };
+    return (
+      <>
+        {/* NEXT CARD (Bottom) */}
+        {AI_INSIGHTS.length > 1 && nextItem && (
+          <Animated.View
+            style={[
+              styles.aiCard, 
+              { position: 'absolute', width: '100%', top: 0 },
+              {
+                transform: [
+                  { translateX: 0 },
+                  { translateY: swipePosition.x.interpolate({ inputRange: [-width/2, 0, width/2], outputRange: [0, 15, 0], extrapolate: 'clamp' }) },
+                  { scale: swipePosition.x.interpolate({ inputRange: [-width/2, 0, width/2], outputRange: [1, 0.95, 1], extrapolate: 'clamp' }) },
+                  { rotate: '0deg' }
+                ],
+                zIndex: 1,
+                opacity: swipePosition.x.interpolate({ inputRange: [-width/2, 0, width/2], outputRange: [1, 0.5, 1], extrapolate: 'clamp' })
+              }
+            ]}
+          >
+            <View style={styles.aiHeader}>
+              <MaterialIcons name="auto-awesome" size={20} color={colors.primaryFixed} />
+              <Text style={styles.aiLabel}>{nextItem?.label || 'INSIGHT'}</Text>
+            </View>
+            <Text style={styles.aiBody}>{nextItem?.body || 'Loading...'}</Text>
+            <TouchableTick style={[styles.aiButton, styles.glassButtonDark]}>
+              <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFillObject} />
+              <Text style={styles.aiButtonText}>{nextItem?.buttonText || 'View'}</Text>
+            </TouchableTick>
+          </Animated.View>
+        )}
 
-      return (
+        {/* TOP CARD */}
         <Animated.View
-          key={item.id}
-          style={[styles.aiCard, { position: 'absolute', width: '100%', top: 0 }, animatedStyle]}
-          {...(isTop ? panResponder.panHandlers : {})}
+          style={[
+            styles.aiCard, 
+            { position: 'absolute', width: '100%', top: 0 },
+            {
+              transform: [
+                { translateX: swipePosition.x },
+                { translateY: 0 },
+                { scale: 1 },
+                { rotate: swipePosition.x.interpolate({ inputRange: [-width/2, 0, width/2], outputRange: ['-5deg', '0deg', '5deg'] }) }
+              ],
+              zIndex: 99,
+              opacity: 1
+            }
+          ]}
+          {...panResponder.panHandlers}
         >
           <View style={styles.aiHeader}>
             <MaterialIcons name="auto-awesome" size={20} color={colors.primaryFixed} />
-            <Text style={styles.aiLabel}>{item.label}</Text>
+            <Text style={styles.aiLabel}>{topItem?.label || 'INSIGHT'}</Text>
           </View>
-          <Text style={styles.aiBody}>{item.body}</Text>
+          <Text style={styles.aiBody}>{topItem?.body || 'Loading...'}</Text>
           <TouchableTick style={[styles.aiButton, styles.glassButtonDark]}>
             <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFillObject} />
-            <Text style={styles.aiButtonText}>{item.buttonText}</Text>
+            <Text style={styles.aiButtonText}>{topItem?.buttonText || 'View'}</Text>
           </TouchableTick>
         </Animated.View>
-      );
-    }).reverse();
+      </>
+    );
   };
 
   useEffect(() => {
@@ -249,6 +321,38 @@ export default function HomeScreen({ navigation }) {
     return () => cancelAnimationFrame(animationFrame);
   }, [dashboardData]);
 
+  const currentVal = dashboardData?.portfolio?.current_value || 145000;
+  const targetVal = dashboardData?.portfolio?.target_value || 200000;
+  const progressPct = Math.min((currentVal / targetVal) * 100, 100).toFixed(1) + '%';
+  
+  // If the backend returns all 0s (new user with no portfolio), show a mock chart so it's not empty
+  let weeklyData = dashboardData?.portfolio?.weekly_history;
+  if (!weeklyData || weeklyData.every(v => v === 0)) {
+    weeklyData = [110000, 125000, 130000, 145000];
+  }
+
+  const maxWeekly = Math.max(...weeklyData, 1) * 1.1; 
+  const getH = (val) => (val / maxWeekly) * 150;
+  
+  const w1Gray = getH(weeklyData[0] * 0.9);
+  const w1Blue = getH(weeklyData[0]);
+  const w2Gray = getH(weeklyData[0]);
+  const w2Blue = getH(weeklyData[1]);
+  const w3Gray = getH(weeklyData[1]);
+  const w3Blue = getH(weeklyData[2]);
+  const w4Gray = getH(weeklyData[2]);
+  const w4Blue = getH(weeklyData[3]);
+  
+  const changeW4 = (((weeklyData[3] - weeklyData[2]) / (weeklyData[2] || 1)) * 100).toFixed(1);
+  const formatLabel = (val) => val >= 1000 ? `Rs. ${(val / 1000).toFixed(1)}k` : `Rs. ${val.toFixed(0)}`;
+  const yLabels = [
+    formatLabel(maxWeekly),
+    formatLabel(maxWeekly * 0.75),
+    formatLabel(maxWeekly * 0.5),
+    formatLabel(maxWeekly * 0.25),
+    'Rs. 0'
+  ];
+
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -265,18 +369,13 @@ export default function HomeScreen({ navigation }) {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Image
-            source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCRuV64gZivpBqIADKt06wm-68V-FCe8a9BZomAQ3ab8MDZ2FsvJ1HLg5pdO7xl7jYZjY9iaqzZ27XXB5oei50JrGa_ER45mkkY61ClOjQD2eBUQDubUAGYinzsR0cl4-Edsp9SgS7XYEYGZ5aZx6M2rl4YSG6ImwAhf5x_puLwc0rMQZjpvGElkqopRbhXD6qcRH3DD6djp_oKpyPRhyHhwGchkNc238vSC5Na76wlkakejugIasdwa6DXPlA2UqMLWyOZj0_jUKE' }}
+            source={{ uri: clerkUser?.imageUrl || 'https://ui-avatars.com/api/?name=User&background=random' }}
             style={styles.avatar}
           />
           <Text style={styles.headerTitle}>InvestAI</Text>
         </View>
         <View style={styles.headerRight}>
-          {!isAuthenticated && (
-              <TouchableTick style={[styles.notificationBtn, styles.glassButton, { marginTop: 0, marginRight: 8 }]} onPress={() => navigation.navigate('Auth')}>
-                <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFillObject} />
-                <MaterialIcons name="login" size={24} color={colors.primary} />
-              </TouchableTick>
-          )}
+
           <TouchableTick style={[styles.settingsBtn, styles.glassButton]} onPress={() => navigation.navigate('ProfileMain')}>
             <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFillObject} />
             <MaterialIcons name="settings" size={24} color={colors.primary} />
@@ -299,8 +398,8 @@ export default function HomeScreen({ navigation }) {
           </TouchableTick>
         </View>
 
-        {/* ASPI Market Overview (Credit Card Design) */}
-        <View style={[styles.card, styles.aspiCard]}>
+        {/* ASPI Market Overview */}
+        <View style={[styles.card, styles.aspiCard, { padding: 20 }]}>
           <LinearGradient
             colors={['#0a2e4a', '#051624']}
             start={{ x: 0, y: 0 }}
@@ -308,70 +407,56 @@ export default function HomeScreen({ navigation }) {
             style={StyleSheet.absoluteFillObject}
           />
           <LinearGradient
-            colors={['rgba(255, 255, 255, 0.15)', 'rgba(0, 0, 0, 0.3)']}
+            colors={['rgba(255, 255, 255, 0.1)', 'transparent']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.cardGlowOverlay}
           />
           
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, zIndex: 1 }}>
-            <MaterialIcons name="memory" size={44} color="#eab308" />
-            <MaterialIcons name="contactless" size={28} color="rgba(255,255,255,0.6)" style={{ transform: [{ rotate: '90deg' }] }} />
-          </View>
-
-          <View style={[styles.aspiRow, { flexWrap: 'nowrap', flexDirection: 'column', alignItems: 'stretch' }]}>
-            <View>
-              <Text style={[styles.cardLabelNew, { color: 'rgba(255, 255, 255, 0.6)' }]}>ASPI MARKET OVERVIEW</Text>
-              <View style={styles.aspiValueRow}>
-                <Text style={[styles.aspiValueNew, { color: '#ffffff', letterSpacing: 2 }]}>
-                  {aspiCount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                </Text>
-                <View style={[styles.aspiChangeBadgeNew, { backgroundColor: 'rgba(45, 212, 191, 0.15)' }]}>
-                  <MaterialIcons name="trending-up" size={14} color="#2dd4bf" />
-                  <Text style={[styles.aspiChangeTextNew, { color: '#2dd4bf' }]}>+1.2%</Text>
-                </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', zIndex: 1 }}>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 6 }}>
+                 <MaterialIcons name="auto-graph" size={16} color="rgba(255, 255, 255, 0.7)" />
+                 <Text style={[styles.cardLabelNew, { color: 'rgba(255, 255, 255, 0.7)' }]}>ASPI INDEX</Text>
               </View>
-
-              <View style={{ flexDirection: 'row', marginTop: 16, gap: 32 }}>
-                <View>
-                  <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', fontFamily: 'Satoshi-Medium', marginBottom: 2 }}>INVESTOR</Text>
-                  <Text style={{ fontSize: 13, color: '#ffffff', fontFamily: 'Satoshi-Bold', letterSpacing: 1, textTransform: 'uppercase' }}>{userName} {lastName}</Text>
-                </View>
-                <View>
-                  <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', fontFamily: 'Satoshi-Medium', marginBottom: 2 }}>MEMBER SINCE</Text>
-                  <Text style={{ fontSize: 13, color: '#ffffff', fontFamily: 'Satoshi-Bold', letterSpacing: 1 }}>12/28</Text>
-                </View>
+              
+              <Text style={[styles.aspiValueNew, { color: '#ffffff', letterSpacing: 1, fontSize: 32 }]}>
+                {aspiCount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+              </Text>
+              
+              <View style={[styles.aspiChangeBadgeNew, { backgroundColor: 'rgba(45, 212, 191, 0.15)', alignSelf: 'flex-start', marginTop: 12 }]}>
+                <MaterialIcons name="trending-up" size={14} color="#2dd4bf" />
+                <Text style={[styles.aspiChangeTextNew, { color: '#2dd4bf' }]}>+1.2%</Text>
               </View>
             </View>
-            
-            <View style={[styles.volumeWrapper, { marginTop: 24, justifyContent: 'space-between' }]}>
-              <View style={styles.volumeWidget}>
-                 <Svg height="120" width="120" viewBox="0 0 120 120">
+
+            <View style={{ alignItems: 'flex-end', justifyContent: 'center', marginTop: 4 }}>
+                 <Svg height="72" width="72" viewBox="0 0 120 120">
                    <G transform="rotate(-90 60 60)">
-                     <Circle cx="60" cy="60" r="45" stroke={colors.primary} strokeWidth="8" fill="transparent" strokeDasharray="109 282.74" strokeDashoffset="0" strokeLinecap="round" />
-                     <Circle cx="60" cy="60" r="45" stroke={colors.onPrimaryContainer} strokeWidth="8" fill="transparent" strokeDasharray="95 282.74" strokeDashoffset="-117" strokeLinecap="round" />
-                     <Circle cx="60" cy="60" r="45" stroke={colors.warning} strokeWidth="8" fill="transparent" strokeDasharray="66 282.74" strokeDashoffset="-216" strokeLinecap="round" />
+                     <Circle cx="60" cy="60" r="45" stroke={colors.primaryFixed} strokeWidth="14" fill="transparent" strokeDasharray="109 282.74" strokeDashoffset="0" strokeLinecap="round" />
+                     <Circle cx="60" cy="60" r="45" stroke={colors.onPrimaryContainer} strokeWidth="14" fill="transparent" strokeDasharray="95 282.74" strokeDashoffset="-117" strokeLinecap="round" />
+                     <Circle cx="60" cy="60" r="45" stroke={colors.warning} strokeWidth="14" fill="transparent" strokeDasharray="66 282.74" strokeDashoffset="-216" strokeLinecap="round" />
                    </G>
                  </Svg>
-                 <View style={styles.volumeCenter}>
-                   <MaterialIcons name="bar-chart" size={48} color="#ffffff" />
+                 <View style={{ position: 'absolute', right: 24, top: 24 }}>
+                   <MaterialIcons name="pie-chart" size={24} color="rgba(255,255,255,0.9)" />
                  </View>
-              </View>
-              <View style={[styles.volumeLegend, { alignItems: 'flex-end' }]}>
-                 <View style={styles.legendItem}>
-                    <Text style={[styles.legendText, { color: 'rgba(255,255,255,0.9)' }]}>Banking (40%)</Text>
-                    <View style={[styles.legendDot, { backgroundColor: colors.primary, marginLeft: 6 }]} />
-                 </View>
-                 <View style={styles.legendItem}>
-                    <Text style={[styles.legendText, { color: 'rgba(255,255,255,0.9)' }]}>Capital Goods (35%)</Text>
-                    <View style={[styles.legendDot, { backgroundColor: colors.onPrimaryContainer, marginLeft: 6 }]} />
-                 </View>
-                 <View style={styles.legendItem}>
-                    <Text style={[styles.legendText, { color: 'rgba(255,255,255,0.9)' }]}>Food & Bev (25%)</Text>
-                    <View style={[styles.legendDot, { backgroundColor: colors.warning, marginLeft: 6 }]} />
-                 </View>
-              </View>
             </View>
+          </View>
+          
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 24, zIndex: 1, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)' }}>
+             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primaryFixed }} />
+                <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontFamily: 'Satoshi-Medium' }}>Banking 40%</Text>
+             </View>
+             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.onPrimaryContainer }} />
+                <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontFamily: 'Satoshi-Medium' }}>Cap Goods 35%</Text>
+             </View>
+             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.warning }} />
+                <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontFamily: 'Satoshi-Medium' }}>Food 25%</Text>
+             </View>
           </View>
         </View>
 
@@ -404,32 +489,25 @@ export default function HomeScreen({ navigation }) {
         </View>
 
         {/* AI Insights Card Stack */}
-        <View style={{ height: 210, width: '100%', position: 'relative' }}>
+        <View style={{ height: 230, width: '100%', position: 'relative' }}>
           {renderInsightsStack()}
         </View>
 
         {/* Category Chips */}
         <ScrollView style={{ marginTop: 36 }} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
-          <TouchableTick style={[styles.chip, styles.chipActive, styles.glassButtonDark]}>
-            <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFillObject} />
-            <Text style={[styles.chipText, styles.chipTextActive]}>All Markets</Text>
-          </TouchableTick>
-          <TouchableTick style={[styles.chip, styles.chipInactive, styles.glassButton]}>
-            <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFillObject} />
-            <Text style={[styles.chipText, styles.chipTextInactive]}>AI Picks</Text>
-          </TouchableTick>
-          <TouchableTick style={[styles.chip, styles.chipInactive, styles.glassButton]}>
-            <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFillObject} />
-            <Text style={[styles.chipText, styles.chipTextInactive]}>Banking</Text>
-          </TouchableTick>
-          <TouchableTick style={[styles.chip, styles.chipInactive, styles.glassButton]}>
-            <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFillObject} />
-            <Text style={[styles.chipText, styles.chipTextInactive]}>Manufacturing</Text>
-          </TouchableTick>
-          <TouchableTick style={[styles.chip, styles.chipInactive, styles.glassButton]}>
-            <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFillObject} />
-            <Text style={[styles.chipText, styles.chipTextInactive]}>Capital Goods</Text>
-          </TouchableTick>
+          {['All Markets', 'Top Movers', 'AI Picks', 'Banking', 'Manufacturing', 'Capital Goods'].map((chip) => {
+            const isActive = activeChip === chip;
+            return (
+              <TouchableTick 
+                key={chip} 
+                style={[styles.chip, isActive ? styles.chipActive : styles.chipInactive, isActive ? styles.glassButtonDark : styles.glassButton]}
+                onPress={() => setActiveChip(chip)}
+              >
+                <BlurView intensity={isActive ? 40 : 30} tint={isActive ? "dark" : "light"} style={StyleSheet.absoluteFillObject} />
+                <Text style={[styles.chipText, isActive ? styles.chipTextActive : styles.chipTextInactive]}>{chip}</Text>
+              </TouchableTick>
+            );
+          })}
         </ScrollView>
 
         {/* Watchlist Banner / Preview */}
@@ -439,9 +517,9 @@ export default function HomeScreen({ navigation }) {
           <View style={[styles.watchlistBannerLeft, { width: '100%', justifyContent: 'space-between' }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <View style={[styles.watchlistIconBox, { width: 32, height: 32, borderRadius: 8 }]}>
-                <MaterialIcons name="trending-up" size={18} color="#FFF" />
+                <MaterialIcons name={activeChip === 'Top Movers' ? "trending-up" : "stacked-line-chart"} size={18} color="#FFF" />
               </View>
-              <Text style={[styles.watchlistBannerTitle, { marginLeft: 10, fontSize: 16 }]}>Top Movers</Text>
+              <Text style={[styles.watchlistBannerTitle, { marginLeft: 10, fontSize: 16 }]}>{activeChip === 'All Markets' ? 'Market Overview' : activeChip}</Text>
             </View>
             <View style={styles.watchlistArrowBox}>
               <MaterialIcons name="arrow-forward" size={18} color={colors.primary} />
@@ -450,7 +528,7 @@ export default function HomeScreen({ navigation }) {
 
           {/* Real Data Preview */}
           <View style={{ width: '100%', marginTop: 15 }}>
-            {dashboardData?.watchlist_preview?.map((stock, idx) => (
+            {filteredStocks.map((stock, idx) => (
               <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <Text style={{ color: colors.onBackground, fontFamily: 'Inter_600SemiBold', fontSize: 14 }}>{stock.symbol.split('.')[0]}</Text>
                 <View style={{ alignItems: 'flex-end' }}>
@@ -477,7 +555,7 @@ export default function HomeScreen({ navigation }) {
           </View>
 
           <View style={styles.progressBarBg}>
-            <View style={[styles.progressBarFill, { width: '72.5%' }]} />
+            <View style={[styles.progressBarFill, { width: progressPct }]} />
           </View>
 
           <View style={styles.allocationTags}>
@@ -506,7 +584,7 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.chartWrapperNew}>
             {/* Y-Axis & Grid Lines */}
             <View style={styles.chartGrid}>
-              {['Rs. 10k', 'Rs. 7.5k', 'Rs. 5k', 'Rs. 2.5k', 'Rs. 0'].map((label, index) => (
+              {yLabels.map((label, index) => (
                 <View key={index} style={[styles.gridLineContainer, index === 4 && styles.gridLineContainerLast]}>
                   <Text style={styles.gridLabel}>{label}</Text>
                   <View style={[styles.gridLine, index === 4 && { borderTopWidth: 0 }]} />
@@ -519,8 +597,8 @@ export default function HomeScreen({ navigation }) {
               {/* Week 1 */}
               <View style={styles.weekGroup}>
                 <View style={styles.barGroup}>
-                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 55] }), backgroundColor: '#cbd5e1' }]} />
-                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 75] }), backgroundColor: colors.primary }]} />
+                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, w1Gray] }), backgroundColor: '#cbd5e1' }]} />
+                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, w1Blue] }), backgroundColor: colors.primary }]} />
                 </View>
                 <Text style={styles.weekLabel}>Week 1</Text>
               </View>
@@ -528,29 +606,29 @@ export default function HomeScreen({ navigation }) {
               {/* Week 2 */}
               <View style={styles.weekGroup}>
                 <View style={styles.barGroup}>
-                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 70] }), backgroundColor: '#cbd5e1' }]} />
-                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 95] }), backgroundColor: colors.primary }]} />
+                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, w2Gray] }), backgroundColor: '#cbd5e1' }]} />
+                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, w2Blue] }), backgroundColor: colors.primary }]} />
                 </View>
                 <Text style={styles.weekLabel}>Week 2</Text>
               </View>
               
               {/* Week 3 */}
               <View style={styles.weekGroup}>
-                <View style={styles.calloutContainer}>
-                  <Text style={styles.calloutText}>30% ↑</Text>
-                </View>
                 <View style={styles.barGroup}>
-                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 105] }), backgroundColor: '#cbd5e1' }]} />
-                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 145] }), backgroundColor: colors.primary }]} />
+                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, w3Gray] }), backgroundColor: '#cbd5e1' }]} />
+                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, w3Blue] }), backgroundColor: colors.primary }]} />
                 </View>
                 <Text style={styles.weekLabel}>Week 3</Text>
               </View>
               
               {/* Week 4 */}
               <View style={styles.weekGroup}>
+                <View style={styles.calloutContainer}>
+                  <Text style={styles.calloutText}>{changeW4}% {changeW4 >= 0 ? '↑' : '↓'}</Text>
+                </View>
                 <View style={styles.barGroup}>
-                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 85] }), backgroundColor: '#cbd5e1' }]} />
-                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 0] }), backgroundColor: 'transparent' }]} />
+                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, w4Gray] }), backgroundColor: '#cbd5e1' }]} />
+                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, w4Blue] }), backgroundColor: colors.primary }]} />
                 </View>
                 <Text style={styles.weekLabel}>Week 4</Text>
               </View>
@@ -797,6 +875,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryContainer,
     borderRadius: 12,
     padding: 24,
+    height: 210,
+    overflow: 'hidden',
     shadowColor: colors.primaryContainer,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,

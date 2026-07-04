@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, PanResponder, SafeAreaView, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useAuthStore } from '../../store/authStore';
+import { useUser } from '@clerk/clerk-expo';
 
 const { width } = Dimensions.get('window');
 
@@ -102,6 +104,9 @@ const RiskSlider = ({ value = 50, onChange }) => {
 };
 
 export default function AssessmentScreen({ navigation }) {
+  const { user } = useUser();
+  const { setProfileSetupDone, setAssessmentResults } = useAuthStore();
+  
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState({});
   const progressAnim = useRef(new Animated.Value(0)).current;
@@ -129,18 +134,24 @@ export default function AssessmentScreen({ navigation }) {
     }
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (currentQ < QUESTIONS.length - 1) {
       setCurrentQ(currentQ + 1);
     } else {
-      // Complete - Navigate back to Home or specific route
-      console.log("Assessment completed", answers);
-      if (navigation.canGoBack()) {
-        navigation.goBack();
-      } else {
-        navigation.navigate('MainTabs');
+      // Complete
+      if (user) {
+        await setAssessmentResults(answers);
+        await setProfileSetupDone(user.id);
       }
+      navigation.navigate('MainTab');
     }
+  };
+
+  const handleSkip = async () => {
+    if (user) {
+      await setProfileSetupDone(user.id);
+    }
+    navigation.navigate('MainTab');
   };
 
   const handlePrev = () => {
@@ -196,8 +207,8 @@ export default function AssessmentScreen({ navigation }) {
             <MaterialIcons name="arrow-back" size={24} color="#1A1A2E" />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>Financial Literacy & Risk Assessment Wizard</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('MainTabs')}>
-            <Text style={styles.exitText}>Exit</Text>
+          <TouchableOpacity onPress={handleSkip}>
+            <Text style={styles.exitText}>Skip</Text>
           </TouchableOpacity>
         </View>
         <Text style={styles.subtitle}>Financial Profile</Text>

@@ -21,15 +21,27 @@ import { LineChart } from 'react-native-chart-kit';
 
 const { width } = Dimensions.get('window');
 
-const MOCK_HISTORICAL_DATA = {
-    labels: ["9AM", "11AM", "1PM", "3PM", "5PM"],
-    datasets: [
-        {
-            data: [160, 162, 161, 164.5, 163.8],
-            color: (opacity = 1) => `rgba(21, 101, 192, ${opacity})`,
-            strokeWidth: 3
-        }
-    ]
+const generateMockChartData = (currentPrice, isPositive) => {
+    const base = parseFloat(currentPrice) || 100;
+    const data = [];
+    let current = isPositive ? base * 0.95 : base * 1.05;
+    for (let i = 0; i < 5; i++) {
+        data.push(current);
+        const maxChange = base * 0.02;
+        const change = (Math.random() - (isPositive ? 0.3 : 0.7)) * maxChange;
+        current += change;
+    }
+    data.push(base);
+    return {
+        labels: ["9AM", "11AM", "1PM", "3PM", "5PM", "Now"],
+        datasets: [
+            {
+                data,
+                color: (opacity = 1) => isPositive ? `rgba(16, 185, 129, ${opacity})` : `rgba(244, 63, 94, ${opacity})`,
+                strokeWidth: 3
+            }
+        ]
+    };
 };
 
 export default function StockDetailScreen({ route, navigation }) {
@@ -37,6 +49,16 @@ export default function StockDetailScreen({ route, navigation }) {
     const { stock } = route.params || { stock: { symbol: 'HNB', name: 'HNB Bank PLC', price: '164.50', change: '+2.45%', isPositive: true } };
     const [showFeedback, setShowFeedback] = useState(false);
     const [feedbackConfig, setFeedbackConfig] = useState({});
+    
+    const [chartData] = useState(() => generateMockChartData(stock.price, stock.isPositive));
+
+    // Dynamic pseudo-stats based on price
+    const basePrice = parseFloat(stock.price) || 100;
+    const high52 = (basePrice * (1 + (basePrice % 30) / 100)).toFixed(2);
+    const low52 = (basePrice * (1 - (basePrice % 25) / 100)).toFixed(2);
+    const peRatio = (8 + (basePrice % 15)).toFixed(1);
+    const marketCap = (10 + (basePrice % 50) * 2.5).toFixed(1) + 'B';
+    const supportLevel = (basePrice * (stock.isPositive ? 0.95 : 0.98)).toFixed(2);
 
     const handleAction = (type) => {
         if (type === 'buy') {
@@ -95,7 +117,7 @@ export default function StockDetailScreen({ route, navigation }) {
                 <AppCard style={styles.chartCard}>
                     <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary }]}>PERFORMANCE (TODAY)</Text>
                     <LineChart
-                        data={MOCK_HISTORICAL_DATA}
+                        data={chartData}
                         width={width - 56} 
                         height={200}
                         chartConfig={chartConfig}
@@ -110,19 +132,19 @@ export default function StockDetailScreen({ route, navigation }) {
                 <View style={styles.statsGrid}>
                     <AppCard style={styles.statBox}>
                         <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>MARKET CAP</Text>
-                        <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>24.5B</Text>
+                        <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{marketCap}</Text>
                     </AppCard>
                     <AppCard style={styles.statBox}>
                         <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>P/E RATIO</Text>
-                        <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>12.4</Text>
+                        <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{peRatio}</Text>
                     </AppCard>
                     <AppCard style={styles.statBox}>
                         <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>52W HIGH</Text>
-                        <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>185.00</Text>
+                        <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{high52}</Text>
                     </AppCard>
                     <AppCard style={styles.statBox}>
                         <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>52W LOW</Text>
-                        <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>142.10</Text>
+                        <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{low52}</Text>
                     </AppCard>
                 </View>
 
@@ -137,7 +159,7 @@ export default function StockDetailScreen({ route, navigation }) {
                             <Text style={styles.aiTitle}>AI Analysis</Text>
                         </View>
                         <Text style={[styles.aiText, { color: theme.colors.textPrimary }]}>
-                            {stock.symbol} shows strong support at Rs. 160.00. RSI indicates neutral momentum. Consider averaging in if it dips towards the support level.
+                            {stock.symbol} shows strong support at Rs. {supportLevel}. RSI indicates neutral momentum. Consider averaging in if it dips towards the support level.
                         </Text>
                     </LinearGradient>
                 </AppCard>

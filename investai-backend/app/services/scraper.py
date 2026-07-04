@@ -147,25 +147,27 @@ async def scrape_news(symbol: str = None) -> list[dict]:
     return unique
 
 async def _scrape_single_news_source(client, source_url, symbol):
+    import urllib.request
+    import asyncio
     articles = []
     try:
-        r = await client.get(source_url)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.text, 'lxml')
-        # Daily Mirror and FT often use <h3> for headlines within an <a> tag
-        # EconomyNext uses <h3><a>
+        def fetch():
+            req = urllib.request.Request(source_url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+            return urllib.request.urlopen(req, timeout=15).read()
+            
+        html = await asyncio.to_thread(fetch)
+        soup = BeautifulSoup(html, 'lxml')
+        
         headlines = soup.find_all('h3')
         for h3 in headlines[:20]:
             title = _clean(h3.text)
             if not title: continue
             
-            # Find the link: usually it's the parent or a child <a>
             link_tag = h3.find('a', href=True) or h3.find_parent('a', href=True)
             if not link_tag: continue
             
             url = _resolve_url(source_url, link_tag['href'])
             
-            # Try to find a summary nearby (p tag)
             summary_tag = h3.find_next('p') or h3.find_parent().find_next('p')
             summary = _clean(summary_tag.text)[:300] if summary_tag else ''
 

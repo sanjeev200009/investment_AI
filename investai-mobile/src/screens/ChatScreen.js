@@ -1,50 +1,97 @@
 import TouchableTick from '../components/TouchableTick';
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, SafeAreaView, Image, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Image, StatusBar } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../hooks/useAppTheme';
+import { useAuth } from '@clerk/clerk-expo';
+import api from '../api/axiosConfig';
 
-const INITIAL_MESSAGES = [
-  {
-    id: '1',
-    type: 'ai',
-    name: 'AI Assistant',
-    text: "Hello! I'm your AI Investment Assistant. How can I help you today? You can ask me about stocks, market trends, or analyze your portfolio.",
-  },
-  {
-    id: '2',
-    type: 'user',
-    name: 'You',
-    text: 'What are the top performing tech stocks this quarter?',
-  },
-  {
-    id: '3',
-    type: 'ai',
-    name: 'AI Assistant',
-    text: 'Based on current market data, the top-performing tech stocks this quarter include companies in the semiconductor and AI sectors. Here are the top 3:',
-    list: [
-      { id: 'l1', bold: 'Innovate Inc. (INV)', text: ': +25.4%' },
-      { id: 'l2', bold: 'QuantumChip (QTC)', text: ': +22.1%' },
-      { id: 'l3', bold: 'CloudNet (CLD)', text: ': +19.8%' },
-    ],
-    actions: [
-      { id: 'a1', label: 'Show reasoning', icon: 'expand-more' },
-      { id: 'a2', label: 'View full analysis', icon: 'chevron-right' }
-    ]
-  }
-];
+const INITIAL_MESSAGES = [];
 
-const QUICK_ACTIONS = [
+const ALL_QUICK_ACTIONS = [
   'Top stocks today',
   'What is P/E ratio?',
   'Analyze my portfolio',
-  'Market outlook'
+  'Market outlook',
+  'Is it a good time to buy?',
+  'Explain dividend yield',
+  'Top tech stocks in CSE',
+  'How to diversify?',
+  'Latest market news',
+  'What is a bear market?'
 ];
 
 export default function ChatScreen({ navigation }) {
   const theme = useAppTheme();
+  const { getToken } = useAuth();
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [inputText, setInputText] = useState('');
+  const [quickActions, setQuickActions] = useState([]);
+
+  React.useEffect(() => {
+    const shuffled = [...ALL_QUICK_ACTIONS].sort(() => 0.5 - Math.random());
+    setQuickActions(shuffled.slice(0, 4));
+  }, []);
+
+  const handleSend = async (textToSend) => {
+    if (!textToSend.trim()) return;
+    
+    const userText = textToSend.trim();
+    if (textToSend === inputText) setInputText('');
+    
+    const newMessage = {
+      id: Date.now().toString(),
+      type: 'user',
+      name: 'You',
+      text: userText
+    };
+    
+    const typingMessage = {
+      id: (Date.now() + 1).toString(),
+      type: 'ai',
+      name: 'AI Assistant',
+      isTyping: true
+    };
+    
+    setMessages(prev => [...prev, newMessage, typingMessage]);
+    
+    try {
+      const token = await getToken();
+      const response = await api.post('/chat/message', {
+        message: userText
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const aiResponseText = response.data.response;
+      
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages.pop(); // remove typing message
+        newMessages.push({
+          id: Date.now().toString(),
+          type: 'ai',
+          name: 'AI Assistant',
+          text: aiResponseText
+        });
+        return newMessages;
+      });
+    } catch (error) {
+      console.error('Chat error:', error);
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages.pop(); // remove typing message
+        newMessages.push({
+          id: Date.now().toString(),
+          type: 'ai',
+          name: 'System',
+          text: 'Sorry, I encountered an error connecting to the server.'
+        });
+        return newMessages;
+      });
+    }
+  };
 
   // Explicitly derive colors from theme for maximum reactivity
   const isDark = theme.isDark;
@@ -133,7 +180,7 @@ export default function ChatScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -164,9 +211,12 @@ export default function ChatScreen({ navigation }) {
           <FlatList
             horizontal
             showsHorizontalScrollIndicator={false}
-            data={QUICK_ACTIONS}
+            data={quickActions}
             renderItem={({ item }) => (
-              <TouchableTick style={[styles.quickActionChip, { backgroundColor: colors.aiBubble }]}>
+              <TouchableTick 
+                style={[styles.quickActionChip, { backgroundColor: colors.aiBubble }]}
+                onPress={() => handleSend(item)}
+              >
                 <Text style={[styles.quickActionText, { color: colors.textSecondary }]}>{item}</Text>
               </TouchableTick>
             )}
@@ -190,18 +240,7 @@ export default function ChatScreen({ navigation }) {
             </View>
             <TouchableTick
               style={[styles.sendBtn, { backgroundColor: colors.primary }]}
-              onPress={() => {
-                if (inputText.trim()) {
-                  const newMessage = {
-                    id: Date.now().toString(),
-                    type: 'user',
-                    name: 'You',
-                    text: inputText.trim()
-                  };
-                  setMessages([...messages, newMessage]);
-                  setInputText('');
-                }
-              }}
+              onPress={() => handleSend(inputText)}
             >
               <MaterialIcons name="send" size={24} color="#FFFFFF" />
             </TouchableTick>

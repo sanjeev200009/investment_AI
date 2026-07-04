@@ -8,7 +8,7 @@ from app.models.stock import MarketData
 from app.models.user import User, RiskProfile
 from app.services.sentiment import get_symbol_sentiment_summary
 from app.services.ai_providers import (
-    AnthropicProvider, GoogleProvider, GroqProvider, OpenAIProvider
+    AnthropicProvider, GoogleProvider, GroqProvider, OpenAIProvider, OpenRouterProvider
 )
 
 settings = get_settings()
@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 # Initialize providers in priority order
 # Using Groq as primary for testing as requested
 PROVIDERS = [
+    OpenRouterProvider(),
     GroqProvider(),
     GoogleProvider(),
     OpenAIProvider(),
