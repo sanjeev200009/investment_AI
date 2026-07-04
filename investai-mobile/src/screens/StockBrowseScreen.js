@@ -1,222 +1,186 @@
-// src/screens/StockBrowseScreen.js
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
-  SafeAreaView,
-  StatusBar,
-  FlatList,
-  Modal,
-  Dimensions
-} from 'react-native';
-import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useAppTheme } from '../hooks/useAppTheme';
+import TouchableTick from '../components/TouchableTick';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar, TextInput, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
+import { useAuth } from '@clerk/clerk-expo';
+import axios from 'axios';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-const MOCK_STOCKS = [
-  { id: '1', symbol: 'HNB', name: 'HNB Bank PLC', price: '164.50', change: '+2.45%', isPositive: true, volume: '1.2M', isFavorite: false },
-  { id: '2', symbol: 'JKH', name: 'John Keells Holdings', price: '192.00', change: '+0.75%', isPositive: true, volume: '840K', isFavorite: true },
-  { id: '3', symbol: 'SAMP', name: 'Sampath Bank', price: '72.30', change: '-1.12%', isPositive: false, volume: '2.1M', isFavorite: false },
-  { id: '4', symbol: 'COMB', name: 'Commercial Bank', price: '98.10', change: '-0.40%', isPositive: false, volume: '450K', isFavorite: false },
-];
-
-const CATEGORIES = ['Banking', 'Technology', 'Energy', 'Retail', 'Finance'];
-const SECTORS = ['Banking', 'Energy', 'Manufacturing', 'Diversified', 'Food & Beverage'];
+const colors = {
+  background: '#faf9fc',
+  surface: '#faf9fc',
+  surfaceLowest: '#ffffff',
+  surfaceLow: '#f4f3f6',
+  surfaceHigh: '#e8e8ea',
+  surfaceHighest: '#e3e2e5',
+  surfaceVariant: '#e3e2e5',
+  onSurface: '#1a1c1e',
+  onSurfaceVariant: '#43474d',
+  primary: '#002743',
+  primaryFixed: '#cfe5ff',
+  primaryContainer: '#1c3d5a',
+  onPrimaryContainer: '#89a8ca',
+  onPrimary: '#ffffff',
+  secondaryContainer: '#dae3f5',
+  outlineVariant: '#c3c7ce',
+  error: '#ba1a1a',
+  success: '#2E7D32',
+  successBg: '#E8F5E9',
+  successDot: '#4CAF50',
+  cardShadow: 'rgba(28, 61, 90, 0.06)'
+};
 
 export default function StockBrowseScreen({ navigation }) {
-  const theme = useAppTheme();
-  const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('Banking');
-  const [stocks, setStocks] = useState(MOCK_STOCKS);
-  const [isFilterVisible, setIsFilterVisible] = useState(false);
-  const [selectedSectors, setSelectedSectors] = useState(['Banking', 'Manufacturing']);
-  const [priceRange, setPriceRange] = useState(350);
+  const [stocks, setStocks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const { getToken } = useAuth();
 
-  const toggleFavorite = (id) => {
-    setStocks(prev => prev.map(s => s.id === id ? { ...s, isFavorite: !s.isFavorite } : s));
-  };
-
-  const renderStockItem = ({ item }) => (
-    <TouchableOpacity 
-      activeOpacity={0.7}
-      style={[styles.stockCard, { backgroundColor: theme.colors.surface }]}
-      onPress={() => navigation.navigate('StockDetail', { stock: item })}
-    >
-      <View style={styles.stockInfo}>
-        <View style={styles.symbolRow}>
-          <Text style={[styles.stockSymbol, { color: '#42A5F5' }]}>{item.symbol}</Text>
-          <Text style={[styles.stockName, { color: theme.colors.textSecondary }]}>{item.name}</Text>
-        </View>
-        <Text style={[styles.volumeText, { color: theme.colors.textSecondary }]}>Vol: {item.volume}</Text>
-      </View>
-      <View style={styles.priceContainer}>
-        <Text style={[styles.priceText, { color: theme.colors.textPrimary }]}>Rs. {item.price}</Text>
-        <Text style={[styles.changeText, { color: item.isPositive ? '#10B981' : '#F43F5E' }]}>{item.change}</Text>
-      </View>
-      <TouchableOpacity onPress={() => toggleFavorite(item.id)}>
-        <MaterialIcons
-          name={item.isFavorite ? "star" : "star-border"}
-          size={24}
-          color={item.isFavorite ? "#FBBC05" : "#8E8E93"}
-        />
-      </TouchableOpacity>
-    </TouchableOpacity>
-  );
+  useEffect(() => {
+    async function fetchStocks() {
+      try {
+        const token = await getToken();
+        const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+        const res = await axios.get(`${baseUrl}/stocks/market?limit=10`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setStocks(res.data);
+      } catch (e) {
+        console.error("Stocks fetch error", e);
+        // Fallback mock data if API fails
+        setStocks([
+          { symbol: 'SAMP.N0000', name: 'Sampath Bank PLC', price: 78.50, change_pct: 1.2 },
+          { symbol: 'JKH.N0000', name: 'John Keells Holdings', price: 195.25, change_pct: -0.5 },
+          { symbol: 'EXPO.N0000', name: 'Expolanka Holdings', price: 145.00, change_pct: 2.1 }
+        ]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchStocks();
+  }, []);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: '#F2F2F7' }]}>
-      <StatusBar barStyle="dark-content" />
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
       
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Browse Stocks</Text>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={[styles.cancelBtn, { color: '#42A5F5' }]}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.searchRow}>
-          <View style={[styles.searchContainer, { backgroundColor: 'rgba(0,0,0,0.05)' }]}>
-            <MaterialIcons name="search" size={20} color="#8E8E93" style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search stocks, sectors..."
-              value={search}
-              onChangeText={setSearch}
-              placeholderTextColor="#8E8E93"
+        <View style={styles.headerLeft}>
+          <View style={styles.avatarContainer}>
+            <Image
+              source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBL5Xyg-nefmh91aQuWkk4k2Mtq-LNGJL3UktDsdY_yZymiUOSBH7aqNXm2C45zGuu_XL7exKqgVs33X3q-X0xNB_wuziAmcmrw-p_h34XPhtW-ZcUsfXpm_ZqAtfCA10DNDi0U7QVOvin5SZDnJafeB-t551h06qdYRAxZ2Rt7ajrdw8UK2ZVcUMB40J7-AtZLiD6_PmB-krEnfApjAynpFPeYitlpjBspZUth9Us8hwNWQL4LfA9N4H7Cjt5EpSHe4nR1zrsuxuI' }}
+              style={styles.avatar}
             />
           </View>
-          <TouchableOpacity 
-            style={[styles.filterBtn, { backgroundColor: 'rgba(0,0,0,0.05)' }]}
-            onPress={() => setIsFilterVisible(true)}
-          >
-            <MaterialIcons name="filter-list" size={24} color="#42A5F5" />
-          </TouchableOpacity>
+          <Text style={styles.headerTitle}>InvestAI</Text>
         </View>
-
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false} 
-          style={styles.categoryScroll}
-          contentContainerStyle={styles.categoryContent}
-        >
-          {CATEGORIES.map(cat => (
-            <TouchableOpacity 
-              key={cat} 
-              style={[
-                styles.categoryChip, 
-                selectedCategory === cat ? styles.activeChip : styles.inactiveChip
-              ]}
-              onPress={() => setSelectedCategory(cat)}
-            >
-              <Text style={[
-                styles.categoryText, 
-                selectedCategory === cat ? styles.activeChipText : styles.inactiveChipText
-              ]}>
-                {cat}
-              </Text>
-              {selectedCategory === cat && <MaterialIcons name="close" size={14} color="white" />}
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        <TouchableTick style={styles.settingsBtn}>
+          <MaterialIcons name="settings" size={24} color={colors.primary} />
+        </TouchableTick>
       </View>
 
-      {/* Stock List */}
-      <FlatList
-        data={stocks}
-        renderItem={renderStockItem}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
-
-      {/* Filter Modal */}
-      <Modal
-        visible={isFilterVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setIsFilterVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity 
-            style={styles.modalBlur} 
-            onPress={() => setIsFilterVisible(false)} 
-          />
-          <View style={[styles.filterSheet, { backgroundColor: theme.colors.surface }]}>
-            <View style={styles.handle} />
-            
-            <View style={styles.filterHeader}>
-              <Text style={[styles.filterTitle, { color: theme.colors.textPrimary }]}>Filter Stocks</Text>
-              <TouchableOpacity onPress={() => {
-                setSelectedSectors([]);
-                setPriceRange(350);
-              }}>
-                <Text style={[styles.resetBtn, { color: '#42A5F5' }]}>Reset</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.filterSection}>
-              <Text style={styles.sectionLabel}>SECTOR</Text>
-              <View style={styles.sectorContainer}>
-                {SECTORS.map(sector => {
-                  const isSelected = selectedSectors.includes(sector);
-                  return (
-                    <TouchableOpacity 
-                      key={sector} 
-                      style={[
-                        styles.sectorChip,
-                        isSelected ? styles.activeSector : styles.inactiveSector
-                      ]}
-                      onPress={() => {
-                        setSelectedSectors(prev => 
-                          prev.includes(sector) ? prev.filter(s => s !== sector) : [...prev, sector]
-                        );
-                      }}
-                    >
-                      <Text style={[
-                        styles.sectorText,
-                        isSelected ? styles.activeSectorText : styles.inactiveSectorText
-                      ]}>
-                        {sector}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            <View style={styles.filterSection}>
-              <View style={styles.rangeHeader}>
-                <Text style={styles.sectionLabel}>PRICE RANGE</Text>
-                <Text style={[styles.rangeValue, { color: theme.colors.textPrimary }]}>Rs. 0 - {priceRange}+</Text>
-              </View>
-              <View style={styles.dummySliderContainer}>
-                <View style={styles.track}>
-                   <View style={[styles.fill, { width: `${(priceRange / 500) * 100}%` }]} />
-                   <View style={[styles.thumb, { left: `${(priceRange / 500) * 100}%` }]} />
-                </View>
-                <View style={styles.rangeLabels}>
-                  <Text style={styles.rangeLimit}>Min Rs.0</Text>
-                  <Text style={styles.rangeLimit}>Max Rs.500+</Text>
-                </View>
-              </View>
-            </View>
-
-            <TouchableOpacity 
-              style={[styles.applyBtn, { backgroundColor: '#42A5F5' }]}
-              onPress={() => setIsFilterVisible(false)}
-            >
-              <Text style={styles.applyBtnText}>Apply Filters</Text>
-            </TouchableOpacity>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        
+        {/* Market Discovery Header */}
+        <View style={styles.pageHeader}>
+          <Text style={styles.pageTitle}>Market Discovery</Text>
+          <View style={styles.marketOpenBadge}>
+            <View style={styles.marketOpenDot} />
+            <Text style={styles.marketOpenText}>Market Open</Text>
           </View>
         </View>
-      </Modal>
+
+        {/* Search Bar */}
+        <View style={styles.searchRow}>
+          <View style={styles.searchContainer}>
+            <MaterialIcons name="search" size={20} color={colors.onSurfaceVariant} style={styles.searchIcon} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search stocks, ETFs, or sectors..."
+              placeholderTextColor={colors.onSurfaceVariant}
+            />
+          </View>
+          <TouchableTick style={styles.tuneBtn}>
+            <MaterialIcons name="tune" size={24} color={colors.onSurface} />
+          </TouchableTick>
+        </View>
+
+        {/* Chips */}
+        <ScrollView style={{ marginTop: 36 }} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
+          <TouchableTick style={[styles.chip, styles.chipActive]}>
+            <Text style={[styles.chipText, styles.chipTextActive]}>All Sectors</Text>
+          </TouchableTick>
+          <TouchableTick style={[styles.chip, styles.chipInactive]}>
+            <Text style={[styles.chipText, styles.chipTextInactive]}>Technology</Text>
+          </TouchableTick>
+          <TouchableTick style={[styles.chip, styles.chipInactive]}>
+            <Text style={[styles.chipText, styles.chipTextInactive]}>Healthcare</Text>
+          </TouchableTick>
+          <TouchableTick style={[styles.chip, styles.chipInactive]}>
+            <Text style={[styles.chipText, styles.chipTextInactive]}>Energy</Text>
+          </TouchableTick>
+          <TouchableTick style={[styles.chip, styles.chipInactive]}>
+            <Text style={[styles.chipText, styles.chipTextInactive]}>Finance</Text>
+          </TouchableTick>
+        </ScrollView>
+
+        {/* AI Insight Card */}
+        <View style={styles.aiCard}>
+          <View style={styles.aiCardBlur} />
+          <View style={styles.aiCardHeader}>
+            <MaterialIcons name="psychology" size={24} color={colors.onPrimary} />
+            <Text style={styles.aiCardTitle}>AI Insight</Text>
+          </View>
+          <Text style={styles.aiCardBody}>
+            Semiconductor sector showing unusually high institutional accumulation. Consider reviewing positions in NVDA and TSM.
+          </Text>
+          <TouchableTick style={styles.aiCardBtn}>
+            <Text style={styles.aiCardBtnText}>View Analysis</Text>
+          </TouchableTick>
+        </View>
+
+        {/* Top Movers */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Top Movers</Text>
+          <TouchableTick>
+            <Text style={styles.seeAllText}>See All</Text>
+          </TouchableTick>
+        </View>
+
+        <View style={styles.listContainer}>
+          {loading ? (
+            <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+          ) : stocks.map((stock, idx) => (
+            <TouchableTick 
+              key={idx}
+              style={styles.listItem}
+              onPress={() => navigation.navigate('StockDetail', { stock: { symbol: stock.symbol, name: stock.name || stock.symbol, price: stock.price, change: `${stock.change_pct}%`, isPositive: stock.change_pct >= 0 }})}
+            >
+              <View style={styles.listItemLeft}>
+                <View style={[styles.itemAvatar, { backgroundColor: stock.change_pct >= 0 ? '#E8F5E9' : '#FCE4EC' }]}>
+                  <Text style={[styles.itemAvatarText, { color: stock.change_pct >= 0 ? '#2E7D32' : '#C2185B' }]}>
+                    {stock.symbol.charAt(0)}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={styles.itemSymbol}>{stock.symbol.split('.')[0]}</Text>
+                  <Text style={styles.itemName}>{stock.name || stock.symbol}</Text>
+                </View>
+              </View>
+              <View style={styles.listItemRight}>
+                <Text style={styles.itemPrice}>Rs. {stock.price?.toFixed(2)}</Text>
+                <View style={styles.itemChangeRow}>
+                  <MaterialIcons name={stock.change_pct >= 0 ? "trending-up" : "trending-down"} size={16} color={stock.change_pct >= 0 ? colors.success : "#C62828"} />
+                  <Text style={[styles.itemChangeText, { color: stock.change_pct >= 0 ? colors.success : "#C62828" }]}>
+                    {stock.change_pct >= 0 ? '+' : ''}{stock.change_pct}%
+                  </Text>
+                </View>
+              </View>
+            </TouchableTick>
+          ))}
+        </View>
+
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -224,269 +188,275 @@ export default function StockBrowseScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.background,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    backgroundColor: '#F2F2F7',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    height: 64,
+    backgroundColor: colors.surface,
   },
-  headerTop: {
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  avatarContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceHighest,
+    overflow: 'hidden',
+  },
+  avatar: {
+    width: '100%',
+    height: '100%',
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontFamily: 'Satoshi-Bold',
+    color: colors.primary,
+  },
+  settingsBtn: {
+    padding: 8,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 120,
+  },
+  pageHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
   },
-  headerTitle: {
+  pageTitle: {
     fontSize: 20,
-    fontWeight: '700',
+    fontFamily: 'Satoshi-Medium',
+    color: colors.onSurface,
   },
-  cancelBtn: {
-    fontSize: 17,
-    fontWeight: '500',
+  marketOpenBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.successBg,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 16,
+    gap: 6,
+  },
+  marketOpenDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.successDot,
+  },
+  marketOpenText: {
+    fontSize: 12,
+    fontFamily: 'Satoshi-Bold',
+    color: colors.success,
   },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 16,
+    marginBottom: 20,
   },
   searchContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: colors.surfaceLowest,
     borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 44,
+    borderWidth: 1,
+    borderColor: 'rgba(195, 199, 206, 0.3)',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 10,
+    paddingHorizontal: 16,
+    height: 48,
   },
   searchIcon: {
     marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    fontSize: 17,
+    fontSize: 16,
+    fontFamily: 'Satoshi-Regular',
+    color: colors.onSurface,
   },
-  filterBtn: {
-    width: 44,
-    height: 44,
+  tuneBtn: {
+    width: 48,
+    height: 48,
+    backgroundColor: colors.surfaceLowest,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(195, 199, 206, 0.3)',
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 10,
   },
-  categoryScroll: {
-    marginBottom: 8,
+  chipsScroll: {
+    gap: 12,
+    marginBottom: 24,
   },
-  categoryContent: {
-    paddingRight: 16,
-    gap: 8,
-  },
-  categoryChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  chip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    gap: 4,
   },
-  activeChip: {
-    backgroundColor: '#42A5F5',
+  chipActive: {
+    backgroundColor: colors.primaryContainer,
   },
-  inactiveChip: {
-    backgroundColor: 'rgba(0,0,0,0.05)',
+  chipInactive: {
+    backgroundColor: 'rgba(28, 61, 90, 0.1)',
   },
-  categoryText: {
+  chipText: {
     fontSize: 14,
-    fontWeight: '600',
   },
-  activeChipText: {
-    color: 'white',
+  chipTextActive: {
+    fontFamily: 'Satoshi-Medium',
+    color: colors.onPrimary,
   },
-  inactiveChipText: {
-    color: '#334155',
+  chipTextInactive: {
+    fontFamily: 'Satoshi-Medium',
+    color: colors.primary,
   },
-  listContent: {
+  aiCard: {
+    backgroundColor: colors.primary,
+    borderRadius: 12,
     padding: 20,
-    gap: 12,
+    position: 'relative',
+    overflow: 'hidden',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 10,
+    marginBottom: 24,
   },
-  stockCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
+  aiCardBlur: {
+    position: 'absolute',
+    top: -40,
+    right: -40,
+    width: 128,
+    height: 128,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 64,
   },
-  stockInfo: {
-    flex: 1,
-  },
-  symbolRow: {
+  aiCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginBottom: 12,
   },
-  stockSymbol: {
-    fontSize: 18,
-    fontWeight: '700',
+  aiCardTitle: {
+    fontSize: 20,
+    fontFamily: 'Satoshi-Bold',
+    color: colors.onPrimary,
   },
-  stockName: {
-    fontSize: 14,
-  },
-  volumeText: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  priceContainer: {
-    alignItems: 'flex-end',
-    marginRight: 12,
-  },
-  priceText: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  changeText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  modalBlur: {
-    flex: 1,
-  },
-  filterSheet: {
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-  },
-  handle: {
-    width: 40,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#E2E8F0',
-    alignSelf: 'center',
-    marginTop: 12,
-    marginBottom: 24,
-  },
-  filterHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  filterTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-  },
-  resetBtn: {
+  aiCardBody: {
     fontSize: 16,
-    fontWeight: '600',
-  },
-  filterSection: {
-    marginBottom: 32,
-  },
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#8E8E93',
-    letterSpacing: 1,
+    fontFamily: 'Satoshi-Regular',
+    color: colors.onPrimaryContainer,
     marginBottom: 16,
+    lineHeight: 24,
   },
-  sectorContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  sectorChip: {
+  aiCardBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.onPrimary,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 12,
+    borderRadius: 8,
   },
-  activeSector: {
-    backgroundColor: 'rgba(66, 165, 245, 0.1)',
-    borderWidth: 1,
-    borderColor: '#42A5F5',
-  },
-  inactiveSector: {
-    backgroundColor: '#F1F5F9',
-  },
-  sectorText: {
+  aiCardBtnText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontFamily: 'Satoshi-Bold',
+    color: colors.primary,
   },
-  activeSectorText: {
-    color: '#42A5F5',
-  },
-  inactiveSectorText: {
-    color: '#64748B',
-  },
-  rangeHeader: {
+  sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  rangeValue: {
-    fontSize: 16,
-    fontWeight: '700',
+  sectionTitle: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Medium',
+    color: colors.onSurfaceVariant,
   },
-  dummySliderContainer: {
-    paddingHorizontal: 8,
+  seeAllText: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Bold',
+    color: colors.primary,
   },
-  track: {
-    height: 4,
-    backgroundColor: '#E2E8F0',
-    borderRadius: 2,
-    position: 'relative',
-    marginVertical: 12,
+  listContainer: {
+    gap: 12,
   },
-  fill: {
-    height: '100%',
-    backgroundColor: '#42A5F5',
-    borderRadius: 2,
-  },
-  thumb: {
-    width: 24,
-    height: 24,
+  listItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceLowest,
+    padding: 16,
     borderRadius: 12,
-    backgroundColor: '#42A5F5',
-    position: 'absolute',
-    top: -10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-    marginLeft: -12,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 10,
   },
-  rangeLabels: {
+  listItemLeft: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
-  },
-  rangeLimit: {
-    fontSize: 12,
-    color: '#8E8E93',
-  },
-  applyBtn: {
-    height: 56,
-    borderRadius: 16,
-    justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#42A5F5',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
+    gap: 16,
   },
-  applyBtnText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: '700',
+  itemAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  itemAvatarText: {
+    fontSize: 20,
+    fontFamily: 'Satoshi-Bold',
+  },
+  itemSymbol: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Bold',
+    color: colors.onSurface,
+  },
+  itemName: {
+    fontSize: 12,
+    fontFamily: 'Satoshi-Medium',
+    color: colors.onSurfaceVariant,
+    marginTop: 2,
+  },
+  listItemRight: {
+    alignItems: 'flex-end',
+  },
+  itemPrice: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Bold',
+    color: colors.onSurface,
+  },
+  itemChangeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  itemChangeText: {
+    fontSize: 12,
+    fontFamily: 'Satoshi-Bold',
+  }
 });

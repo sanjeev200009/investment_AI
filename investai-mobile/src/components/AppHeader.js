@@ -1,3 +1,4 @@
+import TouchableTick from './TouchableTick';
 // src/components/AppHeader.js
 import React from 'react';
 import {
@@ -40,7 +41,7 @@ const AppHeader = ({
             <View style={styles.content}>
                 <View style={styles.leftContainer}>
                     {onBack && (
-                        <TouchableOpacity
+                        <TouchableTick
                             onPress={onBack}
                             style={[styles.backButton, { backgroundColor: transparent ? 'rgba(255, 255, 255, 0.1)' : 'transparent' }]}
                         >
@@ -49,7 +50,7 @@ const AppHeader = ({
                                 size={22}
                                 color={transparent ? '#FFFFFF' : theme.colors.textPrimary}
                             />
-                        </TouchableOpacity>
+                        </TouchableTick>
                     )}
                 </View>
 

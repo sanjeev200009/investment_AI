@@ -1,3 +1,4 @@
+import TouchableTick from '../components/TouchableTick';
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, SafeAreaView, Image, StatusBar } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -100,10 +101,10 @@ export default function ChatScreen({ navigation }) {
                   {item.actions && (
                     <View style={styles.innerActions}>
                       {item.actions.map(action => (
-                        <TouchableOpacity key={action.id} style={[styles.innerActionBtn, { borderColor: colors.border }]}>
+                        <TouchableTick key={action.id} style={[styles.innerActionBtn, { borderColor: colors.border }]}>
                           <Text style={[styles.innerActionLabel, { color: colors.primary }]}>{action.label}</Text>
                           <MaterialIcons name={action.icon} size={18} color={colors.primary} />
-                        </TouchableOpacity>
+                        </TouchableTick>
                       ))}
                     </View>
                   )}
@@ -140,9 +141,9 @@ export default function ChatScreen({ navigation }) {
           <MaterialIcons name="insights" size={28} color={colors.textPrimary} />
         </View>
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Investment Assistant</Text>
-        <TouchableOpacity style={styles.settingsBtn}>
+        <TouchableTick style={styles.settingsBtn}>
           <MaterialIcons name="settings" size={24} color={colors.textSecondary} />
-        </TouchableOpacity>
+        </TouchableTick>
       </View>
 
       <KeyboardAvoidingView
@@ -165,9 +166,9 @@ export default function ChatScreen({ navigation }) {
             showsHorizontalScrollIndicator={false}
             data={QUICK_ACTIONS}
             renderItem={({ item }) => (
-              <TouchableOpacity style={[styles.quickActionChip, { backgroundColor: colors.aiBubble }]}>
+              <TouchableTick style={[styles.quickActionChip, { backgroundColor: colors.aiBubble }]}>
                 <Text style={[styles.quickActionText, { color: colors.textSecondary }]}>{item}</Text>
-              </TouchableOpacity>
+              </TouchableTick>
             )}
             keyExtractor={item => item}
             contentContainerStyle={styles.quickActionsList}
@@ -183,11 +184,11 @@ export default function ChatScreen({ navigation }) {
                 value={inputText}
                 onChangeText={setInputText}
               />
-              <TouchableOpacity style={styles.micBtn}>
+              <TouchableTick style={styles.micBtn}>
                 <MaterialIcons name="mic" size={24} color={colors.textSecondary} />
-              </TouchableOpacity>
+              </TouchableTick>
             </View>
-            <TouchableOpacity
+            <TouchableTick
               style={[styles.sendBtn, { backgroundColor: colors.primary }]}
               onPress={() => {
                 if (inputText.trim()) {
@@ -203,7 +204,7 @@ export default function ChatScreen({ navigation }) {
               }}
             >
               <MaterialIcons name="send" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
+            </TouchableTick>
           </View>
         </View>
       </KeyboardAvoidingView>

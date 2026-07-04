@@ -32,12 +32,29 @@ import AppCard from '../../components/AppCard';
 import { authApi } from '../../api/authApi';
 import { validateEmail, validatePassword } from '../../utils/validation';
 import { useAuthStore } from '../../store/authStore';
+import { useSignIn, useOAuth } from '@clerk/clerk-expo';
+import * as WebBrowser from 'expo-web-browser';
+
+WebBrowser.maybeCompleteAuthSession();
 
 const { width, height } = Dimensions.get('window');
 
 const LoginScreen = ({ navigation }) => {
   const theme = useAppTheme();
-  const login = useAuthStore(state => state.login);
+  const { signIn, setActive, isLoaded } = useSignIn();
+  const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
+
+  const handleGoogleLogin = async () => {
+    try {
+      const { createdSessionId, setActive: setOAuthActive } = await startOAuthFlow();
+      if (createdSessionId) {
+        await setOAuthActive({ session: createdSessionId });
+      }
+    } catch (err) {
+      console.error('OAuth error', err);
+      Alert.alert('Google Sign-In Error', err.errors?.[0]?.longMessage || err.message || 'Something went wrong');
+    }
+  };
 
   // Form State
   const [email, setEmail] = useState('');
@@ -91,15 +108,20 @@ const LoginScreen = ({ navigation }) => {
       return;
     }
 
+    if (!isLoaded) return;
+
     setErrors({});
     setLoading(true);
 
     try {
-      const result = await authApi.login(email, password);
-      // Save session to store (which triggers navigation)
-      await login(result.access_token, result);
+      const completeSignIn = await signIn.create({
+        identifier: email,
+        password,
+      });
+      // This will automatically transition the user to MainTab due to <SignedIn>
+      await setActive({ session: completeSignIn.createdSessionId });
     } catch (error) {
-      const msg = error?.response?.data?.detail || 'Invalid email or password';
+      const msg = error.errors?.[0]?.longMessage || error.message || 'Invalid email or password';
       Alert.alert('Login Failed', msg);
     } finally {
       setLoading(false);
@@ -126,14 +148,6 @@ const LoginScreen = ({ navigation }) => {
             style={styles.heroContainer}
           >
             <View style={styles.statusBarSpacer} />
-            <View style={styles.topBar}>
-              <View style={styles.spacer} />
-              <View style={styles.statusBarIcons}>
-                <MaterialIcons name="signal-cellular-alt" size={18} color="white" />
-                <MaterialIcons name="wifi" size={18} color="white" />
-                <MaterialIcons name="battery-full" size={18} color="white" />
-              </View>
-            </View>
 
             <Animated.View style={[styles.logoWrapper, animatedLogoStyle]}>
               <View style={[
@@ -208,7 +222,7 @@ const LoginScreen = ({ navigation }) => {
               <AppButton
                 variant="secondary"
                 title="Sign in with Google"
-                onPress={() => { }}
+                onPress={handleGoogleLogin}
                 icon={
                   <Svg width="20" height="20" viewBox="0 0 24 24">
                     <Path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />

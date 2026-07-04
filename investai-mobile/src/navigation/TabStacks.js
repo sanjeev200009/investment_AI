@@ -23,6 +23,7 @@ export const HomeStack = () => (
         <Stack.Screen name="HomeMain" component={HomeScreen} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="Watchlist" component={WatchlistScreen} />
+        <Stack.Screen name="ProfileMain" component={ProfileScreen} />
         <Stack.Screen name="Learn" component={LearnScreen} />
         <Stack.Screen name="Assessment" component={FinancialAssessmentScreen} />
     </Stack.Navigator>
@@ -43,9 +44,9 @@ export const PortfolioStack = () => (
     </Stack.Navigator>
 );
 
-export const ProfileStack = () => (
+export const AlertsStack = () => (
     <Stack.Navigator screenOptions={screenOptions}>
-        <Stack.Screen name="ProfileMain" component={ProfileScreen} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
+        <Stack.Screen name="ProfileMain" component={ProfileScreen} />
     </Stack.Navigator>
 );

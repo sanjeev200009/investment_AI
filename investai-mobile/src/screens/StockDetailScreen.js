@@ -1,3 +1,4 @@
+import TouchableTick from '../components/TouchableTick';
 // src/screens/StockDetailScreen.js
 import React, { useState } from 'react';
 import {
@@ -72,9 +73,9 @@ export default function StockDetailScreen({ route, navigation }) {
                 title={stock.symbol} 
                 onBack={() => navigation.goBack()}
                 rightAction={
-                    <TouchableOpacity onPress={() => handleAction('alert')}>
+                    <TouchableTick onPress={() => handleAction('alert')}>
                         <MaterialIcons name="notifications-none" size={24} color={theme.colors.textPrimary} />
-                    </TouchableOpacity>
+                    </TouchableTick>
                 }
             />
 
@@ -144,15 +145,15 @@ export default function StockDetailScreen({ route, navigation }) {
 
             {/* Action Bar */}
             <View style={[styles.actionBar, { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.divider }]}>
-                <TouchableOpacity style={styles.watchlistBtn}>
+                <TouchableTick style={styles.watchlistBtn}>
                     <MaterialIcons name="star-border" size={24} color={theme.colors.primary} />
-                </TouchableOpacity>
-                <TouchableOpacity 
+                </TouchableTick>
+                <TouchableTick 
                     style={[styles.buyBtn, { backgroundColor: theme.colors.primary }]}
                     onPress={() => handleAction('buy')}
                 >
                     <Text style={styles.buyBtnText}>Quick Buy</Text>
-                </TouchableOpacity>
+                </TouchableTick>
             </View>
 
             <ActionFeedbackModal 
@@ -291,10 +292,10 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#0052FF',
-        shadowOffset: { width: 0, height: 4 },
+        shadowOffset: { width: 0, height: 10 },
         shadowOpacity: 0.2,
         shadowRadius: 8,
-        elevation: 4,
+        elevation: 10,
     },
     buyBtnText: {
         color: '#FFFFFF',

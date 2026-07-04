@@ -8,22 +8,9 @@ const api = axios.create({
     headers: { 'Content-Type': 'application/json' },
 });
 
-// Attach JWT to every request automatically
-api.interceptors.request.use(config => {
-    // Import store dynamically to avoid circular dependency
-    const { useAuthStore } = require('../store/authStore');
-    const token = useAuthStore.getState().token;
-    
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-        console.log(`[API Request] ${config.method.toUpperCase()} ${config.url} - Token: ${token.substring(0, 10)}... (Verified)`);
-    } else {
-        console.log(`[API Request] ${config.method.toUpperCase()} ${config.url} - NO TOKEN FOUND`);
-    }
-    return config;
-});
+// Auth logic removed
 
-// Handle 401 globally — log user out without any screen knowing
+// Global response interceptor (error handling simplified, no auth)
 api.interceptors.response.use(
     res => {
         console.log(`[API Response] ${res.config.method.toUpperCase()} ${res.config.url} - OK (${res.status})`);
@@ -33,11 +20,6 @@ api.interceptors.response.use(
         const status = err.response?.status;
         const msg = err.response?.data?.detail || err.message;
         console.warn(`[API Error] ${err.config?.method?.toUpperCase()} ${err.config?.url} - Status ${status}: ${msg}`);
-        
-        if (status === 401) {
-            console.log('[Auth] Token expired or invalid, logging out...');
-            useAuthStore.getState().logout();
-        }
         return Promise.reject(err);
     }
 );

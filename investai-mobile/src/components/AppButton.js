@@ -1,3 +1,4 @@
+import TouchableTick from './TouchableTick';
 // src/components/AppButton.js
 import React from 'react';
 import {
@@ -53,7 +54,7 @@ const AppButton = ({
     ];
 
     return (
-        <TouchableOpacity
+        <TouchableTick
             activeOpacity={0.8}
             onPress={onPress}
             disabled={isDisabled}
@@ -67,7 +68,7 @@ const AppButton = ({
                     <Text style={labelStyle}>{title}</Text>
                 </View>
             )}
-        </TouchableOpacity>
+        </TouchableTick>
     );
 };
 

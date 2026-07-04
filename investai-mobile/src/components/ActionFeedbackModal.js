@@ -1,3 +1,4 @@
+import TouchableTick from './TouchableTick';
 // src/components/ActionFeedbackModal.js
 import React, { useEffect } from 'react';
 import {
@@ -91,7 +92,7 @@ const ActionFeedbackModal = ({
                     styles.backdrop, 
                     { opacity: opacity, backgroundColor: 'rgba(0,0,0,0.4)' }
                 ]}>
-                    <TouchableOpacity style={styles.flex1} onPress={handleClose} />
+                    <TouchableTick style={styles.flex1} onPress={handleClose} />
                 </Animated.View>
 
                 <Animated.View style={[
@@ -109,12 +110,12 @@ const ActionFeedbackModal = ({
                     <Text style={[styles.message, { color: theme.colors.textSecondary }]}>{message}</Text>
                     
                     {!autoClose && (
-                        <TouchableOpacity 
+                        <TouchableTick 
                             style={[styles.closeBtn, { backgroundColor: theme.colors.primary }]}
                             onPress={handleClose}
                         >
                             <Text style={styles.closeBtnText}>Done</Text>
-                        </TouchableOpacity>
+                        </TouchableTick>
                     )}
                 </Animated.View>
             </View>
@@ -141,7 +142,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.1,
+        shadowOpacity: 0.18,
         shadowRadius: 20,
         elevation: 10,
     },

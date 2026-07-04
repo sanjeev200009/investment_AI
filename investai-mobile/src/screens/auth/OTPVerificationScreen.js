@@ -26,12 +26,14 @@ import AppButton from '../../components/AppButton';
 import AppCard from '../../components/AppCard';
 import AppHeader from '../../components/AppHeader';
 import { authApi } from '../../api/authApi';
+import { useSignUp } from '@clerk/clerk-expo';
 
 const { height } = Dimensions.get('window');
 
 const OTPVerificationScreen = ({ navigation, route }) => {
     const theme = useAppTheme();
     const { email, type } = route.params || {};
+    const { isLoaded, signUp, setActive } = useSignUp();
     
     // Backend uses 6 digits
     const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -79,23 +81,27 @@ const OTPVerificationScreen = ({ navigation, route }) => {
             return;
         }
 
+        if (!isLoaded) return;
+
         setLoading(true);
         try {
             if (type === 'reset') {
                 const response = await authApi.verifyResetOTP(email, fullOtp);
-                // On success, go to ResetPassword with the token
                 navigation.navigate('ResetPassword', { 
                     email, 
                     resetToken: response.reset_token 
                 });
             } else {
-                // Default: Registration verify
-                await authApi.verifyOTP(email, fullOtp);
-                // On success, go to AuthSuccess then Login
-                navigation.replace('AuthSuccess');
+                const completeSignUp = await signUp.attemptEmailAddressVerification({ code: fullOtp });
+                if (completeSignUp.status === 'complete') {
+                    await setActive({ session: completeSignUp.createdSessionId });
+                    // Will auto navigate to MainTab due to <SignedIn> wrapper
+                } else {
+                    console.log(JSON.stringify(completeSignUp, null, 2));
+                }
             }
         } catch (error) {
-            const msg = error?.response?.data?.detail || 'Verification failed. Please check the code.';
+            const msg = error.errors?.[0]?.longMessage || error.message || 'Verification failed. Please check the code.';
             Alert.alert('Verification Error', msg);
         } finally {
             setLoading(false);
@@ -103,8 +109,13 @@ const OTPVerificationScreen = ({ navigation, route }) => {
     };
 
     const handleResend = async () => {
+        if (!isLoaded) return;
         try {
-            await authApi.resendOTP(email);
+            if (type === 'register') {
+                await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+            } else {
+                await authApi.resendOTP(email);
+            }
             setTimer(59);
             Alert.alert('Sent', 'A new verification code has been sent to your email.');
         } catch (error) {

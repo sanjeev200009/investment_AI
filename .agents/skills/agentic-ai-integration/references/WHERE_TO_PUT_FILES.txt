@@ -1,0 +1,50 @@
+InvestAI — Agentic AI Files Placement Guide
+============================================
+
+Copy each file into your investai-backend/ project like this:
+
+FILE                                                  → DESTINATION
+─────────────────────────────────────────────────────────────────────────────
+app/services/agent/__init__.py                        → investai-backend/app/services/agent/__init__.py   (NEW DIR)
+app/services/agent/tools.py                           → investai-backend/app/services/agent/tools.py
+app/services/agent/embeddings.py                      → investai-backend/app/services/agent/embeddings.py
+app/services/agent/memory.py                          → investai-backend/app/services/agent/memory.py
+app/services/agent/core.py                            → investai-backend/app/services/agent/core.py
+
+app/routers/chat.py                                   → investai-backend/app/routers/chat.py              (REPLACE existing)
+app/services/sentiment.py                             → investai-backend/app/services/sentiment.py        (REPLACE empty file)
+app/services/fcm.py                                   → investai-backend/app/services/fcm.py              (REPLACE empty file)
+
+tasks/scrape_tasks.py                                 → investai-backend/tasks/scrape_tasks.py            (REPLACE existing)
+tasks/rules_tasks.py                                  → investai-backend/tasks/rules_tasks.py             (NEW FILE)
+
+celery_worker.py                                      → investai-backend/celery_worker.py                 (REPLACE existing)
+
+alembic/versions/a1b2c3d4e5f6_add_pgvector...py      → investai-backend/alembic/versions/               (NEW migration)
+
+
+ADD THESE KEYS TO YOUR .env
+─────────────────────────────────────────────────────────────────────────────
+OPENROUTER_API_KEY=sk-or-...         # from openrouter.ai
+NVIDIA_API_KEY=nvapi-...             # from build.nvidia.com
+
+
+RUN AFTER COPYING
+─────────────────────────────────────────────────────────────────────────────
+cd investai-backend
+alembic upgrade head                 # applies pgvector + watchlist migration
+
+
+START WORKERS
+─────────────────────────────────────────────────────────────────────────────
+# Terminal 1 — FastAPI
+uvicorn app.main:app --reload
+
+# Terminal 2 — Celery worker
+celery -A celery_worker worker --loglevel=info
+
+# Terminal 3 — Celery Beat (scheduler)
+celery -A celery_worker beat --loglevel=info
+
+# Terminal 4 — Flower monitor (optional)
+celery -A celery_worker flower

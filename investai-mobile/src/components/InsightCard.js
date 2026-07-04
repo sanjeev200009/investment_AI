@@ -1,3 +1,4 @@
+import TouchableTick from './TouchableTick';
 // src/components/InsightCard.js
 import React from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
@@ -13,7 +14,7 @@ const InsightCard = ({ title, subtitle, imageUri }) => {
             style={styles.card}
             containerStyle={styles.container} // Passing container style if needed, but AppCard doesn't support it yet. I'll just use style.
         >
-            <TouchableOpacity activeOpacity={0.9} style={styles.touchable}>
+            <TouchableTick activeOpacity={0.9} style={styles.touchable}>
                 <Image
                     source={{ uri: imageUri }}
                     style={[styles.image, { backgroundColor: theme.colors.border }]}
@@ -26,7 +27,7 @@ const InsightCard = ({ title, subtitle, imageUri }) => {
                         {subtitle}
                     </Text>
                 </View>
-            </TouchableOpacity>
+            </TouchableTick>
         </AppCard>
     );
 };

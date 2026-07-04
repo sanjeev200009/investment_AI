@@ -64,7 +64,7 @@ async def trigger_scrape(
     try:
         if symbol:
             saved = await scrape_and_save_news(db, symbol=symbol)
-            scored = score_unseen_news(db, symbol=symbol)
+            scored = await score_unseen_news(db, symbol=symbol)
             return {
                 'message': f'News scrape completed for {symbol}',
                 'symbol': symbol,

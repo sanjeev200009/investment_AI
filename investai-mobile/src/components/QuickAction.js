@@ -1,3 +1,4 @@
+import TouchableTick from './TouchableTick';
 // src/components/QuickAction.js
 import React from 'react';
 import { TouchableOpacity, Text, StyleSheet, View } from 'react-native';
@@ -8,7 +9,7 @@ const QuickAction = ({ icon, label, onPress, color }) => {
     const theme = useAppTheme();
 
     return (
-        <TouchableOpacity style={styles.container} onPress={onPress} activeOpacity={0.7}>
+        <TouchableTick style={styles.container} onPress={onPress} activeOpacity={0.7}>
             <View style={[
                 styles.iconWrapper,
                 { backgroundColor: color ? `${color}20` : theme.isDark ? theme.colors.border : theme.colors.background }
@@ -16,7 +17,7 @@ const QuickAction = ({ icon, label, onPress, color }) => {
                 <MaterialIcons name={icon} size={24} color={color || theme.colors.textPrimary} />
             </View>
             <Text style={[styles.label, { color: theme.colors.textPrimary }]}>{label}</Text>
-        </TouchableOpacity>
+        </TouchableTick>
     );
 };
 

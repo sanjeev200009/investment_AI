@@ -1,3 +1,4 @@
+import TouchableTick from '../components/TouchableTick';
 // src/screens/LearnScreen.js
 import React, { useState, useEffect } from 'react';
 import {
@@ -86,12 +87,12 @@ export default function LearnScreen({ navigation }) {
         >
           <SafeAreaView edges={['top']}>
             <View style={styles.headerTop}>
-              <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerIconBtn}>
+              <TouchableTick onPress={() => navigation.goBack()} style={styles.headerIconBtn}>
                 <MaterialIcons name="arrow-back-ios" size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.headerIconBtn}>
+              </TouchableTick>
+              <TouchableTick style={styles.headerIconBtn}>
                 <MaterialIcons name="search" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
+              </TouchableTick>
             </View>
             
             <View style={styles.headerText}>
@@ -128,7 +129,7 @@ export default function LearnScreen({ navigation }) {
             contentContainerStyle={styles.categoryScroll}
           >
             {CATEGORIES.map(cat => (
-              <TouchableOpacity
+              <TouchableTick
                 key={cat}
                 style={[
                   styles.categoryPill,
@@ -142,12 +143,12 @@ export default function LearnScreen({ navigation }) {
                 ]}>
                   {cat}
                 </Text>
-              </TouchableOpacity>
+              </TouchableTick>
             ))}
           </ScrollView>
 
           {/* Featured Lesson */}
-          <TouchableOpacity style={[styles.featuredCard, styles.shadow]} activeOpacity={0.9}>
+          <TouchableTick style={[styles.featuredCard, styles.shadow]} activeOpacity={0.9}>
             <Image
               source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAMYnyCyVCvfARH2X0P7ihnbXOdO2R5oS3jD3lgsPSyO2Ly94doNh3ZW4LdscrJFn9wWC1gNXluIcs3vfjv2-HQY77yJxsgO1fyiTUzdwEMwZOBH654AQoXkdyWUWjpebl8jO7ZMT6qJd1NBVAcCgTaFb6OOv7mexV75fztAiU7EWeJREQgwMlI08sooxDSDwGJIWOIPoFmVkpLWigxUxX7PpXN1tdud0908QM8SLbbt7pONQvNIEtAZRbkKe73hXQw8wqKrthKRpOb' }}
               style={styles.featuredImage}
@@ -169,7 +170,7 @@ export default function LearnScreen({ navigation }) {
                 </View>
               </View>
             </LinearGradient>
-          </TouchableOpacity>
+          </TouchableTick>
 
           {/* Quiz Card */}
           <LinearGradient
@@ -181,7 +182,7 @@ export default function LearnScreen({ navigation }) {
             <View style={styles.quizLeft}>
               <Text style={styles.quizTitle}>Daily Quiz</Text>
               <Text style={styles.quizSubtitle}>Test your knowledge & earn points</Text>
-              <TouchableOpacity 
+              <TouchableTick 
                 style={styles.quizBtn}
                 onPress={() => navigation.navigate('Assessment', {
                   isEducationQuiz: true,
@@ -202,7 +203,7 @@ export default function LearnScreen({ navigation }) {
                 })}
               >
                 <Text style={styles.quizBtnText}>Start Quiz</Text>
-              </TouchableOpacity>
+              </TouchableTick>
             </View>
             <View style={styles.quizRight}>
               <View style={styles.quizIconCircle}>
@@ -214,13 +215,13 @@ export default function LearnScreen({ navigation }) {
           {/* Top Articles Section */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Top Articles</Text>
-            <TouchableOpacity>
+            <TouchableTick>
               <Text style={styles.seeAllText}>See All</Text>
-            </TouchableOpacity>
+            </TouchableTick>
           </View>
 
           {ARTICLES.map(article => (
-            <TouchableOpacity key={article.id} style={[styles.articleCard, styles.shadow]} activeOpacity={0.7}>
+            <TouchableTick key={article.id} style={[styles.articleCard, styles.shadow]} activeOpacity={0.7}>
               <Image source={{ uri: article.image }} style={styles.articleImage} />
               <View style={styles.articleContent}>
                 <View style={styles.articleHeader}>
@@ -236,7 +237,7 @@ export default function LearnScreen({ navigation }) {
                 <Text style={styles.articleTitle} numberOfLines={2}>{article.title}</Text>
                 <Text style={styles.articleStats}>{article.stats}</Text>
               </View>
-            </TouchableOpacity>
+            </TouchableTick>
           ))}
         </View>
       </ScrollView>
@@ -521,12 +522,12 @@ const styles = StyleSheet.create({
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.05,
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.18,
         shadowRadius: 10,
       },
       android: {
-        elevation: 3,
+        elevation: 10,
       },
     }),
   },

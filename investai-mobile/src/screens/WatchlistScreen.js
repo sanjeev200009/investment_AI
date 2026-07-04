@@ -1,449 +1,442 @@
-// src/screens/WatchlistScreen.js
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-  Dimensions,
-  Platform,
-  LayoutAnimation
-} from 'react-native';
+import TouchableTick from '../components/TouchableTick';
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Swipeable, GestureHandlerRootView } from 'react-native-gesture-handler';
-import { useAppTheme } from '../hooks/useAppTheme';
-import AppHeader from '../components/AppHeader';
-import ActionFeedbackModal from '../components/ActionFeedbackModal';
+import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 
-const WATCHLIST_MOCK = [
-  {
-    id: '1',
-    symbol: 'JKH',
-    name: 'John Keells Holdings',
-    price: '194.25',
-    change: '+2.15 (1.12%)',
-    isPositive: true,
-    data: [4, 6, 5, 8, 7, 9, 10] // Heights for bars
-  },
-  {
-    id: '2',
-    symbol: 'HAYL',
-    name: 'Hayleys PLC',
-    price: '82.10',
-    change: '-0.45 (0.54%)',
-    isPositive: false,
-    data: [7, 8, 6, 4, 5, 3, 2]
-  },
-  {
-    id: '3',
-    symbol: 'SAMP',
-    name: 'Sampath Bank PLC',
-    price: '78.50',
-    change: '+1.20 (1.55%)',
-    isPositive: true,
-    data: [3, 4, 6, 5, 7, 8, 9]
-  }
-];
+const colors = {
+  background: '#faf9fc',
+  surface: '#faf9fc',
+  surfaceLowest: '#ffffff',
+  surfaceHigh: '#e8e8ea',
+  surfaceHighest: '#e3e2e5',
+  surfaceLow: '#f4f3f6',
+  surfaceVariant: '#e3e2e5',
+  onSurface: '#1a1c1e',
+  onSurfaceVariant: '#43474d',
+  primary: '#002743',
+  primaryFixed: '#cfe5ff',
+  primaryContainer: '#1c3d5a',
+  onPrimaryContainer: '#89a8ca',
+  onPrimary: '#ffffff',
+  secondaryContainer: '#dae3f5',
+  outlineVariant: '#c3c7ce',
+  error: '#ba1a1a',
+  errorContainer: '#ffdad6',
+  cardShadow: 'rgba(28, 61, 90, 0.06)'
+};
 
-const INDICES = [
-  { name: 'ASPI', value: '10,432.12', change: '+0.42%', isPositive: true },
-  { name: 'S&P SL20', value: '3,012.45', change: '-0.15%', isPositive: false, fontMono: true },
-  { name: 'NIKKEI', value: '38,124.00', change: '+1.2%', isPositive: true, opacity: 0.6 }
-];
-
-const MicroChart = ({ data, isPositive }) => (
-  <View style={styles.chartContainer}>
-    {data.map((val, idx) => (
-      <View
-        key={idx}
-        style={[
-          styles.chartBar,
-          {
-            height: `${val * 10}%`,
-            backgroundColor: isPositive ? 'rgba(52, 199, 89, 0.2)' : 'rgba(255, 59, 48, 0.2)',
-            // Last bar is solid
-            ...(idx === data.length - 1 && { backgroundColor: isPositive ? '#34C759' : '#FF3B30' })
-          }
-        ]}
-      />
-    ))}
-  </View>
-);
-
-const WatchlistCard = ({ item, onDelete }) => {
-  const theme = useAppTheme();
+const Sparkline = ({ type }) => {
+  const isPositive = type === 'positive';
+  const color = isPositive ? colors.primary : colors.error;
   
-  const renderRightActions = () => (
-    <TouchableOpacity 
-      style={styles.deleteAction} 
-      onPress={() => onDelete(item.id)}
-      activeOpacity={0.8}
-    >
-      <MaterialIcons name="delete" size={24} color="#FFFFFF" />
-      <Text style={styles.deleteText}>REMOVE</Text>
-    </TouchableOpacity>
-  );
+  // Custom paths based on the HTML mockup
+  const pathDataPositive = isPositive ? "M0,35 Q20,30 40,20 T60,10 T80,15 T100,0" : "";
+  const areaDataPositive = isPositive ? "M0,40 L0,35 Q20,30 40,20 T60,10 T80,15 T100,0 L100,40 Z" : "";
+  
+  const pathDataNegative = !isPositive ? "M0,5 Q20,10 40,25 T60,20 T80,35 T100,30" : "";
+  const areaDataNegative = !isPositive ? "M0,40 L0,5 Q20,10 40,25 T60,20 T80,35 T100,30 L100,40 Z" : "";
 
   return (
-    <Swipeable renderRightActions={renderRightActions} friction={2} rightThreshold={40}>
-      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-        <View style={styles.cardHeader}>
-          <View style={styles.symbolInfo}>
-            <View style={[styles.symbolBadge, { backgroundColor: theme.isDark ? '#1E293B' : '#F1F5F9' }]}>
-              <Text style={[styles.symbolText, { color: theme.colors.textSecondary }]}>{item.symbol}</Text>
-            </View>
-            <View>
-              <Text style={[styles.symbolName, { color: theme.colors.textPrimary }]}>{item.symbol}</Text>
-              <Text style={[styles.companyName, { color: theme.colors.textSecondary }]}>{item.name}</Text>
-            </View>
-          </View>
-          <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.iconBtn}>
-              <MaterialIcons name="star" size={22} color="#FFB800" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn}>
-              <MaterialIcons name="notifications-none" size={22} color="#94A3B8" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.cardFooter}>
-          <View>
-            <Text style={[styles.priceText, { color: theme.colors.textPrimary }]}>{item.price}</Text>
-            <View style={styles.changeRow}>
-              <MaterialIcons 
-                name={item.isPositive ? "arrow-drop-up" : "arrow-drop-down"} 
-                size={18} 
-                color={item.isPositive ? "#34C759" : "#FF3B30"} 
-              />
-              <Text style={[styles.changeText, { color: item.isPositive ? "#34C759" : "#FF3B30" }]}>
-                {item.change}
-              </Text>
-            </View>
-          </View>
-          <MicroChart data={item.data} isPositive={item.isPositive} />
-        </View>
-      </View>
-    </Swipeable>
+    <Svg width="100%" height="100%" viewBox="0 0 100 40" style={{ overflow: 'visible' }}>
+      <Defs>
+        <LinearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0%" stopColor={color} stopOpacity="0.2" />
+          <Stop offset="100%" stopColor={color} stopOpacity="0" />
+        </LinearGradient>
+      </Defs>
+      <Path 
+        d={isPositive ? areaDataPositive : areaDataNegative} 
+        fill="url(#grad)" 
+      />
+      <Path 
+        d={isPositive ? pathDataPositive : pathDataNegative} 
+        fill="none" 
+        stroke={color} 
+        strokeWidth="2" 
+        strokeLinecap="round" 
+        strokeLinejoin="round" 
+      />
+    </Svg>
   );
 };
 
 export default function WatchlistScreen({ navigation }) {
-  const theme = useAppTheme();
-  const [watchlist, setWatchlist] = useState(WATCHLIST_MOCK);
-  const [showFeedback, setShowFeedback] = useState(false);
-
-  const handleDelete = (id) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setWatchlist(prev => prev.filter(item => item.id !== id));
-  };
-
-  const bgColor = theme.isDark ? theme.colors.background : '#F2F2F7';
-
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top']}>
-        <StatusBar barStyle={theme.isDark ? 'light-content' : 'dark-content'} />
-        
-        <AppHeader 
-          title="Watchlist" 
-          onBack={() => navigation.goBack()}
-          rightAction={
-            <TouchableOpacity 
-              style={styles.addBtn}
-              onPress={() => setShowFeedback(true)}
-            >
-              <MaterialIcons name="add" size={20} color={theme.colors.primary} />
-            </TouchableOpacity>
-          }
-        />
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+      
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <View style={styles.avatarContainer}>
+            <Image
+              source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDDa3cQcIjXoyP021tAFMl_zjrDDmaIz3C9LAsqV4mR4TGV84xro9ZduAuJhnlH_H4WAWF_6BGvig8MwPu-t4WbULnUAjST-Aov3H32h5pqwEPzleEcsMp8GeXIQqomlQ-mOZvhItUsUZp4GFv1KYC33NMmA_HfqBAeHAgGdNC8PXXGTTWo95RX5TpPch0HD7xy4gg_WVGy3gi_yb3UcByzSspdVF1Dm6n3lcu7nwPiZlM-LZOCv1rO8AHrOOuhG1h4u2-hvVNqAXA' }}
+              style={styles.avatar}
+            />
+          </View>
+          <Text style={styles.headerTitle}>InvestAI</Text>
+        </View>
+        <TouchableTick style={styles.settingsBtn}>
+          <MaterialIcons name="settings" size={24} color={colors.primary} />
+        </TouchableTick>
+      </View>
 
-        <View style={[styles.header, { backgroundColor: bgColor }]}>
-          {/* Indices Scroll */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.indicesContainer}
-            style={{ marginTop: 12 }}
-          >
-            {INDICES.map((idx, index) => (
-              <View 
-                key={index} 
-                style={[
-                  styles.indexCard, 
-                  { backgroundColor: theme.colors.surface },
-                  idx.opacity && { opacity: idx.opacity }
-                ]}
-              >
-                <Text style={[styles.indexLabel, { color: theme.colors.textSecondary }, idx.fontMono && styles.monoText]}>
-                  {idx.name}
-                </Text>
-                <Text style={[styles.indexVal, { color: theme.colors.textPrimary }]}>{idx.value}</Text>
-                <Text style={[styles.indexChange, { color: idx.isPositive ? '#34C759' : '#FF3B30' }]}>
-                  {idx.change}
-                </Text>
-              </View>
-            ))}
-          </ScrollView>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        
+        {/* Page Header */}
+        <View style={styles.pageHeader}>
+          <View>
+            <Text style={styles.pageTitle}>Watchlist</Text>
+            <Text style={styles.pageSubtitle}>AI-monitored assets</Text>
+          </View>
+          <TouchableTick style={styles.sortBtn}>
+            <MaterialIcons name="sort" size={18} color={colors.primary} />
+            <Text style={styles.sortBtnText}>Sort</Text>
+          </TouchableTick>
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-          {watchlist.length > 0 ? (
-            watchlist.map(item => (
-              <WatchlistCard key={item.id} item={item} onDelete={handleDelete} />
-            ))
-          ) : (
-            <View style={styles.emptyState}>
-              <View style={[styles.emptyIconCircle, { backgroundColor: theme.isDark ? '#1E293B' : '#F8FAFC' }]}>
-                <MaterialIcons name="star-outline" size={48} color={theme.isDark ? '#475569' : '#CBD5E1'} />
+        <View style={styles.cardsGrid}>
+          {/* AAPL Card */}
+          <TouchableTick style={styles.card}>
+            <View style={styles.cardTop}>
+              <View style={styles.cardHeaderLeft}>
+                <View style={styles.tickerBox}>
+                  <Text style={styles.tickerBoxText}>AAPL</Text>
+                </View>
+                <View>
+                  <Text style={styles.companyName}>Apple Inc.</Text>
+                  <Text style={styles.sectorText}>Technology</Text>
+                </View>
               </View>
-              <Text style={[styles.emptyTitle, { color: theme.colors.textMuted }]}>No more stocks</Text>
-              <Text style={[styles.emptySubtitle, { color: theme.colors.textMuted }]}>
-                Add stocks to your watchlist to track their performance and receive AI-powered insights.
-              </Text>
-              <TouchableOpacity 
-                style={styles.exploreBtn} 
-                onPress={() => navigation.navigate('Markets')}
-              >
-                <MaterialIcons name="search" size={20} color={theme.colors.primary} />
-                <Text style={[styles.exploreText, { color: theme.colors.primary }]}>Explore Market</Text>
-              </TouchableOpacity>
+              <MaterialIcons name="star" size={20} color={colors.primary} />
             </View>
-          )}
-        </ScrollView>
-        <ActionFeedbackModal 
-          visible={showFeedback} 
-          onClose={() => setShowFeedback(false)}
-          title="Stock Search"
-          message="Search and add functionality is coming soon!"
-          type="info"
-        />
-      </SafeAreaView>
-    </GestureHandlerRootView>
+            <View style={styles.cardBottom}>
+              <View>
+                <Text style={styles.priceText}>$189.43</Text>
+                <View style={styles.changeBadgePos}>
+                  <MaterialIcons name="trending-up" size={16} color={colors.primary} />
+                  <Text style={styles.changeTextPos}>+1.24%</Text>
+                </View>
+              </View>
+              <View style={styles.sparklineContainer}>
+                <Sparkline type="positive" />
+              </View>
+            </View>
+          </TouchableTick>
+
+          {/* MSFT Card */}
+          <TouchableTick style={styles.card}>
+            <View style={styles.cardTop}>
+              <View style={styles.cardHeaderLeft}>
+                <View style={styles.tickerBox}>
+                  <Text style={styles.tickerBoxText}>MSFT</Text>
+                </View>
+                <View>
+                  <Text style={styles.companyName}>Microsoft Corp.</Text>
+                  <Text style={styles.sectorText}>Technology</Text>
+                </View>
+              </View>
+              <MaterialIcons name="star" size={20} color={colors.primary} />
+            </View>
+            <View style={styles.cardBottom}>
+              <View>
+                <Text style={styles.priceText}>$415.20</Text>
+                <View style={styles.changeBadgePos}>
+                  <MaterialIcons name="trending-up" size={16} color={colors.primary} />
+                  <Text style={styles.changeTextPos}>+0.85%</Text>
+                </View>
+              </View>
+              <View style={styles.sparklineContainer}>
+                <Sparkline type="positive" />
+              </View>
+            </View>
+          </TouchableTick>
+
+          {/* TSLA Card */}
+          <TouchableTick style={styles.card}>
+            <View style={styles.cardTop}>
+              <View style={styles.cardHeaderLeft}>
+                <View style={styles.tickerBox}>
+                  <Text style={styles.tickerBoxText}>TSLA</Text>
+                </View>
+                <View>
+                  <Text style={styles.companyName}>Tesla Inc.</Text>
+                  <Text style={styles.sectorText}>Automotive</Text>
+                </View>
+              </View>
+              <MaterialIcons name="star" size={20} color={colors.primary} />
+            </View>
+            <View style={styles.cardBottom}>
+              <View>
+                <Text style={styles.priceText}>$175.34</Text>
+                <View style={styles.changeBadgeNeg}>
+                  <MaterialIcons name="trending-down" size={16} color={colors.error} />
+                  <Text style={styles.changeTextNeg}>-2.14%</Text>
+                </View>
+              </View>
+              <View style={styles.sparklineContainer}>
+                <Sparkline type="negative" />
+              </View>
+            </View>
+            <View style={styles.aiAlertChip}>
+              <MaterialIcons name="psychology" size={12} color={colors.onPrimary} />
+              <Text style={styles.aiAlertText}>Volatility Alert</Text>
+            </View>
+          </TouchableTick>
+
+          {/* NVDA Card */}
+          <TouchableTick style={styles.card}>
+            <View style={styles.cardTop}>
+              <View style={styles.cardHeaderLeft}>
+                <View style={styles.tickerBox}>
+                  <Text style={styles.tickerBoxText}>NVDA</Text>
+                </View>
+                <View>
+                  <Text style={styles.companyName}>NVIDIA Corp.</Text>
+                  <Text style={styles.sectorText}>Technology</Text>
+                </View>
+              </View>
+              <MaterialIcons name="star" size={20} color={colors.primary} />
+            </View>
+            <View style={styles.cardBottom}>
+              <View>
+                <Text style={styles.priceText}>$885.12</Text>
+                <View style={styles.changeBadgePos}>
+                  <MaterialIcons name="trending-up" size={16} color={colors.primary} />
+                  <Text style={styles.changeTextPos}>+3.45%</Text>
+                </View>
+              </View>
+              <View style={styles.sparklineContainer}>
+                <Sparkline type="positive" />
+              </View>
+            </View>
+          </TouchableTick>
+        </View>
+
+        {/* Quick Add */}
+        <View style={styles.quickAddContainer}>
+          <TouchableTick style={styles.quickAddBtn}>
+            <MaterialIcons name="add" size={20} color={colors.onPrimary} />
+            <Text style={styles.quickAddText}>Add Asset</Text>
+          </TouchableTick>
+        </View>
+
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.background,
   },
   header: {
-    paddingBottom: 4,
-    zIndex: 10,
-  },
-  headerInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingTop: 8,
     alignItems: 'center',
+    paddingHorizontal: 16,
+    height: 64,
+    backgroundColor: colors.surface,
   },
-  timeText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  statusIcons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  titleSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    paddingHorizontal: 20,
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  largeTitle: {
-    fontSize: 32,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  addBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 4,
-  },
-  addText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  indicesContainer: {
-    paddingHorizontal: 20,
-    gap: 12,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.05)',
-  },
-  indexCard: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  indexLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  monoText: {
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontSize: 9,
-  },
-  indexVal: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  indexChange: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  scrollContent: {
-    padding: 16,
-    gap: 12,
-    paddingBottom: 100,
-  },
-  card: {
-    borderRadius: 20,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  symbolInfo: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
-  symbolBadge: {
+  avatarContainer: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: colors.surfaceHighest,
+    overflow: 'hidden',
   },
-  symbolText: {
-    fontSize: 11,
-    fontWeight: '800',
+  avatar: {
+    width: '100%',
+    height: '100%',
   },
-  symbolName: {
-    fontSize: 18,
-    fontWeight: '800',
-    lineHeight: 18,
+  headerTitle: {
+    fontSize: 24,
+    fontFamily: 'Satoshi-Bold',
+    color: colors.primary,
   },
-  companyName: {
-    fontSize: 12,
-    marginTop: 2,
-    fontWeight: '500',
+  settingsBtn: {
+    padding: 8,
   },
-  actionButtons: {
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 120,
+  },
+  pageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginBottom: 24,
+  },
+  pageTitle: {
+    fontSize: 32,
+    fontFamily: 'Satoshi-Bold',
+    color: colors.primary,
+    letterSpacing: -0.5,
+  },
+  pageSubtitle: {
+    fontSize: 16,
+    fontFamily: 'Satoshi-Regular',
+    color: colors.onSurfaceVariant,
+    marginTop: 4,
+  },
+  sortBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
   },
-  iconBtn: {
-    padding: 6,
+  sortBtnText: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Medium',
+    color: colors.primary,
   },
-  cardFooter: {
+  cardsGrid: {
+    gap: 20,
+  },
+  card: {
+    backgroundColor: colors.surfaceLowest,
+    borderRadius: 12,
+    padding: 20,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 30,
+    elevation: 10,
+    position: 'relative',
+  },
+  cardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  cardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  tickerBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceLow,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tickerBoxText: {
+    fontSize: 18,
+    fontFamily: 'Satoshi-Bold',
+    color: colors.primary,
+  },
+  companyName: {
+    fontSize: 18,
+    fontFamily: 'Satoshi-Bold',
+    color: colors.onSurface,
+  },
+  sectorText: {
+    fontSize: 12,
+    fontFamily: 'Satoshi-Medium',
+    color: colors.onSurfaceVariant,
+  },
+  cardBottom: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
   },
   priceText: {
-    fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontSize: 36,
+    fontFamily: 'Satoshi-Bold',
+    color: colors.onSurface,
+    letterSpacing: -1,
+    lineHeight: 40,
   },
-  changeRow: {
+  changeBadgePos: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: -4,
+    backgroundColor: 'rgba(218, 227, 245, 0.3)', // secondary-container / 30
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    gap: 4,
   },
-  changeText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  chartContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    height: 48,
-    gap: 3,
-    width: 96,
-  },
-  chartBar: {
-    flex: 1,
-    borderRadius: 2,
-  },
-  deleteAction: {
-    backgroundColor: '#FF3B30',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 100,
-    borderRadius: 20,
-    marginLeft: 8,
-  },
-  deleteText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
-    marginTop: 4,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingHorizontal: 32,
-    paddingVertical: 60,
-    marginTop: 40,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: '#E2E8F0',
-    borderRadius: 32,
-  },
-  emptyIconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: 8,
-  },
-  emptySubtitle: {
+  changeTextPos: {
     fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 24,
+    fontFamily: 'Satoshi-Medium',
+    color: colors.primary,
   },
-  exploreBtn: {
+  changeBadgeNeg: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    backgroundColor: 'rgba(255, 218, 214, 0.3)', // error-container / 30
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    gap: 4,
   },
-  exploreText: {
-    fontSize: 15,
-    fontWeight: '700',
+  changeTextNeg: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Medium',
+    color: colors.error,
   },
+  sparklineContainer: {
+    width: 96,
+    height: 48,
+  },
+  aiAlertChip: {
+    position: 'absolute',
+    bottom: -12,
+    right: 20,
+    backgroundColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 16,
+    gap: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    elevation: 10,
+  },
+  aiAlertText: {
+    color: colors.onPrimary,
+    fontSize: 12,
+    fontFamily: 'Satoshi-Medium',
+  },
+  quickAddContainer: {
+    marginTop: 32,
+    alignItems: 'center',
+  },
+  quickAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 12,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  quickAddText: {
+    color: colors.onPrimary,
+    fontSize: 14,
+    fontFamily: 'Satoshi-Medium',
+  }
 });

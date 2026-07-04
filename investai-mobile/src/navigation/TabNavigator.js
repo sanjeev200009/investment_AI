@@ -1,14 +1,92 @@
 // src/navigation/TabNavigator.js
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { View, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform, Animated } from 'react-native';
 import { useAppTheme } from '../hooks/useAppTheme';
 
-import { HomeStack, MarketsStack, PortfolioStack, ProfileStack } from './TabStacks';
+import { HomeStack, MarketsStack, PortfolioStack, AlertsStack } from './TabStacks';
 import ChatScreen from '../screens/ChatScreen';
 
 const Tab = createBottomTabNavigator();
+
+const AnimatedTabItem = ({ focused, routeName, theme }) => {
+    const scaleValue = useRef(new Animated.Value(focused ? 1 : 0)).current;
+
+    useEffect(() => {
+        Animated.spring(scaleValue, {
+            toValue: focused ? 1 : 0,
+            useNativeDriver: true,
+            tension: 60,
+            friction: 8,
+        }).start();
+    }, [focused]);
+
+    if (routeName === 'AIChat') {
+        return (
+            <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: -24 }}>
+                <View style={[styles.aiButtonContainer, { borderColor: theme.colors.background }]}>
+                    <View style={[styles.aiButton, { backgroundColor: theme.colors.primary }]}>
+                        <MaterialIcons name='smart-toy' size={28} color="#FFFFFF" />
+                    </View>
+                </View>
+                <Text style={{ fontSize: 11, fontFamily: 'Satoshi-Bold', color: theme.colors.textSecondary, marginTop: 4 }}>AI</Text>
+            </View>
+        );
+    }
+
+    const icons = {
+        Home: 'home',
+        Markets: 'explore',
+        Portfolio: 'pie-chart',
+        Alerts: 'notifications',
+    };
+    
+    const labels = {
+        Home: 'Home',
+        Markets: 'Discover',
+        Portfolio: 'Portfolio',
+        Alerts: 'Alerts',
+    };
+
+    const iconName = icons[routeName] || 'help-circle';
+    const label = labels[routeName] || routeName;
+    const color = focused ? theme.colors.primary : theme.colors.textSecondary;
+
+    const opacity = scaleValue.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, 1]
+    });
+    
+    const scale = scaleValue.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0.8, 1]
+    });
+
+    return (
+        <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 6, paddingHorizontal: 16 }}>
+            <Animated.View style={[StyleSheet.absoluteFillObject, { 
+                backgroundColor: '#cfe5ff', // Slight blue color
+                borderRadius: 12, 
+                opacity,
+                transform: [{ scale }],
+                zIndex: 0
+            }]} />
+            
+            <View style={{ alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+                <MaterialIcons name={iconName} size={24} color={color} />
+                <Text style={{ 
+                    fontSize: 11, 
+                    fontFamily: focused ? 'Satoshi-Bold' : 'Satoshi-Medium', 
+                    color: color, 
+                    marginTop: 2 
+                }}>
+                    {label}
+                </Text>
+            </View>
+        </View>
+    );
+};
 
 export default function TabNavigator() {
     const theme = useAppTheme();
@@ -16,15 +94,14 @@ export default function TabNavigator() {
     return (
         <Tab.Navigator
             screenOptions={({ route }) => ({
-                tabBarActiveTintColor: theme.colors.primary,
-                tabBarInactiveTintColor: theme.colors.textSecondary,
+                tabBarShowLabel: false,
                 tabBarStyle: {
                     height: Platform.OS === 'ios' ? 88 : 68,
                     backgroundColor: theme.colors.background,
                     borderTopColor: theme.colors.divider,
                     borderTopWidth: 1,
-                    paddingBottom: Platform.OS === 'ios' ? 30 : 12,
-                    paddingTop: 12,
+                    paddingBottom: Platform.OS === 'ios' ? 30 : 8,
+                    paddingTop: 8,
                     // Modern subtle shadow for the tab bar
                     ...Platform.select({
                         ios: {
@@ -38,83 +115,36 @@ export default function TabNavigator() {
                         }
                     })
                 },
-                tabBarLabelStyle: {
-                    fontSize: 11,
-                    fontWeight: '700',
-                    marginTop: 4,
-                },
                 headerShown: false,
-                tabBarIcon: ({ focused, color, size }) => {
-                    const icons = {
-                        Home: focused ? 'home' : 'home-outline',
-                        Markets: focused ? 'stats-chart' : 'stats-chart-outline',
-                        AIChat: 'sparkles',
-                        Portfolio: focused ? 'pie-chart' : 'pie-chart-outline',
-                        Profile: focused ? 'person' : 'person-outline',
-                    };
-
-                    if (route.name === 'AIChat') {
-                        return (
-                            <View style={[styles.aiButtonContainer, { borderColor: theme.colors.background }]}>
-                                <View style={[styles.aiButton, { backgroundColor: theme.colors.primary }]}>
-                                    <MaterialIcons name='smart-toy' size={28} color="#FFFFFF" />
-                                </View>
-                            </View>
-                        );
-                    }
-
-                    let iconName = icons[route.name] || 'help-circle';
-                    return <Ionicons name={iconName} size={24} color={color} />;
-                },
+                tabBarIcon: ({ focused }) => (
+                    <AnimatedTabItem focused={focused} routeName={route.name} theme={theme} />
+                ),
             })}
         >
-            <Tab.Screen 
-                name='Home' 
-                component={HomeStack} 
-                options={{ title: 'Home' }}
-            />
-            <Tab.Screen 
-                name='Markets' 
-                component={MarketsStack} 
-                options={{ title: 'Markets' }}
-            />
-            <Tab.Screen 
-                name='AIChat' 
-                component={ChatScreen} 
-                options={{ 
-                    tabBarLabel: 'AI',
-                }} 
-            />
-            <Tab.Screen 
-                name='Portfolio' 
-                component={PortfolioStack} 
-                options={{ title: 'Portfolio' }}
-            />
-            <Tab.Screen 
-                name='Profile' 
-                component={ProfileStack} 
-                options={{ title: 'Profile' }}
-            />
+            <Tab.Screen name='Home' component={HomeStack} />
+            <Tab.Screen name='Markets' component={MarketsStack} />
+            <Tab.Screen name='AIChat' component={ChatScreen} />
+            <Tab.Screen name='Portfolio' component={PortfolioStack} />
+            <Tab.Screen name='Alerts' component={AlertsStack} />
         </Tab.Navigator>
     );
 }
 
 const styles = StyleSheet.create({
     aiButtonContainer: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
         borderWidth: 4,
         backgroundColor: 'transparent',
-        marginTop: -30,
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 50,
     },
     aiButton: {
-        width: 50,
-        height: 50,
-        borderRadius: 25,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#0052FF',

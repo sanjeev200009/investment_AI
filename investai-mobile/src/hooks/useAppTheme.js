@@ -7,6 +7,5 @@ import { getTheme } from '../theme/tokens';
  * Returns the theme object containing colors, typography, spacing, etc.
  */
 export const useAppTheme = () => {
-    const colorScheme = useColorScheme();
-    return getTheme(colorScheme || 'light');
+    return getTheme('light');
 };

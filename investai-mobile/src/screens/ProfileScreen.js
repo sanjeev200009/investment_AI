@@ -1,3 +1,4 @@
+import TouchableTick from '../components/TouchableTick';
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, SafeAreaView, Switch, Platform, StatusBar } from 'react-native';
 import { useAppTheme } from '../hooks/useAppTheme';
@@ -34,7 +35,7 @@ export default function ProfileScreen({ navigation }) {
     };
 
     const renderSettingItem = ({ icon, label, rightElement, onPress, isLast }) => (
-        <TouchableOpacity
+        <TouchableTick
             style={[
                 styles.settingItem,
                 !isLast && { borderBottomWidth: 1, borderBottomColor: colors.border }
@@ -47,7 +48,7 @@ export default function ProfileScreen({ navigation }) {
             </View>
             <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>{label}</Text>
             {rightElement || <MaterialIcons name="chevron-right" size={24} color={isDark ? '#475569' : '#CBD5E1'} />}
-        </TouchableOpacity>
+        </TouchableTick>
     );
 
     return (
@@ -67,9 +68,9 @@ export default function ProfileScreen({ navigation }) {
                             source={{ uri: "https://lh3.googleusercontent.com/aida-public/AB6AXuChaExWtlG1lTmRTx_x_UZVPhWuAUabzgVGro4H_Iu2Ww0P44yoLgfSFUAeky0An7I5qPPXaM1m8fvxJeLnpGH3662-Nm3Sk3i3sQsQYx4EIf9S3Sk-PrH3Rd6hLEKFZlw8pFfvF_PkdS9mcwcQ0GHBHch3IogwaoPaP6e6NsWYgOZ_q1ul0ufLmw5e7FsCkxHb445rNQYc-KvbGcbhZ692oMs4oEzWXIb4JmBRiQMVVpKYTpFxlrR-1jjkQShPnYity1Rc510Mj68" }}
                             style={[styles.avatar, { borderColor: isDark ? colors.border : '#FFFFFF' }]}
                         />
-                        <TouchableOpacity style={[styles.cameraBtn, { backgroundColor: colors.primary, borderColor: isDark ? colors.background : '#FFFFFF' }]}>
+                        <TouchableTick style={[styles.cameraBtn, { backgroundColor: colors.primary, borderColor: isDark ? colors.background : '#FFFFFF' }]}>
                             <MaterialIcons name="photo-camera" size={18} color="#FFFFFF" />
-                        </TouchableOpacity>
+                        </TouchableTick>
                     </View>
                     <Text style={[styles.userName, { color: colors.textPrimary }]}>{user?.full_name || 'User'}</Text>
                     <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{user?.email || 'email@example.com'}</Text>
@@ -169,10 +170,10 @@ export default function ProfileScreen({ navigation }) {
                 {/* Logout Section */}
                 <View style={[styles.section, { paddingTop: 16 }]}>
                     <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+                        <TouchableTick style={styles.logoutBtn} onPress={handleLogout}>
                             <MaterialIcons name="logout" size={22} color={colors.error} />
                             <Text style={[styles.logoutText, { color: colors.error }]}>Log Out</Text>
-                        </TouchableOpacity>
+                        </TouchableTick>
                     </View>
                     <Text style={[styles.versionText, { color: colors.textSecondary }]}>InvestAI v2.4.0 • Built for Smart Investing</Text>
                 </View>
@@ -266,12 +267,12 @@ const styles = StyleSheet.create({
         ...Platform.select({
             ios: {
                 shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.05,
+                shadowOffset: { width: 0, height: 10 },
+                shadowOpacity: 0.18,
                 shadowRadius: 8,
             },
             android: {
-                elevation: 2,
+                elevation: 10,
             },
         }),
     },

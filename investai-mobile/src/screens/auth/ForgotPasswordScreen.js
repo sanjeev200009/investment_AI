@@ -118,11 +118,6 @@ const ForgotPasswordScreen = ({ navigation }) => {
                             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
                                 <MaterialIcons name="arrow-back-ios" size={20} color="white" />
                             </TouchableOpacity>
-                            <View style={styles.statusBarIcons}>
-                                <MaterialIcons name="signal-cellular-alt" size={18} color="white" />
-                                <MaterialIcons name="wifi" size={18} color="white" />
-                                <MaterialIcons name="battery-full" size={18} color="white" />
-                            </View>
                         </View>
 
                         <Animated.View style={[styles.logoWrapper, animatedLogoStyle]}>

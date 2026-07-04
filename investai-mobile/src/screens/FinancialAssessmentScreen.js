@@ -1,3 +1,4 @@
+import TouchableTick from '../components/TouchableTick';
 // src/screens/FinancialAssessmentScreen.js
 import React, { useState } from 'react';
 import {
@@ -125,7 +126,7 @@ export default function FinancialAssessmentScreen({ route, navigation }) {
 
             <View style={styles.optionsList}>
               {currentQuestion.options.map((option, idx) => (
-                <TouchableOpacity
+                <TouchableTick
                   key={idx}
                   activeOpacity={0.7}
                   style={[
@@ -146,7 +147,7 @@ export default function FinancialAssessmentScreen({ route, navigation }) {
                   ]}>
                     {option}
                   </Text>
-                </TouchableOpacity>
+                </TouchableTick>
               ))}
             </View>
           </ScrollView>
@@ -154,7 +155,7 @@ export default function FinancialAssessmentScreen({ route, navigation }) {
 
         {!isFinalizing && (
           <View style={styles.footer}>
-            <TouchableOpacity 
+            <TouchableTick 
               style={[styles.btn, styles.prevBtn]} 
               onPress={handlePrevious}
               disabled={currentIndex === 0}
@@ -162,9 +163,9 @@ export default function FinancialAssessmentScreen({ route, navigation }) {
               <Text style={[styles.btnText, styles.prevBtnText, currentIndex === 0 && { opacity: 0.3 }]}>
                 Previous
               </Text>
-            </TouchableOpacity>
+            </TouchableTick>
 
-            <TouchableOpacity 
+            <TouchableTick 
               style={[styles.btn, styles.nextBtn, !answers[currentQuestion.id] && styles.nextBtnDisabled]} 
               onPress={handleNext}
               disabled={!answers[currentQuestion.id]}
@@ -172,7 +173,7 @@ export default function FinancialAssessmentScreen({ route, navigation }) {
               <Text style={styles.btnText}>
                 {currentIndex === questions.length - 1 ? 'Finish' : 'Next'}
               </Text>
-            </TouchableOpacity>
+            </TouchableTick>
           </View>
         )}
       </SafeAreaView>
@@ -320,10 +321,10 @@ const styles = StyleSheet.create({
   nextBtn: {
     backgroundColor: '#1565C0',
     shadowColor: '#1565C0',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
-    elevation: 4,
+    elevation: 10,
   },
   nextBtnDisabled: {
     backgroundColor: '#9CA3AF',

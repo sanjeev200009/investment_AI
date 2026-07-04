@@ -31,11 +31,29 @@ import AppInput from '../../components/AppInput';
 import AppCard from '../../components/AppCard';
 import { authApi } from '../../api/authApi';
 import { validateEmail, validatePassword, validateFullName, validateConfirmPassword } from '../../utils/validation';
+import { useSignUp, useOAuth } from '@clerk/clerk-expo';
+import * as WebBrowser from 'expo-web-browser';
+
+WebBrowser.maybeCompleteAuthSession();
 
 const { width, height } = Dimensions.get('window');
 
 const RegisterScreen = ({ navigation }) => {
   const theme = useAppTheme();
+  const { isLoaded, signUp, setActive } = useSignUp();
+  const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
+
+  const handleGoogleSignUp = async () => {
+    try {
+      const { createdSessionId, setActive: setOAuthActive } = await startOAuthFlow();
+      if (createdSessionId) {
+        await setOAuthActive({ session: createdSessionId });
+      }
+    } catch (err) {
+      console.error('OAuth error', err);
+      Alert.alert('Google Sign-Up Error', err.errors?.[0]?.longMessage || err.message || 'Something went wrong');
+    }
+  };
 
   // Form State
   const [name, setName] = useState('');
@@ -93,15 +111,24 @@ const RegisterScreen = ({ navigation }) => {
       return;
     }
 
+    if (!isLoaded) return;
+
     setErrors({});
     setLoading(true);
 
     try {
-      await authApi.register({ email, password, full_name: name });
+      await signUp.create({
+        emailAddress: email,
+        password,
+      });
+
+      // Send email verification code
+      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+
       // Navigate to OTP screen, passing the email and flow type
       navigation.navigate('OTPVerification', { email, type: 'register' });
     } catch (error) {
-      const msg = error?.response?.data?.detail || 'Registration failed';
+      const msg = error.errors?.[0]?.longMessage || error.message || 'Registration failed';
       Alert.alert('Error', msg);
     } finally {
       setLoading(false);
@@ -122,14 +149,6 @@ const RegisterScreen = ({ navigation }) => {
         <Animated.View style={[styles.heroContainerWrapper, animatedHeroStyle]}>
           <LinearGradient colors={theme.colors.gradient} style={styles.heroContainer}>
             <View style={styles.statusBarSpacer} />
-            <View style={styles.topBar}>
-              <View style={styles.spacer} />
-              <View style={styles.statusBarIcons}>
-                <MaterialIcons name="signal-cellular-alt" size={18} color="white" />
-                <MaterialIcons name="wifi" size={18} color="white" />
-                <MaterialIcons name="battery-full" size={18} color="white" />
-              </View>
-            </View>
 
             <Animated.View style={[styles.logoWrapper, animatedLogoStyle]}>
               <View style={[styles.logoCard, { backgroundColor: 'rgba(255, 255, 255, 0.1)', borderColor: 'rgba(255, 255, 255, 0.2)', borderRadius: theme.radii.xxl }]}>
@@ -207,7 +226,7 @@ const RegisterScreen = ({ navigation }) => {
               <AppButton
                 variant="secondary"
                 title="Sign up with Google"
-                onPress={() => { }}
+                onPress={handleGoogleSignUp}
                 icon={
                   <Svg width="20" height="20" viewBox="0 0 24 24">
                     <Path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />

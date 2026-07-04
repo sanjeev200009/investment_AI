@@ -25,6 +25,28 @@ import { useAuthStore } from './src/store/authStore';
 // Keep the splash screen visible while we fetch resources
 SplashScreenLib.preventAutoHideAsync();
 
+import { ClerkProvider, ClerkLoaded } from '@clerk/clerk-expo';
+import * as SecureStore from 'expo-secure-store';
+
+const tokenCache = {
+  async getToken(key) {
+    try {
+      return SecureStore.getItemAsync(key);
+    } catch (err) {
+      return null;
+    }
+  },
+  async saveToken(key, value) {
+    try {
+      return SecureStore.setItemAsync(key, value);
+    } catch (err) {
+      return;
+    }
+  },
+};
+
+const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
 export default function App() {
   const restoreSession = useAuthStore(state => state.restoreSession);
 
@@ -44,7 +66,11 @@ export default function App() {
     Roboto_700Bold_Italic,
     Roboto_900Black,
     Roboto_900Black_Italic,
-    Roboto_800ExtraBold
+    Roboto_800ExtraBold,
+    'Satoshi-Regular': require('./assets/fonts/satoshi/Satoshi-Regular.otf'),
+    'Satoshi-Medium': require('./assets/fonts/satoshi/Satoshi-Medium.otf'),
+    'Satoshi-Bold': require('./assets/fonts/satoshi/Satoshi-Bold.otf'),
+    'Satoshi-Black': require('./assets/fonts/satoshi/Satoshi-Black.otf'),
   });
 
   const onLayoutRootView = React.useCallback(async () => {
@@ -58,12 +84,16 @@ export default function App() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider onLayout={onLayoutRootView}>
-        <NavigationContainer>
-          <AppNavigator />
-        </NavigationContainer>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache} telemetry={false}>
+      <ClerkLoaded>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <SafeAreaProvider onLayout={onLayoutRootView}>
+            <NavigationContainer>
+              <AppNavigator />
+            </NavigationContainer>
+          </SafeAreaProvider>
+        </GestureHandlerRootView>
+      </ClerkLoaded>
+    </ClerkProvider>
   );
 }

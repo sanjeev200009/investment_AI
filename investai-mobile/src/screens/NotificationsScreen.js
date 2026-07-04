@@ -1,363 +1,402 @@
-// src/screens/NotificationsScreen.js
+import TouchableTick from '../components/TouchableTick';
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-  Dimensions,
-  Animated
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar, Animated as RNAnimated, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Swipeable, GestureHandlerRootView } from 'react-native-gesture-handler';
-import { BlurView } from 'expo-blur';
-import { useAppTheme } from '../hooks/useAppTheme';
-import AppHeader from '../components/AppHeader';
-import ActionFeedbackModal from '../components/ActionFeedbackModal';
+import { Swipeable } from 'react-native-gesture-handler';
 
-const NOTIFICATIONS_DATA = [
+const { width } = Dimensions.get('window');
+
+const colors = {
+  surface: '#faf9fc',
+  surfaceLowest: '#ffffff',
+  surfaceHigh: '#e8e8ea',
+  surfaceHighest: '#e3e2e5',
+  onSurface: '#1a1c1e',
+  onSurfaceVariant: '#43474d',
+  primary: '#002743',
+  primaryContainer: '#1c3d5a',
+  primaryFixed: '#cfe5ff',
+  onPrimaryFixed: '#001d34',
+  secondaryContainer: '#dae3f5',
+  onSecondaryContainer: '#5c6574',
+  tertiaryContainer: '#e1e2e4',
+  onTertiaryContainer: '#a3a5a7',
+  error: '#ba1a1a',
+  errorContainer: '#ffdad6',
+  onErrorContainer: '#93000a',
+  success: '#137333',
+  successContainer: '#E6F4EA',
+};
+
+const DUMMY_ALERTS = [
   {
     id: '1',
-    showAccent: true,
-    type: 'up',
-    title: "HNB crosses LKR 185",
-    subtitle: "HNB is currently trading at 185.50. This is 2.3% above your alert price of 185.00.",
-    time: "2m ago"
+    type: 'ai',
+    title: 'AI Portfolio Insight',
+    time: '2m ago',
+    message: 'Unusual options activity detected in TSLA. Model suggests a 78% probability of volatility within 48 hours.',
+    unread: true,
+    tags: ['High Priority', 'TSLA']
   },
   {
     id: '2',
-    showAccent: true,
-    type: 'down',
-    title: "JKH Alert",
-    subtitle: "John Keells Holdings (JKH) dropped below LKR 190. Current price: 189.20.",
-    time: "15m ago"
+    type: 'price_down',
+    title: 'Price Target Hit',
+    time: '1h ago',
+    message: 'AAPL has dropped below your set alert threshold of $170.00. Current price: $169.45.',
+    unread: false,
   },
   {
     id: '3',
-    icon: "school",
-    color: "#42A5F5",
-    title: "Tip: Understanding P/E Ratios",
-    subtitle: "Learn how Price-to-Earnings ratios help you evaluate if a stock is overvalued or bargain.",
-    time: "1h ago"
+    type: 'price_up',
+    title: '52-Week High',
+    time: '3h ago',
+    message: 'MSFT has reached a new 52-week high of $420.50. Consider reviewing your position.',
+    unread: false,
   },
   {
     id: '4',
-    icon: "newspaper",
-    color: "#94A3B8",
-    title: "Market Update: CSE High",
-    subtitle: "The Colombo Stock Exchange ASPI closed today with a gain of 45 points reaching a 3-month high.",
-    time: "3h ago"
+    type: 'news',
+    title: 'Earnings Report Release',
+    time: 'Yesterday',
+    message: 'NVDA released Q4 earnings beating expectations by 15%. Revenue up 265% YoY.',
+    unread: false,
+    opacity: 0.7,
   },
   {
     id: '5',
-    icon: "settings",
-    color: "#94A3B8",
-    title: "Account Security",
-    subtitle: "Your login session was verified. New device: iPhone 15 Pro.",
-    time: "Yesterday"
-  },
-  {
-    id: '6',
-    type: 'up',
-    title: "SAMP reaches Target",
-    subtitle: "Sampath Bank PLC reached your target price of LKR 78.00.",
-    time: "Yesterday"
+    type: 'system',
+    title: 'New Login Detected',
+    time: 'Oct 12',
+    message: 'A new sign-in to your InvestAI account was detected from an unrecognized device in New York, NY.',
+    unread: false,
+    opacity: 0.7,
   }
 ];
 
-const NotificationCard = ({ item, onDelete }) => {
-  const theme = useAppTheme();
-  const { icon, title, subtitle, time, color, showAccent, type } = item;
+export default function NotificationsScreen({ navigation }) {
+  const [alerts, setAlerts] = useState(DUMMY_ALERTS);
+  const [activeTab, setActiveTab] = useState('All Alerts');
 
-  let dotColor = null;
-  if (type === 'up') dotColor = '#34C759';
-  if (type === 'down') dotColor = '#FF3B30';
+  const handleDelete = (id) => {
+    setAlerts(alerts.filter(alert => alert.id !== id));
+  };
 
-  const renderRightActions = (progress, dragX) => {
+  const markAllRead = () => {
+    setAlerts(alerts.map(a => ({ ...a, unread: false })));
+  };
+
+  const renderRightActions = (progress, dragX, id) => {
+    const trans = dragX.interpolate({
+      inputRange: [-80, 0],
+      outputRange: [1, 0],
+      extrapolate: 'clamp',
+    });
+    
     return (
-      <TouchableOpacity 
-        style={styles.deleteAction} 
-        onPress={() => onDelete(item.id)}
-        activeOpacity={0.8}
+      <TouchableTick 
+        style={styles.deleteAction}
+        onPress={() => handleDelete(id)}
       >
-        <MaterialIcons name="delete" size={24} color="#FFFFFF" />
-      </TouchableOpacity>
+        <RNAnimated.View style={{ transform: [{ scale: trans }] }}>
+          <MaterialIcons name="delete" size={24} color="#FFF" />
+        </RNAnimated.View>
+      </TouchableTick>
     );
   };
 
-  const cardBgColor = theme.isDark ? theme.colors.surface : '#FFFFFF';
+  const getIconData = (type) => {
+    switch(type) {
+      case 'ai': return { name: 'psychology', bg: colors.primary, color: '#FFF' };
+      case 'price_down': return { name: 'trending-down', bg: colors.errorContainer, color: colors.error };
+      case 'price_up': return { name: 'trending-up', bg: colors.successContainer, color: colors.success };
+      case 'news': return { name: 'newspaper', bg: colors.secondaryContainer, color: colors.onSecondaryContainer };
+      case 'system': return { name: 'shield', bg: colors.tertiaryContainer, color: colors.onSurfaceVariant };
+      default: return { name: 'notifications', bg: colors.surfaceHigh, color: colors.primary };
+    }
+  };
 
   return (
-    <Swipeable
-      renderRightActions={renderRightActions}
-      friction={2}
-      containerStyle={styles.swipeContainer}
-      rightThreshold={40}
-    >
-      <View style={[
-        styles.card,
-        { backgroundColor: cardBgColor },
-        showAccent && { borderLeftColor: '#1565c1', borderLeftWidth: 4 },
-        !theme.isDark && styles.iosShadow
-      ]}>
-        <View style={styles.cardContent}>
-          <View style={styles.iconArea}>
-            {dotColor ? (
-              <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
-            ) : (
-              <MaterialIcons name={icon} size={20} color={color || '#64748B'} />
-            )}
-          </View>
-          <View style={styles.textColumn}>
-            <View style={styles.cardHeader}>
-              <Text style={[styles.cardTitle, { color: theme.colors.textPrimary }]}>{title}</Text>
-              <Text style={[styles.cardTime, { color: '#94A3B8' }]}>{time}</Text>
-            </View>
-            <Text style={[styles.cardSubtitle, { color: theme.isDark ? '#E0E0E0' : '#475569' }]}>{subtitle}</Text>
-          </View>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+      
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <Image
+            source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDLVR6r3X1jaRf-8ZQCTtRjik1MQwU2fEXj9bz30-gRzRVHXkAnVf-K4D5UR1SVgABUX5KuQ98tUpiAG9cSNuS-TgpfoEK9f4iIUUa_fmAETLF7FJ8s4TZeJQ9pnJivpieUwKB28YutCbqsZwNWaeIVJf26tG4I54Dtxle4RLmypNv2ARaKKM4hMvPeCbu7MvREnbTg4M8QcqDPeEgPnF2Wg7ZG8MWJABEP-UJQy209aujDuve73FpEC4Ty6C7HtOfxe5bDAr_n0Pc' }}
+            style={styles.avatar}
+          />
+          <Text style={styles.headerTitle}>InvestAI</Text>
         </View>
-      </View>
-    </Swipeable>
-  );
-};
-
-export default function NotificationsScreen({ navigation }) {
-  const theme = useAppTheme();
-  const [activeTab, setActiveTab] = useState('Price Alerts');
-  const [notifications, setNotifications] = useState(NOTIFICATIONS_DATA);
-  const [showFeedback, setShowFeedback] = useState(false);
-
-  const categories = ['Price Alerts', 'News', 'Educational', 'System'];
-  const bgColor = theme.isDark ? theme.colors.background : '#F2F2F7';
-
-  return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top']}>
-        <StatusBar barStyle={theme.isDark ? 'light-content' : 'dark-content'} />
-
-        <AppHeader 
-          title="Notifications" 
-          onBack={() => navigation.goBack()}
-          rightAction={
-            <TouchableOpacity onPress={() => setShowFeedback(true)}>
-              <MaterialIcons name="done-all" size={24} color={theme.colors.primary} />
-            </TouchableOpacity>
-          }
-        />
-
-        {/* Categories Tab Bar */}
-        <View style={styles.pillContainer}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.pillScroll}
-          >
-                {categories.map(cat => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[
-                      styles.pill,
-                      { backgroundColor: activeTab === cat ? '#1A237E' : (theme.isDark ? theme.colors.surface : '#FFFFFF') },
-                      activeTab !== cat && { borderColor: theme.colors.divider, borderWidth: 1 }
-                    ]}
-                    onPress={() => setActiveTab(cat)}
-                  >
-                    <Text style={[
-                      styles.pillText,
-                      { color: activeTab === cat ? '#FFFFFF' : (theme.isDark ? '#9CA3AF' : '#475569') }
-                    ]}>
-                      {cat}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-          </ScrollView>
-        </View>
-
-        <ScrollView 
-          showsVerticalScrollIndicator={false} 
-          contentContainerStyle={styles.scrollContent}
+        <TouchableTick 
+          style={styles.settingsBtn}
+          onPress={() => navigation.navigate('ProfileMain')}
         >
-          {notifications.length > 0 ? (
-            notifications.map(item => (
-              <NotificationCard
-                key={item.id}
-                item={item}
-                onDelete={(id) => setNotifications(prev => prev.filter(n => n.id !== id))}
-              />
-            ))
-          ) : (
-            <View style={styles.emptyState}>
-              <MaterialIcons name="notifications-none" size={64} color={theme.colors.textMuted} />
-              <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No notifications yet</Text>
-            </View>
-          )}
+          <MaterialIcons name="settings" size={24} color={colors.onSurfaceVariant} />
+        </TouchableTick>
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        
+        {/* Page Title & Actions */}
+        <View style={styles.pageHeader}>
+          <Text style={styles.pageTitle}>Alerts</Text>
+          <TouchableTick style={styles.markReadBtn} onPress={markAllRead}>
+            <MaterialIcons name="done-all" size={18} color={colors.primary} />
+            <Text style={styles.markReadText}>Mark all read</Text>
+          </TouchableTick>
+        </View>
+
+        {/* Tab Bar */}
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false} 
+          contentContainerStyle={styles.tabContainer}
+        >
+          {['All Alerts', 'Price Alerts', 'News', 'System'].map((tab) => (
+            <TouchableTick 
+              key={tab}
+              style={[styles.tabBtn, activeTab === tab ? styles.tabBtnActive : styles.tabBtnInactive]}
+              onPress={() => setActiveTab(tab)}
+            >
+              <Text style={[styles.tabText, activeTab === tab ? styles.tabTextActive : styles.tabTextInactive]}>
+                {tab}
+              </Text>
+            </TouchableTick>
+          ))}
         </ScrollView>
 
-        <ActionFeedbackModal 
-          visible={showFeedback} 
-          onClose={() => setShowFeedback(false)}
-          title="Cleared"
-          message="All notifications have been marked as read."
-          type="success"
-        />
-      </SafeAreaView>
-    </GestureHandlerRootView>
+        {/* Alerts List */}
+        <View style={styles.alertsList}>
+          {alerts.map((alert) => {
+            const icon = getIconData(alert.type);
+            return (
+              <Swipeable
+                key={alert.id}
+                renderRightActions={(prog, drag) => renderRightActions(prog, drag, alert.id)}
+                overshootRight={false}
+              >
+                <View style={[styles.alertCard, { opacity: alert.opacity || 1 }]}>
+                  {alert.unread && <View style={styles.unreadDot} />}
+                  
+                  <View style={[styles.iconBox, { backgroundColor: icon.bg }]}>
+                    <MaterialIcons name={icon.name} size={24} color={icon.color} />
+                  </View>
+                  
+                  <View style={styles.alertContent}>
+                    <View style={styles.alertHeaderRow}>
+                      <Text style={styles.alertTitle}>{alert.title}</Text>
+                      <Text style={styles.alertTime}>{alert.time}</Text>
+                    </View>
+                    <Text style={styles.alertMessage}>{alert.message}</Text>
+                    
+                    {alert.tags && (
+                      <View style={styles.tagsContainer}>
+                        {alert.tags.map((tag, i) => (
+                          <View 
+                            key={i} 
+                            style={[styles.tag, i === 0 ? styles.tagPrimary : styles.tagSecondary]}
+                          >
+                            <Text style={[styles.tagText, i === 0 ? styles.tagTextPrimary : styles.tagTextSecondary]}>
+                              {tag}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </Swipeable>
+            );
+          })}
+        </View>
+
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.surface,
   },
-  stickyHeader: {
-    zIndex: 10,
-  },
-  blurHeader: {
-    paddingTop: 10,
-    paddingBottom: 4,
-  },
-  headerTop: {
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    marginBottom: 12,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    height: 64,
   },
-  timeText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  statusIcons: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-  },
-  headerContent: {
-    paddingHorizontal: 20,
-    marginBottom: 15,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-  },
-  largeTitle: {
-    fontSize: 32,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  actionText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  pillContainer: {
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.05)',
-  },
-  pillScroll: {
-    paddingHorizontal: 20,
     gap: 12,
   },
-  pill: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 25,
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceHigh,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontFamily: 'Satoshi-Bold',
+    color: colors.primary,
+    letterSpacing: -0.5,
+  },
+  settingsBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  pillText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
   scrollContent: {
-    padding: 16,
-    gap: 12,
-    paddingBottom: 40,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 120,
   },
-  swipeContainer: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: '#FF3B30', // Revealed background
+  pageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  pageTitle: {
+    fontSize: 32,
+    fontFamily: 'Satoshi-Bold',
+    color: colors.primary,
+    letterSpacing: -0.5,
+  },
+  markReadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  markReadText: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Medium',
+    color: colors.primary,
+  },
+  tabContainer: {
+    gap: 8,
+    paddingBottom: 24,
+  },
+  tabBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  tabBtnActive: {
+    backgroundColor: colors.primary,
+  },
+  tabBtnInactive: {
+    backgroundColor: colors.surfaceHigh,
+  },
+  tabText: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Medium',
+  },
+  tabTextActive: {
+    color: '#FFF',
+  },
+  tabTextInactive: {
+    color: colors.onSurfaceVariant,
+  },
+  alertsList: {
+    gap: 12,
   },
   deleteAction: {
-    backgroundColor: '#FF3B30',
+    backgroundColor: colors.error,
     justifyContent: 'center',
     alignItems: 'center',
     width: 80,
-    height: '100%',
+    borderTopRightRadius: 12,
+    borderBottomRightRadius: 12,
   },
-  card: {
-    padding: 16,
-    borderRadius: 16,
-  },
-  iosShadow: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  cardContent: {
+  alertCard: {
     flexDirection: 'row',
-    gap: 12,
+    backgroundColor: colors.surfaceLowest,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 39, 67, 0.05)',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 30,
+    elevation: 10,
   },
-  iconArea: {
-    width: 20,
+  unreadDot: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.primary,
+  },
+  iconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 4,
+    marginRight: 16,
   },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  textColumn: {
+  alertContent: {
     flex: 1,
+    paddingRight: 12, // Space for unread dot
   },
-  cardHeader: {
+  alertHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'baseline',
     marginBottom: 4,
   },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    flex: 1,
-  },
-  cardTime: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginLeft: 8,
-  },
-  cardSubtitle: {
-    fontSize: 14,
-    lineHeight: 19,
-    opacity: 0.9,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 120,
-  },
-  emptyText: {
-    marginTop: 16,
+  alertTitle: {
     fontSize: 16,
-    fontWeight: '500',
+    fontFamily: 'Satoshi-Bold',
+    color: colors.primary,
   },
-  homeIndicatorWrapper: {
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
+  alertTime: {
+    fontSize: 12,
+    fontFamily: 'Satoshi-Medium',
+    color: colors.onTertiaryContainer,
   },
-  homeIndicator: {
-    width: 120,
-    height: 5,
-    borderRadius: 2.5,
+  alertMessage: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Regular',
+    color: colors.onSurfaceVariant,
+    lineHeight: 20,
+  },
+  tagsContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  tag: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  tagPrimary: {
+    backgroundColor: colors.primaryFixed,
+  },
+  tagSecondary: {
+    backgroundColor: colors.surfaceHigh,
+  },
+  tagText: {
+    fontSize: 12,
+    fontFamily: 'Satoshi-Medium',
+  },
+  tagTextPrimary: {
+    color: colors.onPrimaryFixed,
+  },
+  tagTextSecondary: {
+    color: colors.onSurfaceVariant,
   },
 });

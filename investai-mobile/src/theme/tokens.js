@@ -39,7 +39,7 @@ export const palette = {
 };
 
 export const typography = {
-    fontFamily: Platform => Platform.OS === 'ios' ? 'System' : 'Roboto',
+    fontFamily: Platform => Platform.OS === 'ios' ? 'Satoshi-Regular' : 'Satoshi-Regular',
 
     sizes: {
         h1: 36,

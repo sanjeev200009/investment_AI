@@ -1,286 +1,575 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  SafeAreaView,
-  StatusBar,
-  Image,
-  Dimensions,
-  Platform
-} from 'react-native';
-import { SafeAreaView as SafeAreaContextView } from 'react-native-safe-area-context';
+import TouchableTick from '../components/TouchableTick';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useAppTheme } from '../hooks/useAppTheme';
-import AppHeader from '../components/AppHeader';
-import AppCard from '../components/AppCard';
-import { PieChart } from 'react-native-chart-kit';
+import { useAuthStore } from '../store/authStore';
 
-const HOLDINGS = [
-  {
-    id: '1',
-    symbol: 'AAPL',
-    name: 'Apple Inc.',
-    shares: '10 shares',
-    value: '$1,910.30',
-    gain: '+$230.15',
-    isPositive: true,
-    logo: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBBT19kQaxWFQamxv0rDskBrL6SXLu793rftKFdeJVL6Q4NiqHfYH58CErkcwwClkVfcq0kQRp4gdSX4HZdLwf0jvooTKYakeTQ7alkO3h7bXEZNP79fY3Ut6_NnCMW-kQafHcHCNraHtNse77dscE9DRRy0S5zwqdsXZ3Xj1UhrMQxt41Wsh1ZZg6tPYkL9JzmwjlAEMJ0_EZWJBcqFko-FuyAXo6uO0mzhJF7WAe7LvmUwliPj2jFGkfAhSPpLD8fYLzsaV3YX0c'
-  },
-  {
-    id: '2',
-    symbol: 'MSFT',
-    name: 'Microsoft Corp.',
-    shares: '5 shares',
-    value: '$2,145.75',
-    gain: '+$188.50',
-    isPositive: true,
-    logo: 'https://lh3.googleusercontent.com/aida-public/AB6AXuA9DNckfeHKFGDHnwCMRCkYJ8LuRZrEVQ3G307sz_HwMDxUTDUohxyLtAg1ij9r76K1wWqNJRq7OC7bP5D_4FK8hFfjp-LzdVOVhLgoPmzPt0L1pgQSw4c56Pz54MDnVFlpYAPjOn-Mmo78gcJ3uv8NQBsTRQtqniuHrE35957jyj3LTzZR-n9S49yOwwXHOLPBBn6kaSdKqYKuc5f3HxwYvRbH34ecSvdGlk5zv1v-BxGZSKtPWzaJyU2rSu9NLfkryWl8y9CFZNJM'
-  },
-  {
-    id: '3',
-    symbol: 'AMZN',
-    name: 'Amazon.com Inc.',
-    shares: '8 shares',
-    value: '$1,480.00',
-    gain: '-$45.20',
-    isPositive: false,
-    logo: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDGP74uUD1aHcM5TORfU2HQfDfZUJZIf5bZQdb15jFEMqkqWUJYT9YEvcILqI7ufUAXyXpz-fEQro4c75t_kUV6e3B7zrjXcslL7G1XiNoO29LqaNwg0xfGdmdjBjmcK-ks572LzT2ITxIq4GETyjjcr3qZ_LGjfIRR2RnfbDa8MQ1u9F2AhCuvFK0N0gKyUqDmcAwzyJ6vpwmK2ChTYTHiQmys8muzaVyXrD9IeW2QyAIjdaIHQQ3Ufef5fg9l9FbuzLk1kJjmGU8'
-  }
-];
-
-const SECTOR_DATA = [
-  { name: 'Technology', population: 45, color: '#0052FF', legendFontColor: '#7F7F7F', legendFontSize: 12 },
-  { name: 'Healthcare', population: 25, color: '#4CAF50', legendFontColor: '#7F7F7F', legendFontSize: 12 },
-  { name: 'Finance', population: 20, color: '#9C27B0', legendFontColor: '#7F7F7F', legendFontSize: 12 },
-  { name: 'Consumer', population: 10, color: '#FFC107', legendFontColor: '#7F7F7F', legendFontSize: 12 },
-];
+const colors = {
+  background: '#faf9fc',
+  surface: '#faf9fc',
+  surfaceLowest: '#ffffff',
+  surfaceHigh: '#e8e8ea',
+  surfaceHighest: '#e3e2e5',
+  surfaceVariant: '#e3e2e5',
+  onSurface: '#1a1c1e',
+  onSurfaceVariant: '#43474d',
+  primary: '#002743',
+  primaryFixed: '#cfe5ff',
+  primaryContainer: '#1c3d5a',
+  onPrimaryContainer: '#89a8ca',
+  onPrimary: '#ffffff',
+  secondaryContainer: '#dae3f5',
+  outlineVariant: '#c3c7ce',
+  error: '#ba1a1a',
+  success: '#10B981', // green-600 approx
+  cardShadow: 'rgba(28, 61, 90, 0.06)'
+};
 
 export default function PortfolioScreen({ navigation }) {
-  const theme = useAppTheme();
-  const [activeTab, setActiveTab] = useState('Holdings');
+  const { user } = useAuthStore();
+  
+  const [portfolioValue, setPortfolioValue] = useState(11000);
 
-  const chartConfig = {
-    color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-  };
+  // Count up animation
+  useEffect(() => {
+    let finalValue = 12480.50;
+    let startValue = finalValue * 0.9;
+    const duration = 1000;
+    let startTime = null;
+    let animationFrame;
+
+    const updateCount = (currentTime) => {
+      if (!startTime) startTime = currentTime;
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      const easeProgress = progress * (2 - progress); // ease out quad
+      const currentVal = startValue + ((finalValue - startValue) * easeProgress);
+      
+      setPortfolioValue(currentVal);
+
+      if (progress < 1) {
+        animationFrame = requestAnimationFrame(updateCount);
+      }
+    };
+    
+    animationFrame = requestAnimationFrame(updateCount);
+    return () => cancelAnimationFrame(animationFrame);
+  }, []);
 
   return (
-    <SafeAreaContextView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <StatusBar barStyle={theme.isDark ? 'light-content' : 'dark-content'} />
-      <AppHeader
-        title="My Portfolio"
-        rightAction={
-          <TouchableOpacity style={styles.headerBtn}>
-            <MaterialIcons name="refresh" size={24} color={theme.colors.textPrimary} />
-          </TouchableOpacity>
-        }
-      />
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+      
+      {/* Header (Same as Dashboard) */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <View style={styles.avatarContainer}>
+            <Image
+              source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBNFzfNPRrxUCxZZJXRl6ffGYJNVX9PuaZj-11SJfvMior8-ccm0w2YpZzni5gi9FLcP8razcqFuKpItl4C7V7RPNajZ4s4Z_MR6ZTii8bm0_Ysf5pR7308AdNtG78DaJFNeLulSabW2p1PaK1R3ctAtN9YPYMZYMlbV55WXy8wIFSZ3Pf2vjfYk3lVdwqJIriy5gtft6VN4xZkMfoUHaMlzTmbp9DCj2NmxDH7g_1NgxzJ5z6aQzkDWdBmSfP5Kg-ITOZtUEzrMhM' }}
+              style={styles.avatar}
+            />
+          </View>
+          <Text style={styles.headerTitle}>InvestAI</Text>
+        </View>
+        <TouchableTick style={styles.settingsBtn}>
+          <MaterialIcons name="settings" size={24} color={colors.primary} />
+        </TouchableTick>
+      </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Total Value Card */}
-        <AppCard style={styles.valueCard}>
-          <Text style={[styles.label, { color: theme.colors.textSecondary }]}>Total Value</Text>
-          <Text style={[styles.totalValue, { color: theme.colors.textPrimary }]}>$12,480.50</Text>
+        
+        {/* Page Header */}
+        <View style={styles.pageHeader}>
+          <View>
+            <Text style={styles.pageTitle}>My Portfolio</Text>
+            <Text style={styles.pageSubtitle}>Real-time performance tracking</Text>
+          </View>
+          <TouchableTick style={styles.depositBtn}>
+            <MaterialIcons name="add" size={18} color={colors.onPrimary} />
+            <Text style={styles.depositBtnText}>Deposit</Text>
+          </TouchableTick>
+        </View>
 
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Total Gain/Loss</Text>
-              <Text style={[styles.statValue, { color: theme.colors.success }]}>
-                +$1,230.10 <Text style={styles.statPercent}>(+10.9%)</Text>
-              </Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Today's Change</Text>
-              <Text style={[styles.statValue, { color: theme.colors.error }]}>
-                -$52.18 <Text style={styles.statPercent}>(-0.42%)</Text>
-              </Text>
+        {/* Total Portfolio Value Card */}
+        <View style={[styles.card, styles.valueCard]}>
+          <View style={styles.valueCardHeader}>
+            <Text style={styles.valueLabel}>Total Portfolio Value</Text>
+            <View style={styles.currencyBadge}>
+              <Text style={styles.currencyBadgeText}>LKR</Text>
             </View>
           </View>
-        </AppCard>
-
-        <Text style={styles.updateTime}>Updated 5 min ago</Text>
-
-        {/* Sector Allocation */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Sector Allocation</Text>
+          
+          <Text style={styles.portfolioValue}>{portfolioValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</Text>
+          
+          <View style={styles.plRow}>
+            <View style={styles.plBadge}>
+              <MaterialIcons name="trending-up" size={16} color={colors.success} />
+              <Text style={styles.plBadgeText}>+4.2%</Text>
+            </View>
+            <Text style={styles.plText}>Today's P&L: +LKR 524.18</Text>
+          </View>
         </View>
-        <AppCard style={styles.chartCard}>
-          <View style={styles.chartWrapper}>
-            <PieChart
-              data={SECTOR_DATA}
-              width={Dimensions.get('window').width - 64}
-              height={180}
-              chartConfig={chartConfig}
-              accessor="population"
-              backgroundColor="transparent"
-              paddingLeft="0"
-              absolute
-              hasLegend={false}
-            />
-            <View style={styles.chartCenter}>
-              <Text style={[styles.chartCenterValue, { color: theme.colors.textPrimary }]}>100%</Text>
-              <Text style={[styles.chartCenterLabel, { color: theme.colors.textSecondary }]}>Total</Text>
+
+        {/* AI Insight Banner */}
+        <View style={styles.aiBanner}>
+          <View style={styles.aiBannerBgBlur} />
+          <MaterialIcons name="psychology" size={28} color={colors.secondaryContainer} />
+          <View style={styles.aiBannerContent}>
+            <Text style={styles.aiBannerTitle}>AI Insight</Text>
+            <Text style={styles.aiBannerText}>
+              Your tech allocation is up 12% this month. Consider rebalancing slightly towards Healthcare to maintain your target risk profile.
+            </Text>
+            <TouchableTick>
+              <Text style={styles.aiBannerAction}>Review Allocation strategy</Text>
+            </TouchableTick>
+          </View>
+        </View>
+
+        {/* Top Holdings List */}
+        <View style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Top Holdings</Text>
+            <TouchableTick style={styles.seeAllBtn}>
+              <Text style={styles.seeAllText}>See all</Text>
+              <MaterialIcons name="chevron-right" size={18} color={colors.onSurfaceVariant} />
+            </TouchableTick>
+          </View>
+
+          <View style={styles.holdingsList}>
+            {/* Item 1 */}
+            <TouchableTick style={styles.holdingItem}>
+              <View style={styles.holdingItemLeft}>
+                <View style={styles.holdingIconBox}>
+                  <Text style={styles.holdingIconText}>AAPL</Text>
+                </View>
+                <View>
+                  <Text style={styles.holdingName}>Apple Inc.</Text>
+                  <Text style={styles.holdingShares}>14.5 Shares</Text>
+                </View>
+              </View>
+              <View style={styles.holdingItemRight}>
+                <Text style={styles.holdingPrice}>LKR 4,250.00</Text>
+                <View style={styles.holdingChangeRow}>
+                  <MaterialIcons name="arrow-drop-up" size={18} color={colors.success} />
+                  <Text style={[styles.holdingChangeText, { color: colors.success }]}>+1.2%</Text>
+                </View>
+              </View>
+            </TouchableTick>
+
+            {/* Item 2 */}
+            <TouchableTick style={styles.holdingItem}>
+              <View style={styles.holdingItemLeft}>
+                <View style={styles.holdingIconBox}>
+                  <Text style={styles.holdingIconText}>MSFT</Text>
+                </View>
+                <View>
+                  <Text style={styles.holdingName}>Microsoft Corp.</Text>
+                  <Text style={styles.holdingShares}>8.2 Shares</Text>
+                </View>
+              </View>
+              <View style={styles.holdingItemRight}>
+                <Text style={styles.holdingPrice}>LKR 3,120.40</Text>
+                <View style={styles.holdingChangeRow}>
+                  <MaterialIcons name="arrow-drop-up" size={18} color={colors.success} />
+                  <Text style={[styles.holdingChangeText, { color: colors.success }]}>+0.8%</Text>
+                </View>
+              </View>
+            </TouchableTick>
+
+            {/* Item 3 */}
+            <TouchableTick style={styles.holdingItem}>
+              <View style={styles.holdingItemLeft}>
+                <View style={styles.holdingIconBox}>
+                  <Text style={styles.holdingIconText}>JNJ</Text>
+                </View>
+                <View>
+                  <Text style={styles.holdingName}>Johnson & Johnson</Text>
+                  <Text style={styles.holdingShares}>22.0 Shares</Text>
+                </View>
+              </View>
+              <View style={styles.holdingItemRight}>
+                <Text style={styles.holdingPrice}>LKR 2,450.10</Text>
+                <View style={styles.holdingChangeRow}>
+                  <MaterialIcons name="arrow-drop-down" size={18} color={colors.error} />
+                  <Text style={[styles.holdingChangeText, { color: colors.error }]}>-0.4%</Text>
+                </View>
+              </View>
+            </TouchableTick>
+          </View>
+        </View>
+
+        {/* Sector Allocation Card */}
+        <View style={[styles.card, { marginBottom: 30 }]}>
+          <Text style={styles.sectionTitle}>Sector Allocation</Text>
+          
+          <View style={styles.donutContainer}>
+            {/* Minimal CSS representation of conic-gradient via borders */}
+            <View style={[styles.donutRing, { borderTopColor: '#1c3d5a', borderRightColor: '#dae3f5', borderBottomColor: '#89a8ca', borderLeftColor: '#e1e2e4' }]}>
+               <View style={styles.donutInner}>
+                  <Text style={styles.donutCenterLabel}>Tech</Text>
+                  <Text style={styles.donutCenterValue}>45%</Text>
+               </View>
             </View>
           </View>
 
           <View style={styles.legendContainer}>
-            {SECTOR_DATA.map((item, index) => (
-              <View key={index} style={styles.legendItem}>
-                <View style={styles.legendLeft}>
-                  <View style={[styles.legendDot, { backgroundColor: item.color }]} />
-                  <Text style={[styles.legendName, { color: theme.colors.textPrimary }]}>{item.name}</Text>
-                </View>
-                <Text style={[styles.legendValue, { color: theme.colors.textSecondary }]}>{item.population}%</Text>
+            <View style={styles.legendRow}>
+              <View style={styles.legendLeft}>
+                <View style={[styles.legendDot, { backgroundColor: '#1c3d5a' }]} />
+                <Text style={styles.legendText}>Technology</Text>
               </View>
-            ))}
+              <Text style={styles.legendValue}>45%</Text>
+            </View>
+
+            <View style={styles.legendRow}>
+              <View style={styles.legendLeft}>
+                <View style={[styles.legendDot, { backgroundColor: '#dae3f5' }]} />
+                <Text style={styles.legendText}>Finance</Text>
+              </View>
+              <Text style={styles.legendValue}>30%</Text>
+            </View>
+
+            <View style={styles.legendRow}>
+              <View style={styles.legendLeft}>
+                <View style={[styles.legendDot, { backgroundColor: '#89a8ca' }]} />
+                <Text style={styles.legendText}>Healthcare</Text>
+              </View>
+              <Text style={styles.legendValue}>15%</Text>
+            </View>
+
+            <View style={styles.legendRow}>
+              <View style={styles.legendLeft}>
+                <View style={[styles.legendDot, { backgroundColor: '#e1e2e4' }]} />
+                <Text style={styles.legendText}>Consumer</Text>
+              </View>
+              <Text style={styles.legendValue}>10%</Text>
+            </View>
           </View>
-        </AppCard>
 
-        {/* Tabs */}
-        <View style={[styles.tabContainer, { borderBottomColor: theme.colors.divider }]}>
-          {['Holdings', 'Transactions', 'Performance'].map(tab => (
-            <TouchableOpacity
-              key={tab}
-              onPress={() => setActiveTab(tab)}
-              style={[styles.tab, activeTab === tab && { borderBottomColor: theme.colors.primary }]}
-            >
-              <Text style={[
-                styles.tabText,
-                { color: activeTab === tab ? theme.colors.primary : theme.colors.textSecondary }
-              ]}>
-                {tab}
-              </Text>
-            </TouchableOpacity>
-          ))}
         </View>
 
-        {/* Holdings Header */}
-        <View style={styles.listHeader}>
-          <Text style={[styles.listHeaderLabel, { color: theme.colors.textSecondary, flex: 2 }]}>Symbol</Text>
-          <Text style={[styles.listHeaderLabel, { color: theme.colors.textSecondary, textAlign: 'right', flex: 3 }]}>Value / Gain</Text>
-        </View>
-
-        {/* Holdings List */}
-        <View style={styles.holdingsList}>
-          {HOLDINGS.map(item => (
-            <TouchableOpacity key={item.id} style={[styles.holdingItem, { backgroundColor: theme.colors.surface, borderColor: theme.colors.divider }]}>
-              <View style={styles.holdingLeft}>
-                <View style={[styles.logoWrapper, { backgroundColor: theme.isDark ? '#1F2937' : '#F3F4F6' }]}>
-                  <Image source={{ uri: item.logo }} style={styles.logo} />
-                </View>
-                <View>
-                  <Text style={[styles.symbolText, { color: theme.colors.textPrimary }]}>{item.symbol}</Text>
-                  <Text style={[styles.sharesText, { color: theme.colors.textSecondary }]}>{item.shares}</Text>
-                </View>
-              </View>
-              <View style={styles.holdingRight}>
-                <Text style={[styles.valueText, { color: theme.colors.textPrimary }]}>{item.value}</Text>
-                <Text style={[styles.gainText, { color: item.isPositive ? theme.colors.success : theme.colors.error }]}>
-                  {item.gain}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
       </ScrollView>
-
-      {/* Footer Button */}
-      <View style={[styles.footer, { backgroundColor: theme.colors.background, borderTopColor: theme.colors.divider }]}>
-        <TouchableOpacity style={[styles.settingsBtn, { backgroundColor: theme.colors.primary }]}>
-          <MaterialIcons name="settings" size={20} color="#FFFFFF" />
-          <Text style={styles.settingsBtnText}>Auto-Invest Settings</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaContextView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.surface,
   },
-  headerBtn: {
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    height: 64,
+    backgroundColor: colors.surface,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  avatarContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceHigh,
+    overflow: 'hidden',
+  },
+  avatar: {
+    width: '100%',
+    height: '100%',
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontFamily: 'Satoshi-Bold',
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  settingsBtn: {
     padding: 8,
   },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingBottom: 100,
+    paddingTop: 16,
+    paddingBottom: 120,
+    gap: 20,
   },
-  valueCard: {
-    marginTop: 16,
-    padding: 24,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  totalValue: {
-    fontSize: 36,
-    fontWeight: '800',
-    marginTop: 4,
-    letterSpacing: -1,
-  },
-  statsRow: {
+  pageHeader: {
     flexDirection: 'row',
-    marginTop: 24,
     justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginBottom: 8,
   },
-  statItem: {
+  pageTitle: {
+    fontSize: 20,
+    fontFamily: 'Satoshi-Medium',
+    fontWeight: '500',
+    color: colors.onSurface,
+  },
+  pageSubtitle: {
+    fontSize: 16,
+    fontFamily: 'Satoshi-Regular',
+    color: colors.onSurfaceVariant,
+    marginTop: 4,
+  },
+  depositBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primaryContainer,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+    gap: 8,
+  },
+  depositBtnText: {
+    color: colors.onPrimary,
+    fontFamily: 'Satoshi-Medium',
+    fontWeight: '500',
+    fontSize: 14,
+  },
+  card: {
+    backgroundColor: colors.surfaceLowest,
+    borderRadius: 12,
+    padding: 24,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 30,
+    elevation: 10,
+  },
+  valueCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  valueLabel: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Medium',
+    fontWeight: '500',
+    color: colors.onSurfaceVariant,
+  },
+  currencyBadge: {
+    backgroundColor: 'rgba(218, 227, 245, 0.3)', // secondary-container / 30
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  currencyBadgeText: {
+    fontSize: 12,
+    fontFamily: 'Satoshi-Bold',
+    fontWeight: '700',
+    color: colors.primaryContainer,
+  },
+  portfolioValue: {
+    fontSize: 48,
+    fontFamily: 'Satoshi-Bold',
+    fontWeight: '700',
+    color: colors.primaryContainer,
+    letterSpacing: -1,
+    marginBottom: 16,
+  },
+  plRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  plBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+  },
+  plBadgeText: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Medium',
+    fontWeight: '500',
+    color: colors.success,
+  },
+  plText: {
+    fontSize: 16,
+    fontFamily: 'Satoshi-Regular',
+    color: colors.onSurfaceVariant,
+  },
+  aiBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.primaryContainer,
+    padding: 20,
+    borderRadius: 12,
+    gap: 16,
+    position: 'relative',
+    overflow: 'hidden',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 30,
+    elevation: 10,
+  },
+  aiBannerBgBlur: {
+    position: 'absolute',
+    top: -40,
+    right: -40,
+    width: 128,
+    height: 128,
+    backgroundColor: colors.secondaryContainer,
+    opacity: 0.1,
+    borderRadius: 64,
+  },
+  aiBannerContent: {
     flex: 1,
   },
-  statLabel: {
-    fontSize: 12,
-    fontWeight: '500',
+  aiBannerTitle: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Bold',
+    fontWeight: '700',
+    color: colors.secondaryContainer,
     marginBottom: 4,
   },
-  statValue: {
+  aiBannerText: {
     fontSize: 16,
-    fontWeight: '700',
-  },
-  statPercent: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  updateTime: {
-    textAlign: 'center',
-    fontSize: 12,
-    color: '#6B7280',
-    marginVertical: 12,
-  },
-  sectionHeader: {
-    marginTop: 8,
+    fontFamily: 'Satoshi-Regular',
+    color: 'rgba(255, 255, 255, 0.9)',
+    lineHeight: 24,
     marginBottom: 12,
   },
+  aiBannerAction: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Medium',
+    fontWeight: '500',
+    color: colors.onPrimary,
+    textDecorationLine: 'underline',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontFamily: 'Satoshi-Medium',
+    fontWeight: '500',
+    color: colors.primaryContainer,
   },
-  chartCard: {
-    padding: 16,
+  seeAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
-  chartWrapper: {
+  seeAllText: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Medium',
+    fontWeight: '500',
+    color: colors.onSurfaceVariant,
+  },
+  holdingsList: {
+    gap: 16,
+  },
+  holdingItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  holdingItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  holdingIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceHighest,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  chartCenter: {
-    position: 'absolute',
-    alignItems: 'center',
+  holdingIconText: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Bold',
+    fontWeight: '700',
+    color: colors.primaryContainer,
   },
-  chartCenterValue: {
-    fontSize: 24,
-    fontWeight: '800',
+  holdingName: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Bold',
+    fontWeight: '700',
+    color: colors.onSurface,
   },
-  chartCenterLabel: {
+  holdingShares: {
     fontSize: 12,
+    fontFamily: 'Satoshi-Medium',
+    fontWeight: '500',
+    color: colors.onSurfaceVariant,
+  },
+  holdingItemRight: {
+    alignItems: 'flex-end',
+  },
+  holdingPrice: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Medium',
+    fontWeight: '500',
+    color: colors.onSurface,
+  },
+  holdingChangeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 2,
+  },
+  holdingChangeText: {
+    fontSize: 12,
+    fontFamily: 'Satoshi-Medium',
     fontWeight: '500',
   },
+  donutContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 24,
+  },
+  donutRing: {
+    width: 192,
+    height: 192,
+    borderRadius: 96,
+    borderWidth: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  donutInner: {
+    width: 144,
+    height: 144,
+    borderRadius: 72,
+    backgroundColor: colors.surfaceLowest,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  donutCenterLabel: {
+    fontSize: 16,
+    fontFamily: 'Satoshi-Regular',
+    color: colors.onSurfaceVariant,
+  },
+  donutCenterValue: {
+    fontSize: 20,
+    fontFamily: 'Satoshi-Bold',
+    fontWeight: '700',
+    color: colors.primaryContainer,
+  },
   legendContainer: {
-    marginTop: 16,
     gap: 12,
   },
-  legendItem: {
+  legendRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -291,113 +580,20 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 12,
+    height: 12,
+    borderRadius: 2,
   },
-  legendName: {
+  legendText: {
     fontSize: 14,
+    fontFamily: 'Satoshi-Medium',
     fontWeight: '500',
+    color: colors.onSurface,
   },
   legendValue: {
     fontSize: 14,
+    fontFamily: 'Satoshi-Bold',
     fontWeight: '700',
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    marginTop: 24,
-    borderBottomWidth: 1,
-  },
-  tab: {
-    paddingBottom: 12,
-    marginRight: 24,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  listHeader: {
-    flexDirection: 'row',
-    marginTop: 16,
-    paddingHorizontal: 16,
-  },
-  listHeaderLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  holdingsList: {
-    marginTop: 12,
-    gap: 12,
-  },
-  holdingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  holdingLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  logoWrapper: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logo: {
-    width: 24,
-    height: 24,
-    resizeMode: 'contain',
-  },
-  symbolText: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  sharesText: {
-    fontSize: 13,
-  },
-  holdingRight: {
-    alignItems: 'flex-end',
-  },
-  valueText: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  gainText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 16,
-    paddingBottom: Platform.OS === 'ios' ? 32 : 16,
-    borderTopWidth: 1,
-  },
-  settingsBtn: {
-    flexDirection: 'row',
-    height: 52,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    shadowColor: '#0052FF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  settingsBtnText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
+    color: colors.onSurfaceVariant,
+  }
 });

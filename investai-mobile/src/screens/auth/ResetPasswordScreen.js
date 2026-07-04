@@ -121,14 +121,6 @@ const ResetPasswordScreen = ({ navigation }) => {
                 <Animated.View style={[styles.heroContainerWrapper, animatedHeroStyle]}>
                     <LinearGradient colors={theme.colors.gradient} style={styles.heroContainer}>
                         <View style={styles.statusBarSpacer} />
-                        <View style={styles.topBar}>
-                            <View style={styles.spacer} />
-                            <View style={styles.statusBarIcons}>
-                                <MaterialIcons name="signal-cellular-alt" size={18} color="white" />
-                                <MaterialIcons name="wifi" size={18} color="white" />
-                                <MaterialIcons name="battery-full" size={18} color="white" />
-                            </View>
-                        </View>
 
                         <Animated.View style={[styles.logoWrapper, animatedLogoStyle]}>
                             <View style={[styles.logoCard, { backgroundColor: 'rgba(255, 255, 255, 0.1)', borderColor: 'rgba(255, 255, 255, 0.2)', borderRadius: theme.radii.xxl }]}>
