@@ -1,3 +1,11 @@
+"""DEPRECATED — superseded by app.services.llm, which does provider failover
+against NVIDIA (primary) and OpenRouter (fallback).
+
+Its only remaining importer is the equally dead app.services.ai_agent. The model
+ids hardcoded below are no longer served: google/gemini-2.5-flash returns HTTP
+402 "requires more credits" and gemini-1.5-flash returns HTTP 404 "No endpoints
+found". Removal is tracked as I-21; see docs/MODEL_SELECTION.md.
+"""
 import logging
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional

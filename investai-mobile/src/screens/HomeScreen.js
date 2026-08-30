@@ -8,8 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, G } from 'react-native-svg';
 import { BlurView } from 'expo-blur';
 import { useAuthStore } from '../store/authStore';
-import { useUser, useAuth } from '@clerk/clerk-expo';
-import axios from 'axios';
+import api from '../api/axiosConfig';
 
 const { width } = Dimensions.get('window');
 
@@ -26,21 +25,59 @@ const colors = {
   primaryContainer: '#1c3d5a',
   onPrimaryContainer: '#89a8ca',
   error: '#ba1a1a',
+  // The stock preview rows already read `colors.success` for a gain; the key was
+  // never defined, so every positive change rendered `color: undefined` — the
+  // default near-black — while losses were red. Gains were the only readings on the
+  // screen with no colour of their own.
+  success: '#2E7D32',
   warning: '#F5A623',
   cardShadow: 'rgba(28, 61, 90, 0.06)'
 };
 
+// The two chips that are not sectors. Named rather than repeated as string literals
+// because the fetch effect, the sort and the banner title all have to agree on them.
+const ALL_MARKETS = 'All Markets';
+const TOP_MOVERS = 'Top Movers';
+
+// Circumference of the r=45 donut on the ASPI card, for turning a percentage
+// share into a strokeDasharray length: 2 * PI * 45.
+const DONUT_CIRCUMFERENCE = 2 * Math.PI * 45;
+
+// One colour per sector slice, in the order the backend ranks them by turnover.
+// The last is for the "Other sectors" remainder and is deliberately muted — it is
+// a rollup of everything unnamed, not a sector in its own right.
+const SECTOR_COLOURS = [
+  colors.primaryFixed,
+  colors.onPrimaryContainer,
+  colors.warning,
+  'rgba(255, 255, 255, 0.25)',
+];
+
+// Flat is its own case, not a default. Colouring a 0.00% move teal would read as
+// a gain, and the badge used to be a hardcoded "+1.2%" in teal with an upward
+// arrow regardless of which way the index had actually gone.
+const TREND_STYLES = {
+  up: { icon: 'trending-up', colour: '#2dd4bf', tint: 'rgba(45, 212, 191, 0.15)' },
+  down: { icon: 'trending-down', colour: '#f87171', tint: 'rgba(248, 113, 113, 0.15)' },
+  flat: { icon: 'trending-flat', colour: 'rgba(255, 255, 255, 0.7)', tint: 'rgba(255, 255, 255, 0.1)' },
+};
+
 export default function HomeScreen({ navigation }) {
   const { user, isAuthenticated } = useAuthStore();
-  const { user: clerkUser } = useUser();
-  const { getToken } = useAuth();
-  
+
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const userName = clerkUser?.firstName || clerkUser?.fullName?.split(' ')[0] || clerkUser?.primaryEmailAddress?.emailAddress?.split('@')[0] || user?.full_name?.split(' ')[0] || 'Sanjeev';
-  const lastName = clerkUser?.lastName || user?.full_name?.split(' ').slice(1).join(' ') || 'PERERA';
+  // Derived from the backend's own users row. The old chain ended in a
+  // hardcoded 'Sanjeev' / 'PERERA', which is what every user saw once the
+  // missing Authorization header made /auth/me fail.
+  const nameParts = (user?.full_name || '').trim().split(/\s+/).filter(Boolean);
+  const userName = nameParts[0] || 'Investor';
+  const lastName = nameParts.slice(1).join(' ');
 
-  const [aspiCount, setAspiCount] = useState(12000);
+  // null until a real reading arrives. Was 12000, which the tile rendered as
+  // "12,000.00" whenever the index was unavailable — indistinguishable from a
+  // genuine quote.
+  const [aspiCount, setAspiCount] = useState(null);
   const [showTrendModal, setShowTrendModal] = useState(false);
 
   const animValues = useRef([...Array(4)].map(() => new Animated.Value(0))).current;
@@ -50,95 +87,114 @@ export default function HomeScreen({ navigation }) {
   // AI Insights Swipeable Stack State
   const [insightIndex, setInsightIndex] = useState(0);
   const swipePosition = useRef(new Animated.ValueXY()).current;
-  const [activeChip, setActiveChip] = useState('All Markets');
+  const [activeChip, setActiveChip] = useState(ALL_MARKETS);
   const [allStocks, setAllStocks] = useState([]);
-  
+  const [stocksError, setStocksError] = useState(null);
+
+  // The CSE's own 20 industry-group names with live company counts, from
+  // GET /stocks/sectors. These replace three chips whose membership was decided by
+  // ticker-prefix arrays hardcoded in this file — `['JKH','HAYL','SPEN','AEL',
+  // 'RICH','HEMS']` stood in for Capital Goods (6 of its 29 companies), and
+  // "Banking" and "Manufacturing" are not CSE sector names at all.
+  //
+  // Named sectorChips, not sectors: `sectors` further down is the dashboard's
+  // turnover breakdown for the donut, which is a different list (top three by
+  // turnover plus a remainder) from a different endpoint.
+  const [sectorChips, setSectorChips] = useState([]);
+
   useEffect(() => {
+    let cancelled = false;
     const fetchDashboard = async () => {
       try {
-        const token = await getToken();
-        const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-        const res = await axios.get(`${baseUrl}/dashboard/`, {
-          headers: { 
-            Authorization: `Bearer ${token}`,
-            'ngrok-skip-browser-warning': 'true'
-          }
-        });
-        setDashboardData(res.data);
-        const stocksRes = await axios.get(`${baseUrl}/stocks/market?limit=50`, {
-          headers: { 
-            Authorization: `Bearer ${token}`,
-            'ngrok-skip-browser-warning': 'true'
-          }
-        });
-        setAllStocks(stocksRes.data);
+        // The Authorization header and ngrok bypass now come from the shared
+        // axios instance's request interceptor, so there is no getToken() call
+        // and no per-request header block here.
+        const res = await api.get('/dashboard/');
+        if (!cancelled) setDashboardData(res.data);
       } catch (e) {
-        console.error("Dashboard fetch error", e);
-        // Fallback data so the UI doesn't break if API/DB is unreachable
-        setDashboardData({
-          aspi: { value: 12450.80, change_pct: 1.2 },
-          portfolio: { current_value: 145000, target_value: 200000 },
-          insights: [
-            {
-              id: 'insight1',
-              label: 'AI INSIGHT',
-              body: 'Banking sector showing irregular volume spikes. Consider reviewing your financial allocations before close.',
-              buttonText: 'Analyze Portfolio'
-            },
-            {
-              id: 'insight2',
-              label: 'MARKET MOVER',
-              body: 'Renewable energy stocks are rallying. WindForce is up 12% today following the new policy announcements.',
-              buttonText: 'View Stocks'
-            },
-            {
-              id: 'insight3',
-              label: 'RISK ALERT',
-              body: 'Your portfolio is highly concentrated in Finance. Diversifying into Manufacturing could lower your risk profile.',
-              buttonText: 'Diversify Now'
-            }
-          ],
-          watchlist_preview: [
-            { symbol: 'SAMP.N0000', price: 78.50, change_pct: 1.2 },
-            { symbol: 'JKH.N0000', price: 195.25, change_pct: -0.5 },
-            { symbol: 'EXPO.N0000', price: 145.00, change_pct: 2.1 }
-          ]
-        });
-        setAllStocks([
-          { symbol: 'SAMP.N0000', price: 78.50, change_pct: 1.2, volume: 10000 },
-          { symbol: 'JKH.N0000', price: 195.25, change_pct: -0.5, volume: 15000 },
-          { symbol: 'EXPO.N0000', price: 145.00, change_pct: 2.1, volume: 20000 }
-        ]);
+        // No substitute payload. This used to install a whole fake dashboard on
+        // failure: a Rs. 145,000 portfolio against a Rs. 200,000 target, three
+        // invented "AI insights" (one of them announcing WindForce up 12% "following
+        // the new policy announcements"), and a three-stock watchlist with prices
+        // frozen at whatever they were when the array was typed. A user whose
+        // backend was down saw a complete, confident, entirely fictional screen.
+        //
+        // `aspi` and `sectors` stay empty for the same reason they already did: the
+        // hardcoded 12450.80 / +1.2% was out by 71% against the real 21279.65 /
+        // -0.31% and pointed the wrong way.
+        if (!cancelled) setDashboardData(null);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     fetchDashboard();
+    return () => { cancelled = true; };
   }, []);
 
-  const AI_INSIGHTS = dashboardData?.insights || [];
-  
-  const filteredStocks = React.useMemo(() => {
-    if (allStocks.length === 0) return dashboardData?.watchlist_preview || [];
-    let filtered = [...allStocks];
-    if (activeChip === 'Top Movers') {
-      filtered = filtered.sort((a, b) => (b.change_pct || 0) - (a.change_pct || 0));
-    } else if (activeChip === 'Banking') {
-      const banking = ['SAMP', 'HNB', 'COMB', 'SEYB', 'NDB', 'NTB', 'PABC', 'DFCC'];
-      filtered = filtered.filter(s => banking.some(b => s.symbol.startsWith(b)));
-    } else if (activeChip === 'Manufacturing') {
-      const mfg = ['EXPO', 'RCL', 'TKYO', 'ACL', 'LWL', 'GLAS', 'TJL'];
-      filtered = filtered.filter(s => mfg.some(m => s.symbol.startsWith(m)));
-    } else if (activeChip === 'Capital Goods') {
-      const capital = ['JKH', 'HAYL', 'SPEN', 'AEL', 'RICH', 'HEMS'];
-      filtered = filtered.filter(s => capital.some(c => s.symbol.startsWith(c)));
-    } else if (activeChip === 'AI Picks') {
-      filtered = filtered.sort(() => 0.5 - Math.random());
-    } else {
-      filtered = filtered.sort((a, b) => (b.volume || 0) - (a.volume || 0));
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/stocks/sectors')
+      // A failure here costs the sector chips, not the screen: "All Markets" and
+      // "Top Movers" need no sector list.
+      .then(({ data }) => { if (!cancelled) setSectorChips(data); })
+      .catch(() => { if (!cancelled) setSectorChips([]); })
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    // Refetched per chip, because a sector filter belongs on the server. Filtering
+    // a fixed 50-row page client-side meant a sector's members outside that page
+    // were unreachable — Insurance has 11 companies and the top-50-by-volume page
+    // contained two of them.
+    let cancelled = false;
+    setStocksError(null);
+
+    const params = { limit: 50 };
+    if (activeChip !== ALL_MARKETS && activeChip !== TOP_MOVERS) {
+      params.sector = activeChip;
+      // The whole sector, not the top 50 by volume, so the preview's six rows are
+      // the sector's real leaders.
+      params.limit = 400;
     }
-    return filtered.slice(0, Math.min(6, filtered.length));
-  }, [allStocks, activeChip, dashboardData]);
+
+    api.get('/stocks/market', { params })
+      .then(({ data }) => { if (!cancelled) setAllStocks(data); })
+      .catch(err => {
+        if (cancelled) return;
+        setAllStocks([]);
+        setStocksError(err.response?.data?.detail || err.message
+          || 'Could not reach the market data service');
+      });
+
+    return () => { cancelled = true; };
+  }, [activeChip]);
+
+  const AI_INSIGHTS = dashboardData?.insights || [];
+
+  const filteredStocks = React.useMemo(() => {
+    // No fallback to watchlist_preview. The two lists answer different questions —
+    // this one follows the chip — and blending them meant that whenever the market
+    // request came back empty the chip silently stopped applying.
+    const sorted = [...allStocks];
+
+    // change_pct and volume are both null for a symbol with no previous close or no
+    // trades. `(b.change_pct || 0) - (a.change_pct || 0)` treated those as 0.00%, so
+    // an untraded stock outranked every real faller on the "Top Movers" chip.
+    const byNumberDesc = (key) => (a, b) => {
+      const x = a[key], y = b[key];
+      if (!Number.isFinite(x)) return Number.isFinite(y) ? 1 : 0;
+      if (!Number.isFinite(y)) return -1;
+      return y - x;
+    };
+
+    // The "AI Picks" chip is gone. It sorted by `() => 0.5 - Math.random()` and
+    // presented the result as a recommendation, which is the most direct form of the
+    // fabrication this pass exists to remove: six random tickers under an AI label.
+    // Real recommendations come from the assessment-driven engine, which has its own
+    // screen and its own stored rationale.
+    sorted.sort(byNumberDesc(activeChip === TOP_MOVERS ? 'change_pct' : 'volume'));
+    return sorted.slice(0, Math.min(6, sorted.length));
+  }, [allStocks, activeChip]);
 
   const insightsLengthRef = useRef(AI_INSIGHTS.length);
   useEffect(() => {
@@ -293,11 +349,25 @@ export default function HomeScreen({ navigation }) {
     });
   }, []);
 
-  // Simple counting animation for ASPI
+  // Counting animation for the ASPI tile.
+  //
+  // Runs up from a fraction of the target rather than a literal 12000. With the
+  // literal the tile counted *down* as soon as the backend started serving the
+  // real index (21279 vs the hardcoded 12450), and it would show a wrong order of
+  // magnitude on the first frame for any index that is not near 12000 — the
+  // industry groups run from 513 to 94679.
+  //
+  // Also guards on `aspi` being absent, which is what the backend returns before
+  // the first index scrape or when it has no reading. The old version read
+  // `dashboardData.aspi.value` unconditionally and threw on null.
   useEffect(() => {
-    if (!dashboardData) return;
-    let start = 12000;
-    const end = dashboardData.aspi.value;
+    const end = dashboardData?.aspi?.value;
+    if (typeof end !== 'number' || !isFinite(end)) {
+      setAspiCount(null);
+      return;
+    }
+
+    const start = end * 0.97;
     const duration = 1500;
     let startTime = null;
     let animationFrame;
@@ -306,52 +376,135 @@ export default function HomeScreen({ navigation }) {
       if (!startTime) startTime = currentTime;
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      
+
       const easeOut = 1 - Math.pow(1 - progress, 3);
       const currentVal = start + (end - start) * easeOut;
-      
+
       setAspiCount(currentVal);
 
       if (progress < 1) {
         animationFrame = requestAnimationFrame(updateCount);
       }
     };
-    
+
     animationFrame = requestAnimationFrame(updateCount);
     return () => cancelAnimationFrame(animationFrame);
   }, [dashboardData]);
 
-  const currentVal = dashboardData?.portfolio?.current_value || 145000;
-  const targetVal = dashboardData?.portfolio?.target_value || 200000;
-  const progressPct = Math.min((currentVal / targetVal) * 100, 100).toFixed(1) + '%';
-  
-  // If the backend returns all 0s (new user with no portfolio), show a mock chart so it's not empty
-  let weeklyData = dashboardData?.portfolio?.weekly_history;
-  if (!weeklyData || weeklyData.every(v => v === 0)) {
-    weeklyData = [110000, 125000, 130000, 145000];
-  }
+  // The goal tile's two figures, straight from the payload.
+  //
+  // These were `dashboardData?.portfolio?.current_value || 145000` and
+  // `|| 200000`. `current_value` is 0 for a user who holds nothing, and `0 || x` is
+  // x in JavaScript, so the fallback fired on the *success* path for every new user:
+  // the bar filled to 72.5% of a Rs. 200,000 goal while the line above it correctly
+  // read "Rs. 0 / Rs. 100,000". The tile disagreed with itself.
+  const currentVal = Number(dashboardData?.portfolio?.current_value);
+  const targetVal = Number(dashboardData?.portfolio?.target_value);
+  const hasGoal = Number.isFinite(currentVal) && Number.isFinite(targetVal)
+    && targetVal > 0 && currentVal > 0;
+  const progressPct = hasGoal
+    ? Math.min((currentVal / targetVal) * 100, 100).toFixed(1) + '%'
+    : '0%';
 
-  const maxWeekly = Math.max(...weeklyData, 1) * 1.1; 
-  const getH = (val) => (val / maxWeekly) * 150;
+  // ASPI tile. `aspi` is null before the first index scrape and whenever the
+  // dashboard request fails, so every field below has to tolerate its absence
+  // instead of substituting a number.
+  const aspi = dashboardData?.aspi || null;
+  const aspiChangePct = typeof aspi?.change_pct === 'number' ? aspi.change_pct : null;
+  const aspiTrend = TREND_STYLES[
+    aspiChangePct === null ? 'flat' : aspiChangePct > 0 ? 'up' : aspiChangePct < 0 ? 'down' : 'flat'
+  ];
+
+  // cse.lk keeps serving the last session's close while the market is shut, so
+  // the reading can be days old — it was 50 hours old when this was written. The
+  // backend sends the exchange's own timestamp for exactly this reason; without
+  // surfacing it, a stale close is indistinguishable from a live quote. Shown only
+  // when the reading is not from today, so it stays out of the way intraday.
+  const aspiAsOf = React.useMemo(() => {
+    if (!aspi?.recorded_at) return null;
+    const at = new Date(aspi.recorded_at);
+    if (isNaN(at.getTime())) return null;
+    if (at.toDateString() === new Date().toDateString()) return null;
+    return at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  }, [aspi]);
+
+  // Donut arcs from real turnover shares. These were three fixed strokeDasharray
+  // values ("109 282.74", "95 282.74", "66 282.74") matching a hardcoded
+  // "Banking 40% / Cap Goods 35% / Food 25%" legend — three slices summing to
+  // exactly 100 when the CSE has 20 industry groups. The backend now sends the
+  // top three by turnover plus one "Other sectors" remainder, so the shares still
+  // add up without any of them being invented.
+  const sectors = dashboardData?.sectors || [];
+  const sectorArcs = React.useMemo(() => {
+    let offset = 0;
+    return sectors.map((s, i) => {
+      const share = Math.max(Number(s.share_pct) || 0, 0);
+      const length = (share / 100) * DONUT_CIRCUMFERENCE;
+      const arc = {
+        code: s.code,
+        name: s.name,
+        share,
+        colour: SECTOR_COLOURS[i] || SECTOR_COLOURS[SECTOR_COLOURS.length - 1],
+        dashArray: `${length} ${DONUT_CIRCUMFERENCE}`,
+        dashOffset: -offset,
+      };
+      offset += length;
+      return arc;
+    });
+  }, [sectors]);
   
-  const w1Gray = getH(weeklyData[0] * 0.9);
-  const w1Blue = getH(weeklyData[0]);
-  const w2Gray = getH(weeklyData[0]);
-  const w2Blue = getH(weeklyData[1]);
-  const w3Gray = getH(weeklyData[1]);
-  const w3Blue = getH(weeklyData[2]);
-  const w4Gray = getH(weeklyData[2]);
-  const w4Blue = getH(weeklyData[3]);
-  
-  const changeW4 = (((weeklyData[3] - weeklyData[2]) / (weeklyData[2] || 1)) * 100).toFixed(1);
+  // The real valuation series from GET /dashboard/ — one point per day the
+  // snapshot task has run, oldest first, each carrying its own date. This was
+  // `weekly_history`, which the backend computed as
+  // `current_value × [0.85, 0.82, 0.94, 1.0]`: four numbers derived from the
+  // present value, so the tile drew the same 15% dip recovering to exactly today's
+  // figure for every user, every day, whatever the portfolio had actually done.
+  //
+  // There is deliberately no fallback series. The old code substituted
+  // [110000, 125000, 130000, 145000] whenever the backend returned zeros — which
+  // is the state a new user is permanently in — so the first thing a new user saw
+  // was a rising Rs. 145k portfolio they did not own. An empty series now renders
+  // an empty state that says so.
+  const history = Array.isArray(dashboardData?.portfolio?.history)
+    ? dashboardData.portfolio.history.filter(
+        p => p && Number.isFinite(Number(p.value)))
+    : [];
+  const historyDays = dashboardData?.portfolio?.history_days ?? 30;
+
+  // Scaled to the series' own maximum with 10% headroom, so the tallest bar never
+  // touches the top gridline.
+  const maxValue = Math.max(...history.map(p => Number(p.value)), 1) * 1.1;
+  const getH = (val) => (Number(val) / maxValue) * 150;
+
+  // Change across the whole stored window, not a fixed "vs last week" — the window
+  // is however many days have been recorded. Null rather than 0 when there is only
+  // one point, because "0.0%" would assert the portfolio held steady over a period
+  // we have not observed; and null when the first value is zero, which would
+  // otherwise divide to Infinity.
+  const firstValue = history.length ? Number(history[0].value) : 0;
+  const lastValue = history.length ? Number(history[history.length - 1].value) : 0;
+  const windowChange = history.length >= 2 && firstValue !== 0
+    ? (((lastValue - firstValue) / firstValue) * 100).toFixed(1)
+    : null;
+
   const formatLabel = (val) => val >= 1000 ? `Rs. ${(val / 1000).toFixed(1)}k` : `Rs. ${val.toFixed(0)}`;
   const yLabels = [
-    formatLabel(maxWeekly),
-    formatLabel(maxWeekly * 0.75),
-    formatLabel(maxWeekly * 0.5),
-    formatLabel(maxWeekly * 0.25),
+    formatLabel(maxValue),
+    formatLabel(maxValue * 0.75),
+    formatLabel(maxValue * 0.5),
+    formatLabel(maxValue * 0.25),
     'Rs. 0'
   ];
+
+  // Only the first and last bars carry a date label: 30 daily labels would overlap
+  // into illegibility in a card this wide, and the point count in the header is
+  // what actually tells the user how much history exists.
+  const dayLabel = (iso) => {
+    const parsed = new Date(`${iso}T00:00:00`);
+    return Number.isNaN(parsed.getTime())
+      ? String(iso ?? '')
+      : parsed.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  };
 
   if (loading) {
     return (
@@ -369,7 +522,7 @@ export default function HomeScreen({ navigation }) {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Image
-            source={{ uri: clerkUser?.imageUrl || 'https://ui-avatars.com/api/?name=User&background=random' }}
+            source={{ uri: `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.full_name || 'Investor')}&background=0052FF&color=fff` }}
             style={styles.avatar}
           />
           <Text style={styles.headerTitle}>InvestAI</Text>
@@ -417,25 +570,43 @@ export default function HomeScreen({ navigation }) {
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 6 }}>
                  <MaterialIcons name="auto-graph" size={16} color="rgba(255, 255, 255, 0.7)" />
-                 <Text style={[styles.cardLabelNew, { color: 'rgba(255, 255, 255, 0.7)' }]}>ASPI INDEX</Text>
+                 <Text style={[styles.cardLabelNew, { color: 'rgba(255, 255, 255, 0.7)' }]}>
+                   ASPI INDEX{aspiAsOf ? ` · ${aspiAsOf}` : ''}
+                 </Text>
               </View>
               
               <Text style={[styles.aspiValueNew, { color: '#ffffff', letterSpacing: 1, fontSize: 32 }]}>
-                {aspiCount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                {aspiCount === null
+                  ? '—'
+                  : aspiCount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
               </Text>
-              
-              <View style={[styles.aspiChangeBadgeNew, { backgroundColor: 'rgba(45, 212, 191, 0.15)', alignSelf: 'flex-start', marginTop: 12 }]}>
-                <MaterialIcons name="trending-up" size={14} color="#2dd4bf" />
-                <Text style={[styles.aspiChangeTextNew, { color: '#2dd4bf' }]}>+1.2%</Text>
+
+              <View style={[styles.aspiChangeBadgeNew, { backgroundColor: aspiTrend.tint, alignSelf: 'flex-start', marginTop: 12 }]}>
+                <MaterialIcons name={aspiTrend.icon} size={14} color={aspiTrend.colour} />
+                <Text style={[styles.aspiChangeTextNew, { color: aspiTrend.colour }]}>
+                  {aspiChangePct === null
+                    ? 'No reading'
+                    : `${aspiChangePct > 0 ? '+' : ''}${aspiChangePct.toFixed(2)}%`}
+                </Text>
               </View>
             </View>
 
             <View style={{ alignItems: 'flex-end', justifyContent: 'center', marginTop: 4 }}>
                  <Svg height="72" width="72" viewBox="0 0 120 120">
                    <G transform="rotate(-90 60 60)">
-                     <Circle cx="60" cy="60" r="45" stroke={colors.primaryFixed} strokeWidth="14" fill="transparent" strokeDasharray="109 282.74" strokeDashoffset="0" strokeLinecap="round" />
-                     <Circle cx="60" cy="60" r="45" stroke={colors.onPrimaryContainer} strokeWidth="14" fill="transparent" strokeDasharray="95 282.74" strokeDashoffset="-117" strokeLinecap="round" />
-                     <Circle cx="60" cy="60" r="45" stroke={colors.warning} strokeWidth="14" fill="transparent" strokeDasharray="66 282.74" strokeDashoffset="-216" strokeLinecap="round" />
+                     {sectorArcs.length === 0 ? (
+                       <Circle cx="60" cy="60" r="45" stroke="rgba(255,255,255,0.12)" strokeWidth="14" fill="transparent" />
+                     ) : sectorArcs.map((arc) => (
+                       <Circle
+                         key={arc.code}
+                         cx="60" cy="60" r="45"
+                         stroke={arc.colour}
+                         strokeWidth="14"
+                         fill="transparent"
+                         strokeDasharray={arc.dashArray}
+                         strokeDashoffset={arc.dashOffset}
+                       />
+                     ))}
                    </G>
                  </Svg>
                  <View style={{ position: 'absolute', right: 24, top: 24 }}>
@@ -443,21 +614,26 @@ export default function HomeScreen({ navigation }) {
                  </View>
             </View>
           </View>
-          
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 24, zIndex: 1, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)' }}>
-             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primaryFixed }} />
-                <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontFamily: 'Satoshi-Medium' }}>Banking 40%</Text>
-             </View>
-             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.onPrimaryContainer }} />
-                <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontFamily: 'Satoshi-Medium' }}>Cap Goods 35%</Text>
-             </View>
-             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.warning }} />
-                <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontFamily: 'Satoshi-Medium' }}>Food 25%</Text>
-             </View>
-          </View>
+
+          {/* Turnover share by sector. Two columns rather than one row: the real
+              CSE names ("Diversified Financials", "Food & Staples Retailing") do
+              not fit four-across, and there are four slices now that the
+              remainder is shown rather than three that summed to a tidy 100. */}
+          {sectorArcs.length > 0 && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 24, zIndex: 1, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)' }}>
+               {sectorArcs.map((arc) => (
+                 <View key={arc.code} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, width: '50%', paddingRight: 8, marginBottom: 6 }}>
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: arc.colour }} />
+                    <Text numberOfLines={1} style={{ flex: 1, fontSize: 11, color: 'rgba(255,255,255,0.7)', fontFamily: 'Satoshi-Medium' }}>
+                      {arc.name}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.9)', fontFamily: 'Satoshi-Medium' }}>
+                      {arc.share.toFixed(0)}%
+                    </Text>
+                 </View>
+               ))}
+            </View>
+          )}
         </View>
 
         {/* Core Values / Alignment Icons */}
@@ -493,18 +669,28 @@ export default function HomeScreen({ navigation }) {
           {renderInsightsStack()}
         </View>
 
-        {/* Category Chips */}
+        {/* Category chips: two views of the whole market, then the CSE's real
+            industry groups with their live company counts. Was six fixed strings,
+            three of which ("Banking", "Manufacturing", "AI Picks") are not sectors
+            and one of which ("Capital Goods") matched six of its 29 companies by
+            ticker prefix. */}
         <ScrollView style={{ marginTop: 36 }} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
-          {['All Markets', 'Top Movers', 'AI Picks', 'Banking', 'Manufacturing', 'Capital Goods'].map((chip) => {
-            const isActive = activeChip === chip;
+          {[
+            { label: ALL_MARKETS, count: null },
+            { label: TOP_MOVERS, count: null },
+            ...sectorChips.map(s => ({ label: s.sector, count: s.count })),
+          ].map(({ label, count }) => {
+            const isActive = activeChip === label;
             return (
-              <TouchableTick 
-                key={chip} 
+              <TouchableTick
+                key={label}
                 style={[styles.chip, isActive ? styles.chipActive : styles.chipInactive, isActive ? styles.glassButtonDark : styles.glassButton]}
-                onPress={() => setActiveChip(chip)}
+                onPress={() => setActiveChip(label)}
               >
                 <BlurView intensity={isActive ? 40 : 30} tint={isActive ? "dark" : "light"} style={StyleSheet.absoluteFillObject} />
-                <Text style={[styles.chipText, isActive ? styles.chipTextActive : styles.chipTextInactive]}>{chip}</Text>
+                <Text style={[styles.chipText, isActive ? styles.chipTextActive : styles.chipTextInactive]}>
+                  {count === null ? label : `${label} ${count}`}
+                </Text>
               </TouchableTick>
             );
           })}
@@ -515,30 +701,52 @@ export default function HomeScreen({ navigation }) {
           <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFillObject} />
           
           <View style={[styles.watchlistBannerLeft, { width: '100%', justifyContent: 'space-between' }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
               <View style={[styles.watchlistIconBox, { width: 32, height: 32, borderRadius: 8 }]}>
-                <MaterialIcons name={activeChip === 'Top Movers' ? "trending-up" : "stacked-line-chart"} size={18} color="#FFF" />
+                <MaterialIcons name={activeChip === TOP_MOVERS ? "trending-up" : "stacked-line-chart"} size={18} color="#FFF" />
               </View>
-              <Text style={[styles.watchlistBannerTitle, { marginLeft: 10, fontSize: 16 }]}>{activeChip === 'All Markets' ? 'Market Overview' : activeChip}</Text>
+              <Text numberOfLines={1} style={[styles.watchlistBannerTitle, { marginLeft: 10, fontSize: 16, flex: 1 }]}>
+                {activeChip === ALL_MARKETS ? 'Most traded today' : activeChip}
+              </Text>
             </View>
             <View style={styles.watchlistArrowBox}>
               <MaterialIcons name="arrow-forward" size={18} color={colors.primary} />
             </View>
           </View>
 
-          {/* Real Data Preview */}
+          {/* Six rows of real market data, or a line saying why there are none. */}
           <View style={{ width: '100%', marginTop: 15 }}>
-            {filteredStocks.map((stock, idx) => (
-              <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <Text style={{ color: colors.onBackground, fontFamily: 'Inter_600SemiBold', fontSize: 14 }}>{stock.symbol.split('.')[0]}</Text>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ color: colors.onBackground, fontFamily: 'Inter_600SemiBold', fontSize: 14 }}>Rs. {stock.price.toFixed(2)}</Text>
-                  <Text style={{ color: stock.change_pct >= 0 ? colors.success : colors.error, fontFamily: 'Inter_500Medium', fontSize: 12 }}>
-                    {stock.change_pct >= 0 ? '+' : ''}{stock.change_pct}%
-                  </Text>
+            {stocksError !== null ? (
+              <Text style={styles.previewNote}>{stocksError}</Text>
+            ) : filteredStocks.length === 0 ? (
+              <Text style={styles.previewNote}>
+                {activeChip === ALL_MARKETS || activeChip === TOP_MOVERS
+                  ? 'No market data recorded yet.'
+                  : `No quotes recorded for ${activeChip} yet.`}
+              </Text>
+            ) : filteredStocks.map((stock) => {
+              // Same null-change defect as the browse list: `null >= 0` is true, so a
+              // symbol with no previous close rendered as a green "+null%" gain.
+              const pct = Number.isFinite(stock.change_pct) ? stock.change_pct : null;
+              const up = pct !== null && pct >= 0;
+              return (
+                // Keyed on the symbol rather than the array index — the chip
+                // reorders and refilters this list.
+                <View key={stock.symbol} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <Text style={{ color: colors.onBackground, fontFamily: 'Inter_600SemiBold', fontSize: 14 }}>{stock.symbol.split('.')[0]}</Text>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={{ color: colors.onBackground, fontFamily: 'Inter_600SemiBold', fontSize: 14 }}>
+                      {/* Optional-chained: `price` is nullable on the response and
+                          `.toFixed` on null threw, taking the whole screen down. */}
+                      Rs. {Number.isFinite(stock.price) ? stock.price.toFixed(2) : '—'}
+                    </Text>
+                    <Text style={{ color: pct === null ? colors.onSurfaceVariant : up ? colors.success : colors.error, fontFamily: 'Inter_500Medium', fontSize: 12 }}>
+                      {pct === null ? 'no prior close' : `${up ? '+' : ''}${pct.toFixed(2)}%`}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         </TouchableTick>
 
@@ -548,92 +756,110 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.cardTitle}>Investment Goal</Text>
             <MaterialIcons name="more-horiz" size={24} color={colors.onSurfaceVariant} />
           </View>
-          
-          <View style={styles.allocationLabels}>
-            <Text style={styles.allocationLabel}>Current Value</Text>
-            <Text style={styles.allocationValue}>Rs. {dashboardData?.portfolio?.current_value?.toLocaleString()} / Rs. {dashboardData?.portfolio?.target_value?.toLocaleString()}</Text>
-          </View>
 
-          <View style={styles.progressBarBg}>
-            <View style={[styles.progressBarFill, { width: progressPct }]} />
-          </View>
+          {hasGoal ? (
+            <>
+              <View style={styles.allocationLabels}>
+                <Text style={styles.allocationLabel}>Current Value</Text>
+                <Text style={styles.allocationValue}>
+                  Rs. {currentVal.toLocaleString('en-US', { maximumFractionDigits: 0 })} / Rs. {targetVal.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                </Text>
+              </View>
 
-          <View style={styles.allocationTags}>
-            <View style={styles.tagNormal}><Text style={styles.tagNormalText}>70%</Text></View>
-            <View style={styles.tagWarning}><Text style={styles.tagWarningText}>85% Alert</Text></View>
-            <View style={styles.tagNormal}><Text style={styles.tagNormalText}>100%</Text></View>
-          </View>
+              <View style={styles.progressBarBg}>
+                <View style={[styles.progressBarFill, { width: progressPct }]} />
+              </View>
+
+              {/* Scale markers for the bar above, not portfolio figures. */}
+              <View style={styles.allocationTags}>
+                <View style={styles.tagNormal}><Text style={styles.tagNormalText}>70%</Text></View>
+                <View style={styles.tagWarning}><Text style={styles.tagWarningText}>85% Alert</Text></View>
+                <View style={styles.tagNormal}><Text style={styles.tagNormalText}>100%</Text></View>
+              </View>
+            </>
+          ) : (
+            <View style={styles.chartEmpty}>
+              <MaterialIcons name="savings" size={28} color={colors.onSurfaceVariant} />
+              <Text style={styles.chartEmptyTitle}>No holdings yet</Text>
+              <Text style={styles.chartEmptyText}>
+                Add a stock to a portfolio and this tile tracks its value against a
+                goal.
+              </Text>
+            </View>
+          )}
         </View>
 
-        {/* Weekly Trend */}
+        {/* Portfolio valuation history */}
         <TouchableTick style={[styles.card, { marginBottom: 30 }]} onPress={() => setShowTrendModal(true)}>
           <View style={styles.trendHeaderNew}>
             <Text style={styles.trendTitleNew}>Portfolio Performance</Text>
-            <View style={styles.trendLegendContainer}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: colors.primary }]} />
-                <Text style={styles.legendText}>This week</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#cbd5e1' }]} />
-                <Text style={styles.legendText}>Last week</Text>
-              </View>
-            </View>
+            {/* The point count, where a two-item legend reading "This week / Last
+                week" used to be. The legend described a comparison that did not
+                exist: the grey bar was just the previous bar's value replotted, and
+                for the first bar it was that value × 0.9. The series is as long as
+                the snapshot task has been running, so how many days it covers is
+                the thing the user actually needs in order to read it. */}
+            <Text style={styles.trendMetaNew}>
+              {history.length === 0
+                ? 'No history yet'
+                : `${history.length} ${history.length === 1 ? 'day' : 'days'} · last ${historyDays}d`}
+            </Text>
           </View>
-          
-          <View style={styles.chartWrapperNew}>
-            {/* Y-Axis & Grid Lines */}
-            <View style={styles.chartGrid}>
-              {yLabels.map((label, index) => (
-                <View key={index} style={[styles.gridLineContainer, index === 4 && styles.gridLineContainerLast]}>
-                  <Text style={styles.gridLabel}>{label}</Text>
-                  <View style={[styles.gridLine, index === 4 && { borderTopWidth: 0 }]} />
-                </View>
-              ))}
-            </View>
 
-            {/* Bars Container */}
-            <View style={styles.barsWrapperNew}>
-              {/* Week 1 */}
-              <View style={styles.weekGroup}>
-                <View style={styles.barGroup}>
-                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, w1Gray] }), backgroundColor: '#cbd5e1' }]} />
-                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, w1Blue] }), backgroundColor: colors.primary }]} />
-                </View>
-                <Text style={styles.weekLabel}>Week 1</Text>
+          {history.length === 0 ? (
+            <View style={styles.chartEmpty}>
+              <MaterialIcons name="show-chart" size={28} color={colors.onSurfaceVariant} />
+              <Text style={styles.chartEmptyTitle}>No valuation history yet</Text>
+              <Text style={styles.chartEmptyText}>
+                Your holdings are valued once each trading day. The chart starts
+                filling in from the first snapshot.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.chartWrapperNew}>
+              {/* Y-Axis & Grid Lines */}
+              <View style={styles.chartGrid}>
+                {yLabels.map((label, index) => (
+                  <View key={index} style={[styles.gridLineContainer, index === 4 && styles.gridLineContainerLast]}>
+                    <Text style={styles.gridLabel}>{label}</Text>
+                    <View style={[styles.gridLine, index === 4 && { borderTopWidth: 0 }]} />
+                  </View>
+                ))}
               </View>
-              
-              {/* Week 2 */}
-              <View style={styles.weekGroup}>
-                <View style={styles.barGroup}>
-                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, w2Gray] }), backgroundColor: '#cbd5e1' }]} />
-                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, w2Blue] }), backgroundColor: colors.primary }]} />
-                </View>
-                <Text style={styles.weekLabel}>Week 2</Text>
-              </View>
-              
-              {/* Week 3 */}
-              <View style={styles.weekGroup}>
-                <View style={styles.barGroup}>
-                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, w3Gray] }), backgroundColor: '#cbd5e1' }]} />
-                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, w3Blue] }), backgroundColor: colors.primary }]} />
-                </View>
-                <Text style={styles.weekLabel}>Week 3</Text>
-              </View>
-              
-              {/* Week 4 */}
-              <View style={styles.weekGroup}>
-                <View style={styles.calloutContainer}>
-                  <Text style={styles.calloutText}>{changeW4}% {changeW4 >= 0 ? '↑' : '↓'}</Text>
-                </View>
-                <View style={styles.barGroup}>
-                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, w4Gray] }), backgroundColor: '#cbd5e1' }]} />
-                  <Animated.View style={[styles.barNew, { height: chartAnim.interpolate({ inputRange: [0, 1], outputRange: [0, w4Blue] }), backgroundColor: colors.primary }]} />
-                </View>
-                <Text style={styles.weekLabel}>Week 4</Text>
+
+              {/* One bar per stored trading day, oldest first. Rendered from the
+                  series rather than as four hardcoded groups, because the length is
+                  whatever has accumulated — one point on the first day, thirty once
+                  the window is full. */}
+              <View style={styles.barsWrapperNew}>
+                {history.map((point, index) => (
+                  <View key={point.date ?? index} style={styles.dayGroup}>
+                    {windowChange !== null && index === history.length - 1 && (
+                      <View style={styles.calloutContainer}>
+                        <Text style={styles.calloutText}>
+                          {windowChange}% {Number(windowChange) >= 0 ? '↑' : '↓'}
+                        </Text>
+                      </View>
+                    )}
+                    <Animated.View
+                      style={[styles.barNew, {
+                        height: chartAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, getH(point.value)],
+                        }),
+                        backgroundColor: colors.primary,
+                      }]}
+                    />
+                    {(index === 0 || index === history.length - 1) && (
+                      <Text style={styles.dayLabelNew} numberOfLines={1}>
+                        {dayLabel(point.date)}
+                      </Text>
+                    )}
+                  </View>
+                ))}
               </View>
             </View>
-          </View>
+          )}
         </TouchableTick>
 
       </ScrollView>
@@ -642,8 +868,12 @@ export default function HomeScreen({ navigation }) {
       <ActionFeedbackModal
         visible={showTrendModal}
         onClose={() => setShowTrendModal(false)}
-        title="Sector Performance"
-        message="The Banking sector is currently outperforming the broader market by 30% this week. Our AI suggests maintaining your current positions."
+        title="Portfolio Performance"
+        message={
+          history.length === 0
+            ? `Your portfolio is valued once each trading day and the last ${historyDays} days are charted here. Nothing has been recorded yet — add a holding and the first point appears after the next valuation.`
+            : `This chart plots ${history.length} recorded ${history.length === 1 ? 'valuation' : 'valuations'} of your holdings, from ${dayLabel(history[0].date)} to ${dayLabel(history[history.length - 1].date)}, using closing prices from the CSE.${windowChange !== null ? ` Over that period the total moved ${windowChange}%.` : ' A second valuation is needed before a change can be shown.'}`
+        }
         type="info"
         autoClose={false}
       />
@@ -980,6 +1210,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  // Stands in for the six preview rows when there are none. Previously the banner
+  // just collapsed to its title, so an empty market and a market of six flat stocks
+  // looked like two different screens with no explanation of which was which.
+  previewNote: {
+    fontSize: 13,
+    lineHeight: 20,
+    fontFamily: 'Satoshi-Medium',
+    color: colors.onSurfaceVariant,
+    paddingVertical: 8,
+  },
   allocationHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1065,26 +1305,6 @@ const styles = StyleSheet.create({
     color: colors.primary,
     letterSpacing: -0.5,
   },
-  trendLegendContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  legendText: {
-    fontSize: 12,
-    fontFamily: 'Satoshi-Medium',
-    color: '#64748b',
-  },
   chartWrapperNew: {
     marginTop: 8,
     position: 'relative',
@@ -1121,30 +1341,64 @@ const styles = StyleSheet.create({
     right: 0,
     height: 160,
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    // space-around was right for four fixed-width groups; with flex: 1 day groups
+    // the row is already fully divided, and the leftover margin it adds would
+    // shrink each bar for nothing.
     alignItems: 'flex-end',
   },
-  weekGroup: {
+  trendMetaNew: {
+    fontSize: 11,
+    fontFamily: 'Satoshi-Medium',
+    color: '#94a3b8',
+  },
+  chartEmpty: {
     alignItems: 'center',
+    paddingVertical: 28,
+    paddingHorizontal: 12,
+    gap: 8,
   },
-  barGroup: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 6,
+  chartEmptyTitle: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Bold',
+    color: colors.onBackground,
+  },
+  chartEmptyText: {
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    fontFamily: 'Satoshi-Medium',
+    color: colors.onSurfaceVariant,
+  },
+  // flex: 1 rather than the old fixed-width group. The number of bars is now the
+  // number of days recorded, up to 30, so any fixed width overflows the card as
+  // soon as the series outgrows the four it used to hardcode.
+  dayGroup: {
+    flex: 1,
     height: 160,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
   barNew: {
-    width: 16, 
+    // A share of the slot the flex gave us, so bars thin out as days accumulate
+    // instead of spilling over. maxWidth keeps a one-point series from drawing a
+    // single bar the full width of the chart, which reads as a filled area rather
+    // than as one day; minWidth keeps a full 30-day series visible.
+    width: '62%',
+    maxWidth: 16,
+    minWidth: 2,
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
   },
-  weekLabel: {
-    marginTop: 8,
+  dayLabelNew: {
     fontSize: 11,
     fontFamily: 'Satoshi-Medium',
     color: '#475569',
     position: 'absolute',
-    bottom: -24,
+    bottom: -22,
+    // Wider than the bar slot it sits in, centred on it, so a date is not clipped
+    // to "2" when thirty bars leave each slot a few points wide.
+    width: 60,
+    textAlign: 'center',
   },
   calloutContainer: {
     position: 'absolute',

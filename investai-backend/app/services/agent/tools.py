@@ -193,18 +193,19 @@ class ToolExecutor:
     # ── individual tool implementations ──────────────────────────────────────
 
     async def _get_stock_data(self, symbols: list[str]) -> dict:
-        from app.models.stock import MarketData
-        from sqlalchemy import func
+        from app.models.stock import MarketDataLatest
+
+        # One query for the whole request rather than one per symbol.
+        wanted = [s.upper().strip() for s in symbols]
+        rows = {
+            r.symbol: r
+            for r in self.db.query(MarketDataLatest).filter(
+                MarketDataLatest.symbol.in_(wanted)).all()
+        }
 
         results = {}
-        for sym in symbols:
-            sym = sym.upper().strip()
-            row = (
-                self.db.query(MarketData)
-                .filter(MarketData.symbol == sym)
-                .order_by(MarketData.recorded_at.desc())
-                .first()
-            )
+        for sym in wanted:
+            row = rows.get(sym)
             if row:
                 results[sym] = {
                     "symbol": row.symbol,
@@ -251,26 +252,33 @@ class ToolExecutor:
 
     async def _get_user_portfolio(self) -> dict:
         from app.models.portfolio import Portfolio, PortfolioHolding
-        from app.models.stock import MarketData
+        from app.models.stock import MarketDataLatest
 
         portfolios = (
             self.db.query(Portfolio)
             .filter(Portfolio.user_id == self.user_id)
             .all()
         )
+
+        # Price every held symbol across every portfolio in one query. This was a
+        # per-holding query inside a nested loop, so the cost grew with the number
+        # of holdings on a path the chat agent hits on most turns.
+        held = {h.symbol for p in portfolios for h in p.holdings}
+        prices: dict[str, float] = {}
+        if held:
+            prices = {
+                r.symbol: r.price
+                for r in self.db.query(MarketDataLatest).filter(
+                    MarketDataLatest.symbol.in_(held)).all()
+            }
+
         output = []
         for p in portfolios:
             holdings = []
             total_cost = 0.0
             total_value = 0.0
             for h in p.holdings:
-                market = (
-                    self.db.query(MarketData)
-                    .filter(MarketData.symbol == h.symbol)
-                    .order_by(MarketData.recorded_at.desc())
-                    .first()
-                )
-                current_price = market.price if market else None
+                current_price = prices.get(h.symbol)
                 cost = h.quantity * h.avg_buy_price
                 value = h.quantity * current_price if current_price else None
                 pnl = (value - cost) if value is not None else None
@@ -302,7 +310,7 @@ class ToolExecutor:
         return {"portfolios": output}
 
     async def _get_price_prediction(self, symbol: str) -> dict:
-        from app.models.stock import PricePrediction, MarketData
+        from app.models.stock import PricePrediction, MarketDataLatest
 
         symbol = symbol.upper().strip()
         pred = (
@@ -312,9 +320,8 @@ class ToolExecutor:
             .first()
         )
         current = (
-            self.db.query(MarketData)
-            .filter(MarketData.symbol == symbol)
-            .order_by(MarketData.recorded_at.desc())
+            self.db.query(MarketDataLatest)
+            .filter(MarketDataLatest.symbol == symbol)
             .first()
         )
         if not pred:
@@ -347,7 +354,9 @@ class ToolExecutor:
         limit = min(limit, 10)
 
         try:
-            query_embedding = await get_embedding(query)
+            # "query" side of the asymmetric embedding model; the indexed rows
+            # were embedded as "passage".
+            query_embedding = await get_embedding(query, input_type="query")
             # pgvector cosine similarity search using raw SQL
             from sqlalchemy import text as sql_text
             rows = self.db.execute(
@@ -406,28 +415,17 @@ class ToolExecutor:
         return {"query": query, "results": results, "total": len(results)}
 
     async def _get_market_overview(self, category: str = "all") -> dict:
-        from app.models.stock import MarketData
-        from sqlalchemy import func
+        from app.models.stock import MarketDataLatest
 
-        # Get the latest recorded_at timestamp
-        latest_ts = self.db.query(
-            func.max(MarketData.recorded_at)
-        ).scalar()
+        # One row per symbol by construction, so no timestamp window is needed.
+        # This used to take max(recorded_at) and then select everything within an
+        # hour of it — a workaround for the scraper stamping each row with its own
+        # microsecond timestamp, which also meant a symbol could appear more than
+        # once and skew the gainer/loser rankings below.
+        rows = self.db.query(MarketDataLatest).all()
 
-        if not latest_ts:
+        if not rows:
             return {"error": "No market data available"}
-
-        # Get all records at the latest timestamp (approximate with 1h window)
-        from sqlalchemy import and_
-        from datetime import timedelta
-
-        rows = (
-            self.db.query(MarketData)
-            .filter(
-                MarketData.recorded_at >= latest_ts - timedelta(hours=1)
-            )
-            .all()
-        )
 
         all_stocks = [
             {
@@ -447,7 +445,12 @@ class ToolExecutor:
             all_stocks, key=lambda x: x["volume"] or 0, reverse=True
         )
 
-        result: dict = {"as_of": str(latest_ts)}
+        # Every row carries the recorded_at of the snapshot it came from. They are
+        # normally all equal, but a symbol the last scrape did not return keeps its
+        # older timestamp, so report the newest rather than assuming uniformity.
+        as_of = max(r.recorded_at for r in rows)
+
+        result: dict = {"as_of": str(as_of)}
         if category in ("gainers", "all"):
             result["top_gainers"] = sorted_by_change[:5]
         if category in ("losers", "all"):

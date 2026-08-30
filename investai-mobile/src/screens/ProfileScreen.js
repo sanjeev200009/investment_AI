@@ -1,19 +1,26 @@
 import TouchableTick from '../components/TouchableTick';
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, SafeAreaView, Switch, Platform, StatusBar, Modal, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, SafeAreaView, Switch, Platform, StatusBar, Modal, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { useAppTheme } from '../hooks/useAppTheme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
+import { authApi } from '../api/authApi';
 import AppHeader from '../components/AppHeader';
-import { useAuth, useUser } from '@clerk/clerk-expo';
-import * as ImagePicker from 'expo-image-picker';
 
 export default function ProfileScreen({ navigation }) {
     const theme = useAppTheme();
-    const { user, logout, isEducationEnabled, setEducationEnabled } = useAuthStore();
-    const { signOut } = useAuth();
-    const { user: clerkUser } = useUser();
+    const { user, logout, isEducationEnabled, setEducationEnabled, updateProfile } = useAuthStore();
     const isDark = theme.isDark;
+
+    // The store's user comes from GET /auth/me, i.e. our own `users` row — the
+    // same identity the API authorises requests against. `clerkUser` was a
+    // parallel identity from a service the backend never verified.
+    const displayName = user?.full_name || 'User';
+    const displayEmail = user?.email || '';
+    // No avatar storage exists yet (that needs Supabase Storage and an upload
+    // endpoint), so the avatar is generated from the real name rather than
+    // showing a permanent "User" placeholder.
+    const avatarUri = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=0052FF&color=fff&size=256`;
 
     // Adaptive colors based on theme.tokens
     const colors = {
@@ -33,59 +40,41 @@ export default function ProfileScreen({ navigation }) {
     });
 
     const [biometric, setBiometric] = useState(true);
-    
-    // Profile Editing State
+
+    // Profile Editing State. `users.full_name` is one column, so the modal
+    // edits one field instead of Clerk's firstName/lastName pair.
     const [editModalVisible, setEditModalVisible] = useState(false);
-    const [firstName, setFirstName] = useState(clerkUser?.firstName || '');
-    const [lastName, setLastName] = useState(clerkUser?.lastName || '');
+    const [fullName, setFullName] = useState(displayName);
     const [isSaving, setIsSaving] = useState(false);
-    const [isUploadingImage, setIsUploadingImage] = useState(false);
 
     const handleLogout = async () => {
-        await logout();   // clear Zustand store + AsyncStorage
-        await signOut();  // end the Clerk session → triggers <SignedOut> → redirects to auth
-    };
-
-    const pickImage = async () => {
-        try {
-            const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                allowsEditing: true,
-                aspect: [1, 1],
-                quality: 0.5,
-                base64: true,
-            });
-
-            if (!result.canceled && result.assets[0].base64) {
-                setIsUploadingImage(true);
-                const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
-                await clerkUser?.setProfileImage({ file: base64Image });
-            }
-        } catch (error) {
-            console.error("Error uploading image:", error);
-        } finally {
-            setIsUploadingImage(false);
-        }
+        // One session to end now: clearing the store + AsyncStorage is the whole
+        // logout. AppNavigator drops to the auth stack when isAuthenticated flips.
+        await logout();
     };
 
     const saveProfile = async () => {
+        const trimmed = fullName.trim();
+        if (trimmed.length < 2) {
+            Alert.alert('Invalid name', 'Please enter your full name.');
+            return;
+        }
         try {
             setIsSaving(true);
-            await clerkUser?.update({
-                firstName,
-                lastName
-            });
+            const updated = await authApi.updateProfile(trimmed);
+            updateProfile({ full_name: updated.full_name });
             setEditModalVisible(false);
         } catch (error) {
-            console.error("Error updating profile:", error);
+            const msg = error?.response?.data?.detail
+                || 'Could not save your name. Please try again.';
+            Alert.alert('Error', msg);
         } finally {
             setIsSaving(false);
         }
     };
 
     const openEditModal = () => {
-        setFirstName(clerkUser?.firstName || '');
-        setLastName(clerkUser?.lastName || '');
+        setFullName(displayName);
         setEditModalVisible(true);
     };
 
@@ -119,27 +108,18 @@ export default function ProfileScreen({ navigation }) {
                 {/* User Profile Section */}
                 <View style={styles.profileSection}>
                     <View style={styles.avatarWrapper}>
-                        {isUploadingImage ? (
-                            <View style={[styles.avatar, { borderColor: isDark ? colors.border : '#FFFFFF', justifyContent: 'center', alignItems: 'center', backgroundColor: colors.surface }]}>
-                                <ActivityIndicator color={colors.primary} />
-                            </View>
-                        ) : (
-                            <Image
-                                source={{ uri: clerkUser?.imageUrl || "https://ui-avatars.com/api/?name=User&background=random" }}
-                                style={[styles.avatar, { borderColor: isDark ? colors.border : '#FFFFFF' }]}
-                            />
-                        )}
-                        <TouchableTick onPress={pickImage} style={[styles.cameraBtn, { backgroundColor: colors.primary, borderColor: isDark ? colors.background : '#FFFFFF' }]}>
-                            <MaterialIcons name="photo-camera" size={18} color="#FFFFFF" />
-                        </TouchableTick>
+                        <Image
+                            source={{ uri: avatarUri }}
+                            style={[styles.avatar, { borderColor: isDark ? colors.border : '#FFFFFF' }]}
+                        />
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={[styles.userName, { color: colors.textPrimary }]}>{clerkUser?.fullName || 'User'}</Text>
+                        <Text style={[styles.userName, { color: colors.textPrimary }]}>{displayName}</Text>
                         <TouchableTick onPress={openEditModal} style={{ padding: 4 }}>
                             <MaterialIcons name="edit" size={18} color={colors.primary} />
                         </TouchableTick>
                     </View>
-                    <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{clerkUser?.primaryEmailAddress?.emailAddress || 'email@example.com'}</Text>
+                    <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{displayEmail}</Text>
                 </View>
 
                 {/* Preferences Section */}
@@ -257,24 +237,14 @@ export default function ProfileScreen({ navigation }) {
                         </View>
                         
                         <View style={styles.inputGroup}>
-                            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>First Name</Text>
+                            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Full Name</Text>
                             <TextInput
                                 style={[styles.textInput, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface }]}
-                                value={firstName}
-                                onChangeText={setFirstName}
-                                placeholder="Enter first name"
+                                value={fullName}
+                                onChangeText={setFullName}
+                                placeholder="Enter your full name"
                                 placeholderTextColor={colors.textSecondary}
-                            />
-                        </View>
-
-                        <View style={styles.inputGroup}>
-                            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Last Name</Text>
-                            <TextInput
-                                style={[styles.textInput, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface }]}
-                                value={lastName}
-                                onChangeText={setLastName}
-                                placeholder="Enter last name"
-                                placeholderTextColor={colors.textSecondary}
+                                autoCapitalize="words"
                             />
                         </View>
 

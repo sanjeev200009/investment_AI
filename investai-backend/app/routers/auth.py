@@ -9,7 +9,8 @@ from app.dependencies import get_db, get_current_user
 from app.models.user import User
 from app.schemas.auth import (RegisterRequest, LoginRequest,
                                TokenResponse, UserOut, OTPVerifyRequest,
-                               ForgotPasswordRequest, ResetPasswordRequest, VerifyResetOTPRequest)
+                               ForgotPasswordRequest, ResetPasswordRequest,
+                               VerifyResetOTPRequest, RefreshRequest)
 from app.config import get_settings
 from app.services.email_service import (send_registration_otp,
                                 send_welcome_email, send_reset_otp)
@@ -47,7 +48,15 @@ async def register(
         sb_response = admin_client.auth.admin.create_user({
             'email': payload.email,
             'password': payload.password,
-            'email_confirm': True,
+            # Deliberately NOT confirmed here. Creating the user pre-confirmed
+            # made the OTP decorative: Supabase would accept
+            # sign_in_with_password for this account immediately, and the anon
+            # key needed to do that is public by design and ships inside the
+            # mobile app. The only gate was our own `is_email_verified` column,
+            # which anyone talking to Supabase directly simply bypassed.
+            # Confirmation now happens in /auth/verify-otp, so possession of the
+            # emailed code is what actually unlocks the account.
+            'email_confirm': False,
             'user_metadata': {'full_name': payload.full_name}
         })
         # Extract user_id from various possible response formats
@@ -116,17 +125,40 @@ async def verify_registration_otp(
 ):
     """
     Step 2 of 2: Verify the OTP sent after registration.
-    Marks user as verified — they can now log in.
+
+    This is where the account actually becomes usable. Registration creates the
+    Supabase identity *unconfirmed*, so until this succeeds Supabase itself
+    refuses sign_in_with_password — the OTP is a real gate rather than a local
+    flag that only our own /auth/login consults.
     """
-    ok = verify_otp(db, payload.email, payload.otp_code, purpose='register')
-    if not ok:
+    # Check the code without spending it. The Supabase confirmation below is the
+    # step that can fail for reasons outside the user's control, and burning
+    # their code before attempting it would leave them unable to retry.
+    if not verify_otp(db, payload.email, payload.otp_code, purpose='register',
+                      consume=False):
         raise HTTPException(400, 'Invalid or expired OTP. Request a new one.')
 
-    # Mark user as verified
     user = db.query(User).filter(User.email == payload.email).first()
     if not user:
         raise HTTPException(404, 'User not found')
 
+    # Confirm the email in Supabase Auth. Idempotent, so a retry after a partial
+    # failure is safe.
+    admin = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+    try:
+        admin.auth.admin.update_user_by_id(
+            str(user.user_id), {'email_confirm': True})
+    except Exception as exc:
+        logger.exception(
+            'Could not confirm Supabase email for %s; OTP left unspent so the '
+            'user can retry', payload.email)
+        raise HTTPException(
+            503,
+            'Could not complete verification. Please try that code again.',
+        ) from exc
+
+    # Supabase is confirmed; now spend the code and record the local flag.
+    verify_otp(db, payload.email, payload.otp_code, purpose='register')
     user.is_email_verified = True
     db.commit()
 
@@ -185,6 +217,48 @@ async def login(payload: LoginRequest, db: Session = Depends(get_db)):
         user_id=str(auth_response.user.id),
         email=auth_response.user.email,
         full_name=user.full_name,
+        refresh_token=auth_response.session.refresh_token,
+        expires_in=auth_response.session.expires_in,
+    )
+
+
+@router.post('/refresh', response_model=TokenResponse)
+async def refresh_session(payload: RefreshRequest, db: Session = Depends(get_db)):
+    """Exchange a refresh token for a fresh Supabase access token.
+
+    Needed because access tokens live about an hour and app/dependencies.py now
+    enforces `exp`. Without this the app would 401 and sign the user out
+    mid-session — Clerk's SDK used to refresh transparently, so removing Clerk
+    without adding this would have been a regression.
+
+    Deliberately unauthenticated: the caller's access token is expired by
+    definition, so the refresh token is the credential being presented. Supabase
+    rotates it on use, so a token can only be redeemed once.
+    """
+    supabase = get_supabase()
+    try:
+        auth_response = supabase.auth.refresh_session(payload.refresh_token)
+    except Exception:
+        # Wrong, revoked, or already-redeemed token. 401 so the client's
+        # interceptor treats it as "session over" and signs out.
+        raise HTTPException(401, 'Session expired. Please sign in again.')
+
+    if not auth_response or not auth_response.session:
+        raise HTTPException(401, 'Session expired. Please sign in again.')
+
+    # Keep full_name authoritative from our own users table rather than from
+    # Supabase metadata, which registration does not keep in step.
+    user = db.query(User).filter(
+        User.email == auth_response.user.email).first()
+
+    return TokenResponse(
+        access_token=auth_response.session.access_token,
+        token_type='bearer',
+        user_id=str(auth_response.user.id),
+        email=auth_response.user.email,
+        full_name=user.full_name if user else None,
+        refresh_token=auth_response.session.refresh_token,
+        expires_in=auth_response.session.expires_in,
     )
 
 @router.post('/forgot-password')
@@ -221,7 +295,7 @@ async def verify_reset_otp_endpoint(
     if not ok:
         raise HTTPException(400, 'Invalid or expired OTP. Request a new one.')
     
-    reset_token = create_reset_token(payload.email)
+    reset_token = create_reset_token(db, payload.email)
     return {
         'message': 'OTP verified.',
         'reset_token': reset_token,
@@ -238,7 +312,7 @@ async def reset_password(
     Updates password in Supabase Auth.
     """
     # Verify the reset token
-    email = verify_reset_token(payload.reset_token)
+    email = verify_reset_token(db, payload.reset_token)
     if not email or email != payload.email:
         raise HTTPException(400, 'Invalid or expired reset token')
 

@@ -4,8 +4,8 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
-import { useAuth, useUser } from '@clerk/clerk-expo';
-import axios from 'axios';
+import { useAuthStore } from '../store/authStore';
+import api from '../api/axiosConfig';
 
 const colors = {
   background: '#faf9fc',
@@ -65,20 +65,15 @@ const Sparkline = ({ type }) => {
 };
 
 export default function WatchlistScreen({ navigation }) {
-  const { getToken } = useAuth();
-  const { user: clerkUser } = useUser();
+  const user = useAuthStore(state => state.user);
   const [watchlist, setWatchlist] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchWatchlist() {
       try {
-        const token = await getToken();
-        const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-        const res = await axios.get(`${baseUrl}/stocks/market?limit=50`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        
+        const res = await api.get('/stocks/market?limit=50');
+
         // Sort by volume descending as a proxy for "active" watchlist stocks
         const sorted = res.data.sort((a,b) => b.volume - a.volume).slice(0, 10);
         setWatchlist(sorted);
@@ -100,7 +95,7 @@ export default function WatchlistScreen({ navigation }) {
         <View style={styles.headerLeft}>
           <View style={styles.avatarContainer}>
             <Image
-              source={{ uri: clerkUser?.imageUrl || "https://ui-avatars.com/api/?name=User&background=random" }}
+              source={{ uri: `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.full_name || 'Investor')}&background=0052FF&color=fff` }}
               style={styles.avatar}
             />
           </View>

@@ -1,24 +1,13 @@
 import json
 import logging
 from typing import AsyncGenerator
-import openai
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
+from app.services import llm
 from app.services.agent.memory import ConversationMemory
 from app.services.agent.tools import ToolExecutor, TOOL_SCHEMAS
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
-
-def get_openrouter_client():
-    return openai.AsyncOpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=settings.OPENROUTER_API_KEY,
-        timeout=15.0
-    )
-
-MODEL = "google/gemini-2.5-flash"
 
 async def stream_agent(
     user_message: str,
@@ -31,22 +20,25 @@ async def stream_agent(
 
     memory.save_user_message(user_message)
     messages = memory.build_context(user_message)
-    client = get_openrouter_client()
 
     max_loops = 5
     loop_count = 0
     final_response = ""
+    # Which provider/model actually answered, for ai_model_used. Set per loop
+    # because failover is decided per request, not once per conversation.
+    served_label = "unavailable"
 
     while loop_count < max_loops:
         loop_count += 1
-        response_stream = await client.chat.completions.create(
-            model=MODEL,
+        response_stream, served = await llm.acreate(
             messages=messages,
             tools=TOOL_SCHEMAS,
             stream=True,
+            role=llm.Role.AGENT,
             temperature=0.7,
             max_tokens=2000,
         )
+        served_label = served.label
 
         tool_calls = {}
         tool_active = False
@@ -114,7 +106,7 @@ async def stream_agent(
         else:
             break
 
-    msg_id = memory.save_assistant_message(final_response, MODEL)
+    msg_id = memory.save_assistant_message(final_response, served_label)
     yield f"data: {json.dumps({'type': 'done', 'message_id': msg_id})}\n\n"
 
 async def run_agent(
@@ -128,22 +120,23 @@ async def run_agent(
 
     memory.save_user_message(user_message)
     messages = memory.build_context(user_message)
-    client = get_openrouter_client()
 
     max_loops = 5
     loop_count = 0
     final_response = ""
     tools_used = []
+    served_label = "unavailable"
 
     while loop_count < max_loops:
         loop_count += 1
-        response = await client.chat.completions.create(
-            model=MODEL,
+        response, served = await llm.acreate(
             messages=messages,
             tools=TOOL_SCHEMAS,
+            role=llm.Role.AGENT,
             temperature=0.7,
             max_tokens=2000,
         )
+        served_label = served.label
 
         message = response.choices[0].message
         
@@ -184,5 +177,5 @@ async def run_agent(
             final_response = message.content or ""
             break
             
-    memory.save_assistant_message(final_response, MODEL)
+    memory.save_assistant_message(final_response, served_label)
     return final_response, tools_used

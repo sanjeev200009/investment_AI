@@ -33,6 +33,11 @@ env/
 
 # Environment Variables & Secrets
 .env
+# `.env` alone does not match `.env.local`, `.env.backup-*` etc., and those hold
+# real keys just as `.env` does. `.env.example` is re-admitted below because it
+# contains placeholders only and must stay in version control.
+.env.*
+!.env.example
 *.json
 !composer.json
 !package.json

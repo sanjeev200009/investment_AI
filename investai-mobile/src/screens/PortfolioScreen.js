@@ -4,8 +4,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
-import { useAuth, useUser } from '@clerk/clerk-expo';
-import axios from 'axios';
+import api from '../api/axiosConfig';
 
 const colors = {
   background: '#faf9fc',
@@ -30,9 +29,7 @@ const colors = {
 
 export default function PortfolioScreen({ navigation }) {
   const { user } = useAuthStore();
-  const { getToken } = useAuth();
-  const { user: clerkUser } = useUser();
-  
+
   const [portfolios, setPortfolios] = useState([]);
   const [holdings, setHoldings] = useState([]);
   const [marketData, setMarketData] = useState({});
@@ -47,17 +44,10 @@ export default function PortfolioScreen({ navigation }) {
 
   const fetchData = useCallback(async () => {
     try {
-      const token = await getToken();
-      const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-      
-      const portRes = await axios.get(`${baseUrl}/portfolio`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      const marketRes = await axios.get(`${baseUrl}/stocks/market?limit=200`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
+      // Auth header supplied by the shared instance's request interceptor.
+      const portRes = await api.get('/portfolio');
+      const marketRes = await api.get('/stocks/market?limit=200');
+
       setPortfolios(portRes.data || []);
       let allHoldings = [];
       if (portRes.data && portRes.data.length > 0) {
@@ -77,7 +67,7 @@ export default function PortfolioScreen({ navigation }) {
     } finally {
       setLoading(false);
     }
-  }, [getToken]);
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -87,20 +77,18 @@ export default function PortfolioScreen({ navigation }) {
     if(!addSymbol || !addQuantity || !addPrice) return;
     setIsSubmitting(true);
     try {
-        const token = await getToken();
-        const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
         let pId = portfolios?.[0]?.portfolio_id;
-        
+
         if (!pId) {
-            const createRes = await axios.post(`${baseUrl}/portfolio/`, { name: 'My Primary Portfolio' }, { headers: { Authorization: `Bearer ${token}` }});
+            const createRes = await api.post('/portfolio/', { name: 'My Primary Portfolio' });
             pId = createRes.data.portfolio_id;
         }
-        
-        await axios.post(`${baseUrl}/portfolio/${pId}/holdings`, {
+
+        await api.post(`/portfolio/${pId}/holdings`, {
             symbol: addSymbol.toUpperCase(),
             quantity: Number(addQuantity),
             avg_buy_price: Number(addPrice)
-        }, { headers: { Authorization: `Bearer ${token}` }});
+        });
         
         setAddModalVisible(false);
         setAddSymbol('');
@@ -192,7 +180,7 @@ export default function PortfolioScreen({ navigation }) {
         <View style={styles.headerLeft}>
           <View style={styles.avatarContainer}>
             <Image
-              source={{ uri: clerkUser?.imageUrl || "https://ui-avatars.com/api/?name=User&background=random" }}
+              source={{ uri: `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.full_name || 'Investor')}&background=0052FF&color=fff` }}
               style={styles.avatar}
             />
           </View>

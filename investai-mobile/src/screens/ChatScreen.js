@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Keyboard
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../hooks/useAppTheme';
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuthStore } from '../store/authStore';
 import api from '../api/axiosConfig';
 
 const INITIAL_MESSAGES = [];
@@ -24,7 +24,7 @@ const ALL_QUICK_ACTIONS = [
 
 export default function ChatScreen({ navigation }) {
   const theme = useAppTheme();
-  const { getToken } = useAuth();
+  const user = useAuthStore(state => state.user);
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [inputText, setInputText] = useState('');
   const [quickActions, setQuickActions] = useState([]);
@@ -57,11 +57,8 @@ export default function ChatScreen({ navigation }) {
     setMessages(prev => [...prev, newMessage, typingMessage]);
     
     try {
-      const token = await getToken();
       const response = await api.post('/chat/message', {
         message: userText
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
       
       const aiResponseText = response.data.response;
@@ -172,7 +169,7 @@ export default function ChatScreen({ navigation }) {
           </View>
         </View>
         <Image
-          source={{ uri: "https://lh3.googleusercontent.com/aida-public/AB6AXuCk3JbinKI6zRcK2m-0nSartwmhlQoUPvH6r5NQzc4SXz_C_XsvWHHuycDOjn1owP2KuEChQKakcOxqi7Rh6ORyrQ2DdloG16B0GMV1_aw4-eBShI7oMjRP_n3RerZNZ2xjX1349a8wVS5ziQ0RvZYggcE2b_rsJyq3fKZ8JNEbiFIOkESvPhAhbymxRjDiYKLxjg7HVTrcMi0gr72Nqc2ZkqpJ9kMvHQPATnoRswcRVhZnMjrugf2SdKTvKyjTndUMfVAf0djpl3k" }}
+          source={{ uri: `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.full_name || 'You')}&background=0052FF&color=fff&size=128` }}
           style={styles.userAvatar}
         />
       </View>

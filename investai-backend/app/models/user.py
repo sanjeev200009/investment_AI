@@ -1,7 +1,7 @@
 import uuid
 
 from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -51,6 +51,12 @@ class RiskProfile(Base):
 	user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, unique=True)
 	score = Column(Integer, nullable=False)
 	category = Column(String(20), nullable=False)
+	# The raw wizard responses that produced `score`, keyed by question id.
+	# Kept so the score is auditable after the fact, and because two answers
+	# are not risk indicators but are still needed elsewhere: Q13 sector
+	# interest and Q14 preferred language. Nullable — profiles created before
+	# this column existed have none.
+	answers = Column(JSONB, nullable=True)
 	updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 	user = relationship("User", back_populates="risk_profile")

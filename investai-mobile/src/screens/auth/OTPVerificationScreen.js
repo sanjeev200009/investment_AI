@@ -26,15 +26,13 @@ import AppButton from '../../components/AppButton';
 import AppCard from '../../components/AppCard';
 import AppHeader from '../../components/AppHeader';
 import { authApi } from '../../api/authApi';
-import { useSignUp } from '@clerk/clerk-expo';
 
 const { height } = Dimensions.get('window');
 
 const OTPVerificationScreen = ({ navigation, route }) => {
     const theme = useAppTheme();
     const { email, type } = route.params || {};
-    const { isLoaded, signUp, setActive } = useSignUp();
-    
+
     // Backend uses 6 digits
     const [otp, setOtp] = useState(['', '', '', '', '', '']);
     const [timer, setTimer] = useState(59);
@@ -81,27 +79,35 @@ const OTPVerificationScreen = ({ navigation, route }) => {
             return;
         }
 
-        if (!isLoaded) return;
-
         setLoading(true);
         try {
             if (type === 'reset') {
                 const response = await authApi.verifyResetOTP(email, fullOtp);
-                navigation.navigate('ResetPassword', { 
-                    email, 
-                    resetToken: response.reset_token 
+                navigation.navigate('ResetPassword', {
+                    email,
+                    resetToken: response.reset_token
                 });
             } else {
-                const completeSignUp = await signUp.attemptEmailAddressVerification({ code: fullOtp });
-                if (completeSignUp.status === 'complete') {
-                    await setActive({ session: completeSignUp.createdSessionId });
-                    // Will auto navigate to MainTab due to <SignedIn> wrapper
-                } else {
-                    console.log(JSON.stringify(completeSignUp, null, 2));
-                }
+                // Marks is_email_verified locally. No token comes back, so the
+                // user logs in next — /auth/login is what mints the Supabase
+                // access token the API verifies.
+                await authApi.verifyOTP(email, fullOtp);
+                navigation.reset({
+                    index: 0,
+                    routes: [{
+                        name: 'AuthSuccess',
+                        params: {
+                            title: 'Email Verified!',
+                            message: 'Your email has been confirmed. Sign in to start using InvestAI.',
+                            buttonLabel: 'Continue to Login',
+                        },
+                    }],
+                });
             }
         } catch (error) {
-            const msg = error.errors?.[0]?.longMessage || error.message || 'Verification failed. Please check the code.';
+            const msg = error?.response?.data?.detail
+                || (error?.response ? 'Verification failed. Please check the code.'
+                    : 'Cannot reach the server. Check your connection.');
             Alert.alert('Verification Error', msg);
         } finally {
             setLoading(false);
@@ -109,17 +115,20 @@ const OTPVerificationScreen = ({ navigation, route }) => {
     };
 
     const handleResend = async () => {
-        if (!isLoaded) return;
         try {
-            if (type === 'register') {
-                await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+            // Both flows resend through our own backend now; Clerk's
+            // prepareEmailAddressVerification is gone.
+            if (type === 'reset') {
+                await authApi.forgotPassword(email);
             } else {
                 await authApi.resendOTP(email);
             }
             setTimer(59);
             Alert.alert('Sent', 'A new verification code has been sent to your email.');
         } catch (error) {
-            Alert.alert('Error', 'Failed to resend code. Please try again later.');
+            const msg = error?.response?.data?.detail
+                || 'Failed to resend code. Please try again later.';
+            Alert.alert('Error', msg);
         }
     };
 

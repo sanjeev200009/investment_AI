@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 
+from app.services import llm
+
 logger = logging.getLogger(__name__)
 
 _vader_analyser = None
@@ -52,42 +54,31 @@ async def summarise_article(headline: str, body: str) -> str | None:
     Use the LLM to produce a 1-2 sentence plain-English summary of a news article.
     Returns None if the LLM call fails (caller should keep original text).
     """
-    try:
-        import httpx
-        from app.config import get_settings
-
-        api_key = getattr(get_settings(), "OPENROUTER_API_KEY", "")
-        if not api_key:
-            return None
-
-        prompt = (
-            f"Summarise this financial news article in 1-2 plain sentences "
-            f"suitable for a beginner investor in Sri Lanka. "
-            f"Focus on the practical impact.\n\n"
-            f"Headline: {headline}\n\n"
-            f"Article: {body[:1000]}"
-        )
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": "google/gemini-flash-1.5",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 100,
-                    "temperature": 0.2,
-                },
-            )
-            data = resp.json()
-            return data["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        logger.warning("LLM summarisation failed: %s", e)
-        return None
+    prompt = (
+        f"Summarise this financial news article in 1-2 plain sentences "
+        f"suitable for a beginner investor in Sri Lanka. "
+        f"Focus on the practical impact. Reply with the summary only.\n\n"
+        f"Headline: {headline}\n\n"
+        f"Article: {body[:1000]}"
+    )
+    # Brevity is requested in the prompt rather than enforced with a small
+    # max_tokens: the previous cap of 100 tokens was being consumed by hidden
+    # reasoning on current models, which returned an empty summary.
+    return await llm.complete_text(prompt, role=llm.Role.UTILITY,
+                                   temperature=0.2)
 
 async def score_unseen_news(db, symbol: str = None) -> int:
+    """Backfill sentiment for rows the Celery chain never reached.
+
+    Scores the article body, matching ``_async_analyse_sentiment`` in
+    ``tasks/scrape_tasks.py``. The two must agree: this is the on-demand path and
+    that is the scheduled one, and a score whose meaning depended on which task
+    happened to produce it would make every cross-article comparison — the
+    per-symbol average below, and any sentiment ranking — incoherent.
+
+    Unlike the scheduled task this does *not* summarise. It exists to be cheap and
+    synchronous behind a request, and summarising N articles is N LLM round trips.
+    """
     from app.models.stock import NewsSentiment
     query = db.query(NewsSentiment).filter(NewsSentiment.sentiment_score == None)
     if symbol:
@@ -95,7 +86,8 @@ async def score_unseen_news(db, symbol: str = None) -> int:
     unscored = query.all()
     count = 0
     for row in unscored:
-        text = f"{row.headline}. {row.summary or ''}"
+        body = row.body or row.summary or ""
+        text = f"{row.headline}. {body[:1500]}" if body else row.headline
         score, label = await analyse_text(text)
         row.sentiment_score = score
         row.sentiment_label = label

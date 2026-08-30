@@ -1,25 +1,91 @@
 # app/routers/user.py
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from sqlalchemy.exc import SQLAlchemyError
+from pydantic import BaseModel, Field
 import logging
 
 from app.dependencies import get_db, get_current_user
 from app.models.user import User, RiskProfile
+from app.schemas.auth import UserOut
+from app.services.risk_scoring import (
+    AssessmentError,
+    question_bank,
+    score_assessment,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/me', tags=['User'])
 
+
 class AssessmentRequest(BaseModel):
-    goal: str
-    risk: str
-    experience: str
-    savings: str
+    """The wizard's answers, keyed by question id as a string.
+
+    Values are an option string, a list of option strings (Q13) or a number
+    (Q11's slider). Validation of the contents is
+    app/services/risk_scoring.py's job — it can report *which* answer is wrong,
+    which a schema-level union cannot.
+    """
+    answers: dict[str, Any] = Field(min_length=1)
+
 
 class RiskProfileResponse(BaseModel):
     score: int
     category: str
+    answered_weight: int
+    total_weight: int
+    preferred_language: str | None = None
+    sectors: list[str] = []
+
+
+class QuestionOut(BaseModel):
+    id: int
+    text: str
+    type: str
+    options: list[str]
+    weight: int
+
+
+class UpdateProfileRequest(BaseModel):
+    full_name: str = Field(min_length=2, max_length=255)
+
+
+@router.patch('', response_model=UserOut)
+def update_own_profile(
+    payload: UpdateProfileRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update the signed-in user's display name.
+
+    Added during the I-02 auth cutover. ProfileScreen's edit button previously
+    called Clerk's ``user.update({firstName, lastName})``; with Clerk gone there
+    was no endpoint behind it at all. `users.full_name` is a single column, so
+    the app sends one combined name rather than two.
+    """
+    current_user.full_name = payload.full_name.strip()
+    try:
+        db.commit()
+        db.refresh(current_user)
+    except SQLAlchemyError:
+        db.rollback()
+        logger.exception('Failed to update full_name for %s', current_user.user_id)
+        raise HTTPException(503, 'Could not save your profile. Please try again.')
+    return current_user
+
+@router.get('/assessment/questions', response_model=list[QuestionOut])
+def get_assessment_questions():
+    """The canonical risk-assessment instrument.
+
+    Served so the client can be driven from the same question bank the server
+    scores against, instead of keeping its own copy that silently drifts — the
+    drift that made this endpoint reject every submission until the I-02 fix.
+    """
+    return question_bank()
+
 
 @router.post('/risk-profile', response_model=RiskProfileResponse)
 def update_risk_profile(
@@ -27,75 +93,47 @@ def update_risk_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """Score the risk-assessment wizard and save the result.
+
+    Scoring lives in app/services/risk_scoring.py, which rejects any answer it
+    does not recognise rather than contributing zero for it. The previous
+    version of this endpoint compared four fields against option strings the
+    wizard had stopped using, so it both 422'd on shape and would have scored
+    every user 0 / "Low" had the shape matched.
     """
-    Calculate and save risk profile based on questionnaire answers.
-    """
-    score = 0
-    
-    # Calculate Risk Score (0-100)
-    # Goal
-    if payload.goal == 'Wealth Growth':
-        score += 25
-    elif payload.goal == 'Income Generation':
-        score += 15
-    elif payload.goal == 'Major Purchase':
-        score += 10
-    elif payload.goal == 'Retirement':
-        score += 5
-        
-    # Risk
-    if payload.risk == 'Speculative':
-        score += 30
-    elif payload.risk == 'Growth (Aggressive)':
-        score += 25
-    elif payload.risk == 'Moderate':
-        score += 15
-    elif payload.risk == 'Conservative (Low Risk)':
-        score += 5
-        
-    # Experience
-    if payload.experience == 'Expert Investor':
-        score += 20
-    elif payload.experience == 'Intermediate Trader':
-        score += 15
-    elif payload.experience == 'I know the basics':
-        score += 10
-    elif payload.experience == 'Complete Beginner':
-        score += 5
-        
-    # Savings
-    if payload.savings == '> Rs. 100,000':
-        score += 25
-    elif payload.savings == 'Rs. 50,000 - 100,000':
-        score += 20
-    elif payload.savings == 'Rs. 10,000 - 50,000':
-        score += 15
-    elif payload.savings == '< Rs. 10,000':
-        score += 10
-        
-    score = min(max(score, 0), 100) # Ensure between 0 and 100
-    
-    if score >= 70:
-        category = "High"
-    elif score >= 40:
-        category = "Medium"
-    else:
-        category = "Low"
-        
-    # Save to database
-    rp = db.query(RiskProfile).filter(RiskProfile.user_id == current_user.user_id).first()
-    if not rp:
-        rp = RiskProfile(
-            user_id=current_user.user_id,
-            score=score,
-            category=category
-        )
+    try:
+        result = score_assessment(payload.answers)
+    except AssessmentError as exc:
+        # 422: the body parsed but does not describe a valid assessment. The
+        # message names the offending question so the app can say something
+        # useful instead of "could not save".
+        raise HTTPException(422, str(exc))
+
+    rp = db.query(RiskProfile).filter(
+        RiskProfile.user_id == current_user.user_id).first()
+    if rp is None:
+        rp = RiskProfile(user_id=current_user.user_id)
         db.add(rp)
-    else:
-        rp.score = score
-        rp.category = category
-        
-    db.commit()
-    db.refresh(rp)
-    
-    return RiskProfileResponse(score=rp.score, category=rp.category)
+
+    rp.score = result.score
+    rp.category = result.category
+    rp.answers = result.answers
+
+    try:
+        db.commit()
+        db.refresh(rp)
+    except SQLAlchemyError:
+        db.rollback()
+        logger.exception(
+            'Failed to save risk profile for %s', current_user.user_id)
+        raise HTTPException(
+            503, 'Could not save your risk profile. Please try again.')
+
+    return RiskProfileResponse(
+        score=rp.score,
+        category=rp.category,
+        answered_weight=result.answered_weight,
+        total_weight=result.total_weight,
+        preferred_language=result.preferred_language,
+        sectors=result.sectors,
+    )

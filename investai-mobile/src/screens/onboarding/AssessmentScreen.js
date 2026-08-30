@@ -1,12 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, PanResponder, SafeAreaView, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, PanResponder, SafeAreaView, Dimensions, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore } from '../../store/authStore';
-import { useUser } from '@clerk/clerk-expo';
 
 const { width } = Dimensions.get('window');
 
+// Must stay identical to the canonical bank in
+// investai-backend/app/services/risk_scoring.py, which is what scores these
+// answers. It is also served by GET /me/assessment/questions. A mismatched
+// option string is no longer scored as zero — the backend rejects it with a 422
+// naming the question, which surfaces in handleNext's Alert below.
 const QUESTIONS = [
   { id: 1, text: "What is your primary investment goal?", type: "single", options: ["Retirement", "Wealth Growth", "Major Purchase (e.g., home)", "Income Generation"] },
   { id: 2, text: "How comfortable are you with potential short-term fluctuations in your investment value?", type: "single", options: ["Not comfortable at all", "Slightly comfortable", "Moderately comfortable", "Very comfortable"] },
@@ -104,11 +108,16 @@ const RiskSlider = ({ value = 50, onChange }) => {
 };
 
 export default function AssessmentScreen({ navigation }) {
-  const { user } = useUser();
-  const { setProfileSetupDone, setAssessmentResults } = useAuthStore();
-  
+  // Identity comes from the backend user row, not Clerk. `user.user_id` is the
+  // same UUID the API authorises against, so the per-user
+  // `profile_setup_done_<id>` flag now keys on the real account.
+  const user = useAuthStore(state => state.user);
+  const setProfileSetupDone = useAuthStore(state => state.setProfileSetupDone);
+  const setAssessmentResults = useAuthStore(state => state.setAssessmentResults);
+
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState({});
+  const [submitting, setSubmitting] = useState(false);
   const progressAnim = useRef(new Animated.Value(0)).current;
 
   const currentQuestion = QUESTIONS[currentQ];
@@ -134,24 +143,59 @@ export default function AssessmentScreen({ navigation }) {
     }
   };
 
+  // The slider always has a value, so only the choice questions can be blank.
+  const isAnswered = () => {
+    const a = answers[currentQuestion.id];
+    if (currentQuestion.type === 'slider') return true;
+    if (currentQuestion.type === 'multi') return Array.isArray(a) && a.length > 0;
+    return a !== undefined && a !== null && a !== '';
+  };
+
   const handleNext = async () => {
+    if (!isAnswered()) {
+      // The backend needs at least 60% of the scored weight to return a
+      // reliable score, so gaps are refused here rather than at submit time
+      // where the user has lost the context of which question they skipped.
+      Alert.alert('Please answer', 'Choose an option to continue, or use Skip to do this later.');
+      return;
+    }
+
     if (currentQ < QUESTIONS.length - 1) {
       setCurrentQ(currentQ + 1);
-    } else {
-      // Complete
-      if (user) {
-        await setAssessmentResults(answers);
-        await setProfileSetupDone(user.id);
-      }
-      navigation.navigate('MainTab');
+      return;
+    }
+
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      // Sliders default to 50 in the UI but are only in `answers` once dragged;
+      // send the displayed value so the score reflects what the user saw.
+      const payload = { ...answers };
+      QUESTIONS.forEach(q => {
+        if (q.type === 'slider' && payload[q.id] === undefined) payload[q.id] = 50;
+      });
+
+      await setAssessmentResults(payload);
+      await setProfileSetupDone(user?.user_id);
+      navigation.reset({ index: 0, routes: [{ name: 'MainTab' }] });
+    } catch (err) {
+      // Never mark the wizard done on failure — that was the old behaviour and
+      // it left users with no risk profile and no way to notice.
+      const detail = err?.response?.data?.detail;
+      Alert.alert(
+        'Could not save your assessment',
+        typeof detail === 'string'
+          ? detail
+          : 'Please check your connection and try again.'
+      );
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleSkip = async () => {
-    if (user) {
-      await setProfileSetupDone(user.id);
-    }
-    navigation.navigate('MainTab');
+    await setProfileSetupDone(user?.user_id);
+    navigation.reset({ index: 0, routes: [{ name: 'MainTab' }] });
   };
 
   const handlePrev = () => {
@@ -244,8 +288,14 @@ export default function AssessmentScreen({ navigation }) {
           >
             <Text style={[styles.navBtnTextPrev, currentQ === 0 && { color: '#9CA3AF' }]}>Previous</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.navBtn, styles.navBtnNext]} onPress={handleNext}>
-            {currentQ === QUESTIONS.length - 1 ? (
+          <TouchableOpacity
+            style={[styles.navBtn, styles.navBtnNext, submitting && { opacity: 0.6 }]}
+            onPress={handleNext}
+            disabled={submitting}
+          >
+            {submitting ? (
+              <ActivityIndicator size="small" color="#FFF" />
+            ) : currentQ === QUESTIONS.length - 1 ? (
               <>
                 <MaterialIcons name="check" size={20} color="#FFF" style={{marginRight: 6}}/>
                 <Text style={styles.navBtnTextNext}>Complete</Text>

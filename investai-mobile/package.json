@@ -9,7 +9,6 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "@clerk/clerk-expo": "^2.19.31",
     "@expo-google-fonts/roboto": "^0.4.3",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "^2.2.0",
@@ -18,7 +17,6 @@
     "@react-navigation/bottom-tabs": "^7.14.0",
     "@react-navigation/native": "^7.1.28",
     "@react-navigation/stack": "^7.7.2",
-    "@supabase/supabase-js": "^2.103.3",
     "axios": "^1.13.5",
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.19",

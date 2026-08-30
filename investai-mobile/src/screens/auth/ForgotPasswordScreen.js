@@ -90,11 +90,17 @@ const ForgotPasswordScreen = ({ navigation }) => {
         setLoading(true);
 
         try {
-            await authApi.sendResetOTP(email);
+            // authApi exposes this as forgotPassword; the old call was to a
+            // non-existent `sendResetOTP`, so this threw "not a function" and
+            // the reset flow could never even start.
+            await authApi.forgotPassword(email.trim());
             // Linear Flow: Forgot -> OTP -> Reset -> Success
-            navigation.navigate('OTPVerification', { email, type: 'reset' });
+            navigation.navigate('OTPVerification', { email: email.trim(), type: 'reset' });
         } catch (err) {
-            Alert.alert('Error', err);
+            const msg = err?.response?.data?.detail
+                || err?.message
+                || 'Could not send the reset code. Please try again.';
+            Alert.alert('Error', msg);
         } finally {
             setLoading(false);
         }

@@ -1,10 +1,19 @@
 # app/services/ai_agent.py
+"""DEPRECATED — superseded by app.services.agent (the ReAct agent) and
+app.services.llm (provider failover). Nothing imports this module.
+
+Do not wire it back up: the models named in app.services.ai_providers are dead
+(google/gemini-2.5-flash returns HTTP 402, gemini-1.5-flash returns HTTP 404),
+it builds five provider clients at import time, and it has no tool calling. Use
+``llm.acreate(..., role=llm.Role.AGENT)`` instead. Removal is tracked as I-21.
+"""
 import logging
 from typing import List, Dict, Optional
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models.portfolio import Portfolio
-from app.models.stock import MarketData
+from app.models.stock import MarketDataLatest
 from app.models.user import User, RiskProfile
 from app.services.sentiment import get_symbol_sentiment_summary
 from app.services.ai_providers import (
@@ -52,22 +61,28 @@ def _build_context(db: Session, user: User) -> str:
     # Portfolio holdings
     portfolios = db.query(Portfolio).filter(
         Portfolio.user_id == user.user_id).all()
-    
+
+    # Price every held symbol in one query rather than once per holding.
+    held = {h.symbol for p in portfolios for h in p.holdings}
+    quotes = {
+        r.symbol: r
+        for r in db.query(MarketDataLatest).filter(
+            MarketDataLatest.symbol.in_(held)).all()
+    } if held else {}
+
     for port in portfolios:
         lines.append(f'Portfolio: {port.name}')
         for h in port.holdings:
-            mkt = db.query(MarketData).filter(
-                MarketData.symbol == h.symbol
-            ).order_by(MarketData.recorded_at.desc()).first()
-            
+            mkt = quotes.get(h.symbol)
+
             current_price = mkt.price if mkt else h.avg_buy_price
             pnl_pct = ((current_price - h.avg_buy_price) / h.avg_buy_price) * 100
-            
+
             lines.append(
                 f' - {h.symbol}: {h.quantity:.0f} shares @ LKR {h.avg_buy_price:.2f} '
                 f'| Current: LKR {current_price:.2f} | P&L: {pnl_pct:+.1f}%'
             )
-            
+
             # Sentiment
             sent = get_symbol_sentiment_summary(db, h.symbol)
             if sent['count'] > 0:
@@ -75,13 +90,19 @@ def _build_context(db: Session, user: User) -> str:
                     f'   Sentiment ({h.symbol}): {sent["label"]} '
                     f'(score {sent["avg_score"]:+.3f}, {sent["count"]} articles)'
                 )
-    
-    # Latest market overview (top 10 movers)
-    latest_prices = db.query(MarketData).order_by(
-        MarketData.recorded_at.desc()).limit(10).all()
-    
+
+    # Market overview: the ten largest absolute movers.
+    #
+    # This was `ORDER BY recorded_at DESC LIMIT 10` over all history, labelled
+    # "top 10 movers". Because the scraper stamped each row with its own
+    # timestamp, it returned ten arbitrary symbols from the tail of the newest
+    # batch — and once a second scrape existed the same symbol could occupy
+    # several of the ten slots. Nothing about it was a mover.
+    latest_prices = db.query(MarketDataLatest).order_by(
+        func.abs(MarketDataLatest.change_pct).desc().nullslast()).limit(10).all()
+
     if latest_prices:
-        lines.append('Recent market snapshot (top 10 latest prices):')
+        lines.append('Biggest movers right now (top 10 by absolute % change):')
         for m in latest_prices:
             lines.append(f'  {m.symbol}: LKR {m.price:.2f} ({m.change_pct:+.1f}%)')
             

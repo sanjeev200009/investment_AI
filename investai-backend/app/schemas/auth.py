@@ -16,6 +16,15 @@ class TokenResponse(BaseModel):
     user_id: str
     email: str
     full_name: str | None = None
+    # Supabase access tokens expire in about an hour. Returning the refresh
+    # token lets the client renew silently via POST /auth/refresh; before the
+    # I-02 cutover Clerk's SDK did this invisibly, so dropping it here would
+    # have signed every user out mid-session.
+    refresh_token: str | None = None
+    expires_in: int | None = None
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=1)
 
 class OTPVerifyRequest(BaseModel):
     email: EmailStr

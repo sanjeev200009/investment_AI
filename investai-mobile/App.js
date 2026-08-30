@@ -19,15 +19,11 @@ import {
   Roboto_800ExtraBold
 } from '@expo-google-fonts/roboto';
 import * as SplashScreenLib from 'expo-splash-screen';
-import { ClerkProvider, ClerkLoaded } from '@clerk/clerk-expo';
-import tokenCache from './src/utils/tokenCache';
 import AppNavigator from './src/navigation/AppNavigator';
 import { useAuthStore } from './src/store/authStore';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreenLib.preventAutoHideAsync();
-
-const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 export default function App() {
   const restoreSession = useAuthStore(state => state.restoreSession);
@@ -66,16 +62,12 @@ export default function App() {
   }
 
   return (
-    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache} telemetry={false}>
-      <ClerkLoaded>
-        <GestureHandlerRootView style={{ flex: 1 }}>
-          <SafeAreaProvider onLayout={onLayoutRootView}>
-            <NavigationContainer>
-              <AppNavigator />
-            </NavigationContainer>
-          </SafeAreaProvider>
-        </GestureHandlerRootView>
-      </ClerkLoaded>
-    </ClerkProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider onLayout={onLayoutRootView}>
+        <NavigationContainer>
+          <AppNavigator />
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

@@ -34,8 +34,19 @@ export const authApi = {
     const { data } = await api.get('/auth/me');
     return data;
   },
-  updateRiskProfile: async (results) => {
-    const { data } = await api.post('/me/risk-profile', results);
+  updateProfile: async (full_name) => {
+    const { data } = await api.patch('/me', { full_name });
+    return data;
+  },
+  // `answers` is keyed by question id, e.g. { "1": "Retirement", "11": 60 }.
+  // The backend scores it against app/services/risk_scoring.py and rejects any
+  // option it does not recognise with a 422 naming the question.
+  updateRiskProfile: async (answers) => {
+    const { data } = await api.post('/me/risk-profile', { answers });
+    return data;
+  },
+  getAssessmentQuestions: async () => {
+    const { data } = await api.get('/me/assessment/questions');
     return data;
   },
 };

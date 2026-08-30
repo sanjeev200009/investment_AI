@@ -4,7 +4,7 @@ Autonomous Investment Rules Checker.
 
 Runs on a schedule (every 15 min during market hours) and:
   1. Loads all active InvestmentRule rows.
-  2. Fetches current MarketData for each affected symbol.
+  2. Fetches the current quote for each affected symbol from market_data_latest.
   3. Evaluates each rule's condition.
   4. If triggered, creates a Notification and dispatches FCM push.
   5. Uses the AI agent to generate a human-readable explanation of why
@@ -63,7 +63,7 @@ def check_investment_rules(self):
 async def _async_check_rules():
     from app.database import SessionLocal
     from app.models.portfolio import InvestmentRule
-    from app.models.stock import MarketData
+    from app.models.stock import MarketDataLatest
     from app.models.notification import Notification
     from app.models.user import User
 
@@ -74,18 +74,16 @@ async def _async_check_rules():
             logger.info("No investment rules found")
             return
 
-        # Build symbol → latest MarketData map (one query per unique symbol)
+        # Build symbol → latest quote map in one query. This was a loop issuing
+        # one ORDER BY recorded_at DESC LIMIT 1 per distinct symbol; with rules
+        # across 50 symbols that was 50 queries every time the task ran, each
+        # sorting that symbol's full history.
         symbols = list({r.symbol for r in rules})
-        market_map: dict[str, MarketData] = {}
-        for sym in symbols:
-            row = (
-                db.query(MarketData)
-                .filter(MarketData.symbol == sym)
-                .order_by(MarketData.recorded_at.desc())
-                .first()
-            )
-            if row:
-                market_map[sym] = row
+        market_map: dict[str, MarketDataLatest] = {
+            row.symbol: row
+            for row in db.query(MarketDataLatest).filter(
+                MarketDataLatest.symbol.in_(symbols)).all()
+        }
 
         triggered = 0
         for rule in rules:
@@ -187,42 +185,21 @@ async def _generate_rule_explanation(rule, market) -> str:
         f"Review your investment plan before making decisions."
     )
 
-    try:
-        import httpx
-        from app.config import get_settings
+    prompt = (
+        f"Write a short (2-3 sentences), beginner-friendly alert message for an investor. "
+        f"Their stock alert fired: {rule.symbol} has {label}. "
+        f"Current price is LKR {market.price:,.2f} with a "
+        f"{market.change_pct or 0:.2f}% change today. "
+        f"End with one sentence of cautious, educational advice. "
+        f"Do not use jargon. Do not recommend buying or selling."
+    )
+    from app.services import llm
 
-        settings = get_settings()
-        api_key = getattr(settings, "OPENROUTER_API_KEY", "")
-        if not api_key:
-            return fallback
-
-        prompt = (
-            f"Write a short (2-3 sentences), beginner-friendly alert message for an investor. "
-            f"Their stock alert fired: {rule.symbol} has {label}. "
-            f"Current price is LKR {market.price:,.2f} with a "
-            f"{market.change_pct or 0:.2f}% change today. "
-            f"End with one sentence of cautious, educational advice. "
-            f"Do not use jargon. Do not recommend buying or selling."
-        )
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": "google/gemini-flash-1.5",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 150,
-                    "temperature": 0.4,
-                },
-            )
-            data = resp.json()
-            return data["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        logger.warning("AI explanation failed (%s), using fallback", e)
+    text = await llm.complete_text(prompt, role=llm.Role.UTILITY, temperature=0.4)
+    if text is None:
+        logger.warning("AI explanation unavailable for %s, using fallback", rule.symbol)
         return fallback
+    return text
 
 
 @celery_app.task(bind=True, max_retries=3, name="tasks.rules_tasks.send_push_for_rule")

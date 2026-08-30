@@ -34,8 +34,12 @@ import { validatePassword, validateConfirmPassword } from '../../utils/validatio
 
 const { width, height } = Dimensions.get('window');
 
-const ResetPasswordScreen = ({ navigation }) => {
+const ResetPasswordScreen = ({ navigation, route }) => {
     const theme = useAppTheme();
+    // Both come from OTPVerificationScreen after /auth/verify-reset-otp. The
+    // previous version sent the literal string 'mock-token' as the only
+    // argument, so every reset failed with "Invalid or expired reset token".
+    const { email, resetToken } = route.params || {};
 
     // Form State
     const [password, setPassword] = useState('');
@@ -93,15 +97,31 @@ const ResetPasswordScreen = ({ navigation }) => {
         setLoading(true);
 
         try {
-            await authApi.resetPassword('mock-token', password);
-            // Linear Flow Ends with Success State
-            navigation.navigate('AuthSuccess', {
-                title: 'Reset Successful!',
-                message: 'Your password has been changed successfully. You can now login with your new credentials.',
-                buttonLabel: 'Back to Login'
+            if (!email || !resetToken) {
+                // Only reachable if this screen is entered out of order.
+                throw new Error('Your reset session has expired. Please request a new code.');
+            }
+            await authApi.resetPassword(email, resetToken, password);
+            // reset(), not navigate(): the reset token is single-use, so going
+            // "back" to this form could only fail.
+            navigation.reset({
+                index: 0,
+                routes: [{
+                    name: 'AuthSuccess',
+                    params: {
+                        title: 'Reset Successful!',
+                        message: 'Your password has been changed successfully. You can now login with your new credentials.',
+                        buttonLabel: 'Back to Login',
+                    },
+                }],
             });
         } catch (err) {
-            Alert.alert('Error', err);
+            // err is an Error or an axios error — Alert needs a string, and the
+            // previous `Alert.alert('Error', err)` rendered nothing useful.
+            const msg = err?.response?.data?.detail
+                || err?.message
+                || 'Password reset failed. Please try again.';
+            Alert.alert('Error', msg);
         } finally {
             setLoading(false);
         }
