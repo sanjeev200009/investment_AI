@@ -6,8 +6,10 @@ export const authApi = {
     const { data } = await api.post('/auth/register', { email, password, full_name });
     return data;
   },
-  verifyOTP: async (email, otp_code) => {
-    const { data } = await api.post('/auth/verify-otp', { email, otp_code });
+  // The password is set on the account here, not at registration, so only the
+  // person holding the emailed code can choose it.
+  verifyOTP: async (email, otp_code, password) => {
+    const { data } = await api.post('/auth/verify-otp', { email, otp_code, password });
     return data;
   },
   resendOTP: async (email) => {
@@ -29,6 +31,9 @@ export const authApi = {
   resetPassword: async (email, reset_token, new_password) => {
     const { data } = await api.post('/auth/reset-password', { email, reset_token, new_password });
     return data;
+  },
+  logout: async () => {
+    await api.post('/auth/logout');
   },
   getMe: async () => {
     const { data } = await api.get('/auth/me');

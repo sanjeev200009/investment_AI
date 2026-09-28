@@ -41,3 +41,7 @@ yarn-error.*
 /android
 
 /splash.html
+
+# Firebase client config (supplied per environment, see app.config.js)
+google-services.json
+GoogleService-Info.plist

@@ -2,11 +2,32 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// The API address is baked in at build time. A development build may fall back
+// to localhost; a release build must not, because a phone cannot reach
+// "localhost" and Android release builds refuse plain http:// anyway. Failing
+// here makes a misconfigured build obvious on first launch instead of showing
+// "network error" on every screen.
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL
+    || (__DEV__ ? 'http://localhost:8000/api/v1' : null);
+if (!API_BASE_URL) {
+    throw new Error('EXPO_PUBLIC_API_BASE_URL is not set for this release build.');
+}
+if (!__DEV__ && !API_BASE_URL.startsWith('https://')) {
+    console.error('[API] Release build is using a non-HTTPS API URL; Android will block it.');
+}
+
+/** A user-readable message from any API error. FastAPI's 422 `detail` is an
+ * array of objects, which Alert.alert cannot display. */
+export const apiErrorMessage = (err, fallback = 'Something went wrong. Please try again.') => {
+    const detail = err?.response?.data?.detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail) && detail[0]?.msg) return String(detail[0].msg).replace(/^Value error, /, '');
+    if (!err?.response) return 'Could not reach the server. Check your connection and try again.';
+    return fallback;
+};
+
 const api = axios.create({
-    // The fallback matches what the screens used to hardcode individually, so
-    // routing every call through this instance loses nothing when the env var
-    // is unset.
-    baseURL: process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1',
+    baseURL: API_BASE_URL,
     timeout: 60000, // Increased to 60 seconds for AI endpoints
     headers: { 'Content-Type': 'application/json' },
 });
@@ -61,6 +82,17 @@ api.interceptors.request.use(
 // refresh token on use, so parallel attempts would invalidate each other.
 let refreshInFlight = null;
 
+/** Refresh the access token once, sharing the attempt with any concurrent
+ * caller. Exported for the chat stream, which does not go through axios. */
+export const refreshSession = () => {
+    if (!refreshInFlight) {
+        refreshInFlight = refreshAccessToken().finally(() => {
+            refreshInFlight = null;
+        });
+    }
+    return refreshInFlight;
+};
+
 const refreshAccessToken = async () => {
     const refreshToken = await AsyncStorage.getItem('refresh_token');
     if (!refreshToken) return null;
@@ -81,14 +113,25 @@ const refreshAccessToken = async () => {
 
 api.interceptors.response.use(
     res => {
-        console.log(`[API Response] ${res.config.method.toUpperCase()} ${res.config.url} - OK (${res.status})`);
+        if (__DEV__) {
+            console.log(`[API Response] ${res.config.method.toUpperCase()} ${res.config.url} - OK (${res.status})`);
+        }
         return res;
     },
     async err => {
+        // FastAPI's 422 `detail` is an array of objects. Every screen passes
+        // `detail` straight to Alert.alert or a <Text>, which expect a string,
+        // so normalise it here once instead of in twenty places.
+        const rawDetail = err.response?.data?.detail;
+        if (Array.isArray(rawDetail)) {
+            err.response.data.detail = apiErrorMessage(err);
+        }
         const status = err.response?.status;
         const msg = err.response?.data?.detail || err.message;
         const url = err.config?.url || '';
-        console.warn(`[API Error] ${err.config?.method?.toUpperCase()} ${url} - Status ${status}: ${msg}`);
+        if (__DEV__) {
+            console.warn(`[API Error] ${err.config?.method?.toUpperCase()} ${url} - Status ${status}: ${msg}`);
+        }
 
         const config = err.config;
 
@@ -98,12 +141,7 @@ api.interceptors.response.use(
         if (status === 401 && !isPublic(url) && config && !config._retried) {
             config._retried = true;
             try {
-                if (!refreshInFlight) {
-                    refreshInFlight = refreshAccessToken().finally(() => {
-                        refreshInFlight = null;
-                    });
-                }
-                const newToken = await refreshInFlight;
+                const newToken = await refreshSession();
                 if (newToken) {
                     config.headers = { ...config.headers, Authorization: `Bearer ${newToken}` };
                     return api.request(config);

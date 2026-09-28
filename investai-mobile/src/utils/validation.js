@@ -1,12 +1,20 @@
 // src/utils/validation.js
+//
+// Messages are translated here, in the one place every form calls, using the
+// language currently selected (read from the store, since these are plain
+// functions rather than components).
+import { translate } from '../i18n/translations';
+import { useLanguageStore } from '../store/languageStore';
+
+const msg = (key) => translate(useLanguageStore.getState().language, key);
 
 /**
  * Validates an email address.
  */
 export const validateEmail = (email) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!email) return 'Email is required';
-    if (!emailRegex.test(email)) return 'Please enter a valid email address';
+    if (!email) return msg('val_email_required');
+    if (!emailRegex.test(email)) return msg('val_email_invalid');
     return null;
 };
 
@@ -14,8 +22,8 @@ export const validateEmail = (email) => {
  * Validates password strength.
  */
 export const validatePassword = (password) => {
-    if (!password) return 'Password is required';
-    if (password.length < 8) return 'Password must be at least 8 characters';
+    if (!password) return msg('val_password_required');
+    if (password.length < 8) return msg('val_password_short');
     return null;
 };
 
@@ -23,8 +31,8 @@ export const validatePassword = (password) => {
  * Validates that two passwords match.
  */
 export const validateConfirmPassword = (password, confirmPassword) => {
-    if (!confirmPassword) return 'Please confirm your password';
-    if (password !== confirmPassword) return 'Passwords do not match';
+    if (!confirmPassword) return msg('val_confirm_required');
+    if (password !== confirmPassword) return msg('val_password_mismatch');
     return null;
 };
 
@@ -32,16 +40,16 @@ export const validateConfirmPassword = (password, confirmPassword) => {
  * Validates full name.
  */
 export const validateFullName = (name) => {
-    if (!name) return 'Full name is required';
-    if (name.trim().length < 2) return 'Please enter your full name';
+    if (!name) return msg('val_name_required');
+    if (name.trim().length < 2) return msg('val_name_short');
     return null;
 };
 
 /**
- * Validates OTP code.
+ * Validates OTP code. The backend issues 6-digit codes.
  */
 export const validateOTP = (otp) => {
-    if (!otp) return 'OTP is required';
-    if (otp.length !== 4 && otp.length !== 6) return 'Invalid OTP length';
+    if (!otp) return msg('val_otp_required');
+    if (otp.length !== 6) return msg('val_otp_length');
     return null;
 };

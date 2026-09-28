@@ -21,15 +21,20 @@ import {
 import * as SplashScreenLib from 'expo-splash-screen';
 import AppNavigator from './src/navigation/AppNavigator';
 import { useAuthStore } from './src/store/authStore';
+import { useLanguageStore } from './src/store/languageStore';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreenLib.preventAutoHideAsync();
 
 export default function App() {
   const restoreSession = useAuthStore(state => state.restoreSession);
+  const initLanguage = useLanguageStore(state => state.init);
 
   useEffect(() => {
     restoreSession();
+    // Loads the saved UI language before the first screen renders, so a
+    // Sinhala/Tamil user never sees an English flash (I-15).
+    initLanguage();
   }, []);
   const [fontsLoaded] = useFonts({
     Roboto_100Thin,
@@ -45,6 +50,7 @@ export default function App() {
     Roboto_900Black,
     Roboto_900Black_Italic,
     Roboto_800ExtraBold,
+    'Satoshi-Light': require('./assets/fonts/satoshi/Satoshi-Light.otf'),
     'Satoshi-Regular': require('./assets/fonts/satoshi/Satoshi-Regular.otf'),
     'Satoshi-Medium': require('./assets/fonts/satoshi/Satoshi-Medium.otf'),
     'Satoshi-Bold': require('./assets/fonts/satoshi/Satoshi-Bold.otf'),

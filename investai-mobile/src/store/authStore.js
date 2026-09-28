@@ -10,6 +10,8 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authApi } from '../api/authApi';
 import { setUnauthorizedHandler } from '../api/axiosConfig';
+import { pushApi } from '../api/api';
+import { useLanguageStore } from './languageStore';
 
 export const useAuthStore = create((set) => ({
     user: null,
@@ -31,6 +33,8 @@ export const useAuthStore = create((set) => ({
         }
         const savedEdu = await AsyncStorage.getItem('education_enabled');
         const assessmentDone = await AsyncStorage.getItem('assessment_completed');
+        // Cached so the app can open signed-in while offline.
+        await AsyncStorage.setItem('cached_user', JSON.stringify(user));
         set({
             token,
             user,
@@ -39,10 +43,18 @@ export const useAuthStore = create((set) => ({
             isEducationEnabled: savedEdu === 'true',
             hasCompletedAssessment: assessmentDone === 'true'
         });
+        // Register this device for push (I-12), best-effort — sign-in never
+        // blocks on it. Also loads the saved UI language immediately.
+        useLanguageStore.getState().init(true);
+        pushApi.register();
     },
 
     logout: async () => {
-        await AsyncStorage.multiRemove(['token', 'refresh_token']);
+        // Server side first, while the token is still valid: stop pushes to this
+        // device and revoke the refresh token. Both are best effort; the local
+        // sign-out below happens regardless.
+        await Promise.allSettled([pushApi.unregister(), authApi.logout()]);
+        await AsyncStorage.multiRemove(['token', 'refresh_token', 'cached_user']);
         set({ token: null, user: null, isAuthenticated: false, isLoading: false });
     },
 
@@ -63,6 +75,7 @@ export const useAuthStore = create((set) => ({
                 // interceptor silently refreshed it during getMe(), and the
                 // value read above is now stale.
                 const currentToken = (await AsyncStorage.getItem('token')) || token;
+                await AsyncStorage.setItem('cached_user', JSON.stringify(user));
                 set({
                     token: currentToken,
                     user,
@@ -71,14 +84,31 @@ export const useAuthStore = create((set) => ({
                     isEducationEnabled: savedEdu === 'true',
                     hasCompletedAssessment: assessmentDone === 'true'
                 });
+                // FCM rotates tokens; re-send on every launch, not only at login.
+                useLanguageStore.getState().init(true);
+                pushApi.register();
             } catch (err) {
                 // A 503 means the backend or its database is down, not that the
                 // session is invalid — dropping the token there would sign the
                 // user out over a transient outage and lose a working session.
+                //
+                // The same goes for no response at all (offline, server asleep):
+                // that used to fall through to the branch below and delete the
+                // tokens, so opening the app on the bus signed the user out.
                 const status = err?.response?.status;
-                if (status && status !== 401 && status !== 403) {
-                    console.warn(`Session restore deferred (HTTP ${status}); keeping token.`);
-                    set({ isLoading: false });
+                if (!status || (status !== 401 && status !== 403)) {
+                    console.warn(`Session restore deferred (${status ? `HTTP ${status}` : 'no response'}); keeping token.`);
+                    const cached = await AsyncStorage.getItem('cached_user');
+                    const assessmentDone = await AsyncStorage.getItem('assessment_completed');
+                    let user = null;
+                    try { user = cached ? JSON.parse(cached) : null; } catch (_) { user = null; }
+                    // With a cached profile, open signed-in; screens show their
+                    // own offline/error states and recover on the next request.
+                    set(user
+                        ? { user, isAuthenticated: true, isLoading: false,
+                            isEducationEnabled: savedEdu === 'true',
+                            hasCompletedAssessment: assessmentDone === 'true' }
+                        : { isLoading: false });
                     return;
                 }
                 console.log('Session restore failed:', err?.message || err);
