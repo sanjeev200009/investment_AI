@@ -96,6 +96,13 @@ class Settings(BaseSettings):
 
     FRONTEND_URL: str = 'http://localhost:19006'
 
+    # CORS allow-list (I-22). Comma-separated origins, no trailing slashes.
+    # The wildcard default was a dev convenience: on Fly or Render the API's
+    # public hostname is known at deploy time, so the production value is that
+    # one origin — e.g. "https://investai-api.fly.dev" — with localhost
+    # origins appended only in local compose.
+    CORS_ORIGINS: str = "http://localhost:19006,http://localhost:8081"
+
 
 @lru_cache
 def get_settings() -> Settings:

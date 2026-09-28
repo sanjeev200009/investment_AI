@@ -1,14 +1,27 @@
 # app/schemas/portfolio.py
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from datetime import date, datetime
 from typing import List, Optional
 
 class HoldingCreate(BaseModel):
+    # Validated here because nothing downstream did: a negative quantity or
+    # price corrupted P&L and snapshots, a lowercase symbol never matched a
+    # quote, and a symbol over 20 characters was a DataError (500).
+    symbol: str = Field(min_length=1, max_length=20)
+    quantity: float = Field(gt=0)
+    avg_buy_price: float = Field(gt=0)
+
+    @field_validator('symbol')
+    @classmethod
+    def _normalise_symbol(cls, v: str) -> str:
+        return v.strip().upper()
+
+class HoldingOut(BaseModel):
+    # Not a subclass of HoldingCreate: rows stored before validation existed
+    # must still be readable.
     symbol: str
     quantity: float
     avg_buy_price: float
-
-class HoldingOut(HoldingCreate):
     holding_id: int
     portfolio_id: int
 

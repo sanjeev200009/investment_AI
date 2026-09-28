@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from datetime import date, datetime
 
@@ -286,6 +286,11 @@ class NewsSentiment(NewsSentimentBase):
         from_attributes = True
 
 class PricePredictionBase(BaseModel):
+    # `model_version` collides with pydantic v2's protected "model_" namespace
+    # (warning, not error) — this schema uses the ORM-mapped plain Config style,
+    # so the namespace is opted out rather than renaming a database-named field.
+    model_config = ConfigDict(protected_namespaces=())
+
     symbol: str
     predicted_price: float
     model_version: str
@@ -304,7 +309,7 @@ class ScrapeResponse(BaseModel):
 
 class SentimentSummary(BaseModel):
     symbol: str
-    count: int
-    avg_score: float
-    label: str
+    count: int                      # scored articles in the window
+    avg_score: Optional[float] = None  # None when nothing was scored
+    label: str                      # positive | neutral | negative | none
     recent_headlines: list[str]

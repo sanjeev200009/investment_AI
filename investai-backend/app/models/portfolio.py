@@ -1,5 +1,5 @@
 from sqlalchemy import (Column, Date, DateTime, Float, ForeignKey, Integer,
-                        String, func)
+                        String, UniqueConstraint, func)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -88,6 +88,31 @@ class PortfolioHolding(Base):
 	portfolio = relationship("Portfolio", back_populates="holdings")
 
 
+class Watchlist(Base):
+	"""One row per (user, symbol) the user follows.
+
+	The table existed since migration a1b2c3d4e5f6 with a unique constraint on
+	(user_id, symbol) and nothing else: no ORM model, no router, no endpoint —
+	so every user's "watchlist" was the same top-10-by-volume page, identical
+	for everyone (I-09). The model deliberately adds nothing to that shape: the
+	migration already promised `user_id` + `symbol` + a timestamp, and every
+	read the app wants is a join against market_data_latest for the quote.
+	"""
+
+	__tablename__ = "watchlist"
+
+	watchlist_id = Column(Integer, primary_key=True, index=True)
+	user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True)
+	symbol = Column(String(20), nullable=False, index=True)
+	added_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+	__table_args__ = (
+		UniqueConstraint("user_id", "symbol", name="uq_watchlist_user_symbol"),
+	)
+
+	user = relationship("User", backref="watchlist_items")
+
+
 class InvestmentRule(Base):
 	__tablename__ = "investment_rules"
 
@@ -97,5 +122,8 @@ class InvestmentRule(Base):
 	condition_type = Column(String(80), nullable=False)
 	threshold = Column(Float, nullable=False)
 	created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+	# When this rule last produced an alert. Dedup keys on the rule itself; it
+	# used to LIKE-match the symbol inside LLM-written notification text.
+	last_triggered_at = Column(DateTime(timezone=True), nullable=True)
 
 	user = relationship("User", back_populates="investment_rules")

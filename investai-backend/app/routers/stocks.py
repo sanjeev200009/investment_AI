@@ -1,5 +1,7 @@
 # app/routers/stocks.py
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+import os
+
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -15,9 +17,7 @@ from app.schemas.stock import (CompanyInfo, MarketData, MarketIndex,
                                NewsSentiment, PriceHistory, PricePrediction,
                                ScrapeResponse, SectorSummary, SentimentSummary)
 from app.services.portfolio_history import exchange_today
-from app.services.scraper import (HEADLINE_INDEX_CODES, scrape_and_save_cse,
-                                  scrape_and_save_indices, scrape_and_save_news)
-from app.services.sentiment import score_unseen_news
+from app.services.scraper import HEADLINE_INDEX_CODES
 
 router = APIRouter(prefix='/stocks', tags=['Stocks'])
 
@@ -40,7 +40,7 @@ HISTORY_RANGES = {
 def get_market_data(
     symbol: Optional[str] = None,
     sector: Optional[str] = None,
-    limit: int = 300,
+    limit: int = Query(300, ge=1, le=500),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -291,7 +291,7 @@ def get_price_history(
 @router.get('/news/{symbol}', response_model=List[NewsSentiment])
 def get_stock_news(
     symbol: str,
-    limit: int = 20,
+    limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -304,39 +304,57 @@ def get_stock_news(
         .all()
     )
 
-@router.post('/scrape', status_code=200, response_model=ScrapeResponse, tags=['Scraper'])
+@router.post('/scrape', status_code=202, response_model=ScrapeResponse, tags=['Scraper'])
 async def trigger_scrape(
     db: Session = Depends(get_db),
     symbol: Optional[str] = None,
     _: User = Depends(get_current_user),
 ):
-    """Manually trigger a synchronous scrape and wait for results."""
-    try:
-        if symbol:
-            new_ids = await scrape_and_save_news(db, symbol=symbol)
-            scored = await score_unseen_news(db, symbol=symbol)
-            return {
-                'message': f'News scrape completed for {symbol}',
-                'symbol': symbol,
-                'saved_count': len(new_ids)
-            }
-        else:
-            # Scrape market data
-            saved_stocks = await scrape_and_save_cse(db)
-            # Index readings come from a different CSE endpoint and are what the
-            # dashboard's ASPI tile reads, so a manual "scrape everything" that
-            # skipped them would leave the most visible number on the home screen
-            # stale.
-            saved_indices = await scrape_and_save_indices(db)
-            # Also scrape general news
-            new_news_ids = await scrape_and_save_news(db)
-            return {
-                'message': 'Full market, index and news scrape completed',
-                'symbol': 'ALL',
-                'saved_count': saved_stocks + saved_indices + len(new_news_ids)
-            }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Scrape failed: {str(e)}")
+    """Enqueue a scrape and return immediately — 202 Accepted, not the data.
+
+    This used to run the whole pipeline synchronously inside the request: a full
+    market + index + news scrape takes on the order of a minute of worker time,
+    and any authenticated user could hold that repeatedly by re-sending the
+    request, with a 60s client timeout as the only backstop. It is exactly the
+    job Celery is already here to do, so the request now enqueues the same task
+    the beat schedule runs and returns before any scraping starts.
+
+    202 rather than 200 because the work is *not* done when the response is.
+    Clients observe progress in the data itself — a fresh `recorded_at` on
+    /market — or in Flower. Nothing in either app called this endpoint, which is
+    why the change is safe; the mobile app scrapes nothing manually.
+    """
+    # Operator tool, not a user feature: any signed-in user could otherwise
+    # enqueue unlimited full-market scrapes of cse.lk. Beat runs the schedule
+    # in production.
+    if os.getenv("ENVIRONMENT", "development").lower() == "production":
+        raise HTTPException(404, "Not found")
+    if symbol and (len(symbol) > 20 or not symbol.replace('.', '').isalnum()):
+        raise HTTPException(422, "Invalid symbol")
+
+    from tasks.scrape_tasks import scrape_cse_data, scrape_cse_indices, \
+        scrape_and_analyse_news
+
+    if symbol:
+        # On-demand enrichment path: one symbol's news, then scored and embedded
+        # by the same chain the scheduled task feeds.
+        scrape_and_analyse_news.delay(symbol)
+        return {
+            'message': f'News scrape for {symbol} enqueued',
+            'symbol': symbol,
+            'saved_count': None,
+        }
+
+    # The three scheduled scrapes, on the same queues beat uses. Indices and news
+    # are separate tasks so one failing does not cost the others.
+    scrape_cse_data.delay()
+    scrape_cse_indices.delay()
+    scrape_and_analyse_news.delay()
+    return {
+        'message': 'Full market, index and news scrape enqueued',
+        'symbol': 'ALL',
+        'saved_count': None,
+    }
 
 @router.get('/sentiment/{symbol}', response_model=SentimentSummary)
 def get_sentiment_summary(
