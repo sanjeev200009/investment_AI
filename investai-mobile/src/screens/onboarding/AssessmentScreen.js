@@ -1,16 +1,24 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, PanResponder, SafeAreaView, Dimensions, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Animated, PanResponder, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Screen, Header, PillButton, Title, Label } from '../../components/ui';
+import TouchableTick from '../../components/TouchableTick';
+import { palette, fonts, radii } from '../../theme/tokens';
 import { useAuthStore } from '../../store/authStore';
+import { useT } from '../../store/languageStore';
 
-const { width } = Dimensions.get('window');
+const KNOB_HIT = 44; // touch target around the slider knob
+const KNOB = 28;
 
 // Must stay identical to the canonical bank in
 // investai-backend/app/services/risk_scoring.py, which is what scores these
 // answers. It is also served by GET /me/assessment/questions. A mismatched
 // option string is no longer scored as zero — the backend rejects it with a 422
 // naming the question, which surfaces in handleNext's Alert below.
+// Only the display is translated: `text` shows as t(`assess_q${id}`) and each
+// option as t(`assess_q${id}_o${index + 1}`), while the English option string
+// is what gets stored in `answers` and sent. Reordering options means
+// renumbering those keys in src/i18n/screens/auth.js.
 const QUESTIONS = [
   { id: 1, text: "What is your primary investment goal?", type: "single", options: ["Retirement", "Wealth Growth", "Major Purchase (e.g., home)", "Income Generation"] },
   { id: 2, text: "How comfortable are you with potential short-term fluctuations in your investment value?", type: "single", options: ["Not comfortable at all", "Slightly comfortable", "Moderately comfortable", "Very comfortable"] },
@@ -30,9 +38,15 @@ const QUESTIONS = [
 ];
 
 const RiskSlider = ({ value = 50, onChange }) => {
-  const [trackWidth, setTrackWidth] = useState(0);
+  const [trackWidth, setTrackWidthState] = useState(0);
+  // The PanResponder below is created once, so it closed over the first
+  // render's trackWidth (0) and every drag was ignored: each user submitted 50.
+  // It reads this ref instead.
+  const trackWidthRef = useRef(0);
+  const setTrackWidth = (w) => { trackWidthRef.current = w; setTrackWidthState(w); };
   const position = useRef(new Animated.Value(value)).current;
   const valRef = useRef(value);
+  const { t } = useT();
 
   useEffect(() => {
     position.setValue(value);
@@ -47,8 +61,9 @@ const RiskSlider = ({ value = 50, onChange }) => {
         position.setValue(0);
       },
       onPanResponderMove: (e, gestureState) => {
-        if(trackWidth > 0) {
-          const deltaVal = (gestureState.dx / trackWidth) * 100;
+        const width = trackWidthRef.current;
+        if (width > 0) {
+          const deltaVal = (gestureState.dx / width) * 100;
           position.setValue(deltaVal);
           let raw = position._offset + deltaVal;
           raw = Math.max(0, Math.min(100, Math.round(raw)));
@@ -68,40 +83,40 @@ const RiskSlider = ({ value = 50, onChange }) => {
     })
   ).current;
 
+  const pct = position.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+    extrapolate: 'clamp'
+  });
+
   return (
-    <View style={styles.sliderContainer}>
+    <View
+      style={styles.sliderContainer}
+      accessible
+      accessibilityLabel={t('assess_q11')}
+      accessibilityValue={{ min: 0, max: 100, now: valRef.current }}
+    >
       <View style={styles.sliderBadge}>
         <Text style={styles.sliderBadgeText}>{valRef.current}%</Text>
       </View>
-      <View 
-        style={styles.trackWrapper} 
+      <View
+        style={styles.trackWrapper}
         onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
       >
-        <LinearGradient
-          colors={['#1976D2', '#E5E7EB']}
-          start={{x: 0, y: 0}}
-          end={{x: 1, y: 0}}
-          style={styles.track}
-        />
+        <View style={styles.track}>
+          <Animated.View style={[styles.trackFill, { width: pct }]} />
+        </View>
         <Animated.View
-          style={[
-            styles.thumb,
-            {
-              left: position.interpolate({
-                inputRange: [0, 100],
-                outputRange: ['0%', '100%'],
-                extrapolate: 'clamp'
-              }),
-              transform: [{ translateX: -12 }]
-            }
-          ]}
+          style={[styles.thumbHit, { left: pct, transform: [{ translateX: -KNOB_HIT / 2 }] }]}
           {...panResponder.panHandlers}
-        />
+        >
+          <View style={styles.thumb} />
+        </Animated.View>
       </View>
       <View style={styles.sliderLabels}>
-        <Text style={styles.sliderLabel}>Low</Text>
-        <Text style={styles.sliderLabel}>Medium</Text>
-        <Text style={styles.sliderLabel}>High</Text>
+        <Text style={styles.sliderLabel}>{t('assess_low')}</Text>
+        <Text style={styles.sliderLabel}>{t('assess_medium')}</Text>
+        <Text style={styles.sliderLabel}>{t('assess_high')}</Text>
       </View>
     </View>
   );
@@ -114,6 +129,7 @@ export default function AssessmentScreen({ navigation }) {
   const user = useAuthStore(state => state.user);
   const setProfileSetupDone = useAuthStore(state => state.setProfileSetupDone);
   const setAssessmentResults = useAuthStore(state => state.setAssessmentResults);
+  const { t } = useT();
 
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -156,7 +172,7 @@ export default function AssessmentScreen({ navigation }) {
       // The backend needs at least 60% of the scored weight to return a
       // reliable score, so gaps are refused here rather than at submit time
       // where the user has lost the context of which question they skipped.
-      Alert.alert('Please answer', 'Choose an option to continue, or use Skip to do this later.');
+      Alert.alert(t('assess_please_answer'), t('assess_please_answer_msg'));
       return;
     }
 
@@ -183,10 +199,10 @@ export default function AssessmentScreen({ navigation }) {
       // it left users with no risk profile and no way to notice.
       const detail = err?.response?.data?.detail;
       Alert.alert(
-        'Could not save your assessment',
+        t('assess_save_failed'),
         typeof detail === 'string'
           ? detail
-          : 'Please check your connection and try again.'
+          : t('assess_check_connection')
       );
     } finally {
       setSubmitting(false);
@@ -222,307 +238,129 @@ export default function AssessmentScreen({ navigation }) {
         isSelected = (answers[currentQuestion.id] || []).includes(option);
       }
 
+      const multi = currentQuestion.type === 'multi';
       return (
-        <TouchableOpacity 
-          key={index} 
-          style={[styles.optionCard, isSelected && styles.optionCardSelected]}
+        <TouchableTick
+          key={index}
+          style={[styles.option, isSelected && styles.optionSelected]}
           onPress={() => handleSelect(option)}
-          activeOpacity={0.7}
+          accessibilityRole={multi ? 'checkbox' : 'radio'}
+          accessibilityState={multi ? { checked: isSelected } : { selected: isSelected }}
         >
-          <Text style={styles.optionText}>{option}</Text>
-          <View style={currentQuestion.type === 'multi' ? [styles.checkbox, !isSelected && styles.checkboxUnselected] : [styles.radioCircle, !isSelected && styles.radioCircleUnselected]}>
-            {isSelected && (
-              currentQuestion.type === 'multi' ? 
-                <MaterialIcons name="check" size={16} color="#FFF" /> : 
-                <View style={styles.radioInner} />
-            )}
-          </View>
-        </TouchableOpacity>
+          <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>{t(`assess_q${currentQuestion.id}_o${index + 1}`)}</Text>
+          {isSelected
+            ? <MaterialIcons name="check" size={20} color="#FFFFFF" />
+            : <View style={multi ? styles.boxEmpty : styles.ringEmpty} />}
+        </TouchableTick>
       );
     });
   };
 
+  const progress = progressAnim.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%']
+  });
+
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <MaterialIcons name="arrow-back" size={24} color="#1A1A2E" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle} numberOfLines={1}>Financial Literacy & Risk Assessment Wizard</Text>
-          <TouchableOpacity onPress={handleSkip}>
-            <Text style={styles.exitText}>Skip</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.subtitle}>Financial Profile</Text>
+    <Screen
+      edges={['top', 'bottom']}
+      contentStyle={styles.content}
+      footer={
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <View style={styles.navRow}>
+            <PillButton
+              variant="secondary"
+              title={t('assess_previous')}
+              onPress={handlePrev}
+              disabled={currentQ === 0}
+              style={styles.navBtn}
+            />
+            <PillButton
+              title={currentQ === QUESTIONS.length - 1 ? t('assess_complete') : t('assess_next')}
+              icon={currentQ === QUESTIONS.length - 1 ? 'check' : undefined}
+              onPress={handleNext}
+              loading={submitting}
+              style={styles.navBtn}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      }
+    >
+      <Header
+        onBack={() => navigation.goBack()}
+        backLabel={t('auth_back')}
+        right={
+          <TouchableTick onPress={handleSkip} style={styles.skip} accessibilityRole="button">
+            <Text style={styles.skipText}>{t('assess_skip')}</Text>
+          </TouchableTick>
+        }
+      />
+
+      <View style={styles.intro}>
+        <Label>{t('assess_header')}</Label>
+        <Title style={styles.title}>{t('assess_subtitle')}</Title>
       </View>
 
       {/* Progress */}
-      <View style={styles.progressContainer}>
-        <Text style={styles.progressText}>Question {currentQ + 1} of {QUESTIONS.length}</Text>
-        <View style={styles.progressBarBg}>
-          <Animated.View style={[styles.progressBarFill, { 
-            width: progressAnim.interpolate({
-              inputRange: [0, 100],
-              outputRange: ['0%', '100%']
-            }) 
-          }]} />
+      <View style={styles.progress}>
+        <Text style={styles.progressText}>{t('assess_progress').replace('{current}', currentQ + 1).replace('{total}', QUESTIONS.length)}</Text>
+        <View style={styles.progressTrack}>
+          <Animated.View style={[styles.progressFill, { width: progress }]} />
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <Text style={styles.questionText}>{currentQuestion.text}</Text>
-        <View style={styles.optionsContainer}>
-          {renderOptions()}
-        </View>
-      </ScrollView>
-
-      {/* Nav Buttons */}
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <View style={styles.navRow}>
-          <TouchableOpacity 
-            style={[styles.navBtn, styles.navBtnPrev, currentQ === 0 && styles.navBtnDisabled]} 
-            onPress={handlePrev}
-            disabled={currentQ === 0}
-          >
-            <Text style={[styles.navBtnTextPrev, currentQ === 0 && { color: '#9CA3AF' }]}>Previous</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.navBtn, styles.navBtnNext, submitting && { opacity: 0.6 }]}
-            onPress={handleNext}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator size="small" color="#FFF" />
-            ) : currentQ === QUESTIONS.length - 1 ? (
-              <>
-                <MaterialIcons name="check" size={20} color="#FFF" style={{marginRight: 6}}/>
-                <Text style={styles.navBtnTextNext}>Complete</Text>
-              </>
-            ) : (
-              <Text style={styles.navBtnTextNext}>Next</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      <Text style={styles.questionText} accessibilityRole="header">{t(`assess_q${currentQuestion.id}`)}</Text>
+      <View style={styles.options}>
+        {renderOptions()}
+      </View>
+    </Screen>
   );
 }
 
+const text = { color: palette.ink, fontFamily: fonts.regular };
+const WHITE = 'rgba(255,255,255,0.92)';
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
+  content: { paddingBottom: 24, gap: 24 },
+  intro: { gap: 6 },
+  title: { fontSize: 40, lineHeight: 44, letterSpacing: -1.5 },
+  skip: {
+    minHeight: 44, paddingHorizontal: 20, borderRadius: radii.full,
+    backgroundColor: palette.glass, alignItems: 'center', justifyContent: 'center',
   },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 16,
-    backgroundColor: '#FFFFFF',
+  skipText: { ...text, fontFamily: fonts.medium, fontSize: 15 },
+  progress: { gap: 10 },
+  progressText: { ...text, fontSize: 13, color: palette.muted },
+  progressTrack: { height: 12, borderRadius: radii.full, backgroundColor: WHITE, overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: radii.full, backgroundColor: palette.ink },
+  questionText: { ...text, fontSize: 24, lineHeight: 30, letterSpacing: -0.5 },
+  options: { gap: 10 },
+  option: {
+    minHeight: 60, borderRadius: radii.full, backgroundColor: WHITE,
+    paddingHorizontal: 24, paddingVertical: 14,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12,
   },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  backBtn: {
-    padding: 4,
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1A1A2E',
-    textAlign: 'center',
-    marginHorizontal: 12,
-  },
-  exitText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#F44336',
-  },
-  subtitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1A1A2E',
-    marginTop: 16,
-  },
-  progressContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-    backgroundColor: '#FFFFFF',
-  },
-  progressText: {
-    fontSize: 13,
-    color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  progressBarBg: {
-    height: 6,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#1976D2',
-    borderRadius: 3,
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 40,
-  },
-  questionText: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#1A1A2E',
-    lineHeight: 28,
-    marginTop: 24,
-    marginBottom: 24,
-  },
-  optionsContainer: {
-    flex: 1,
-  },
-  optionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
-  },
-  optionCardSelected: {
-    backgroundColor: '#EBF5FB',
-    borderColor: '#1976D2',
-  },
-  optionText: {
-    fontSize: 15,
-    color: '#1A1A2E',
-    flex: 1,
-  },
-  radioCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#1976D2',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  radioCircleUnselected: {
-    borderColor: '#E5E7EB',
-  },
-  radioInner: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#1976D2',
-  },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: '#1976D2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1976D2',
-  },
-  checkboxUnselected: {
-    backgroundColor: 'transparent',
-    borderColor: '#E5E7EB',
-  },
-  navRow: {
-    flexDirection: 'row',
-    padding: 16,
-    gap: 12,
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-  },
-  navBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  navBtnPrev: {
-    borderWidth: 1.5,
-    borderColor: '#1976D2',
-  },
-  navBtnNext: {
-    backgroundColor: '#1976D2',
-  },
-  navBtnDisabled: {
-    borderColor: '#9CA3AF',
-  },
-  navBtnTextPrev: {
-    color: '#1976D2',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  navBtnTextNext: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  sliderContainer: {
-    marginTop: 32,
-    paddingHorizontal: 8,
-  },
+  optionSelected: { backgroundColor: palette.ink },
+  optionText: { ...text, fontSize: 16, flex: 1 },
+  optionTextSelected: { color: '#FFFFFF', fontFamily: fonts.medium },
+  ringEmpty: { width: 20, height: 20, borderRadius: radii.full, borderWidth: 1.5, borderColor: palette.outline },
+  boxEmpty: { width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, borderColor: palette.outline },
+  navRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
+  navBtn: { flex: 1 },
+  sliderContainer: { marginTop: 16, gap: 16 },
   sliderBadge: {
-    alignSelf: 'center',
-    backgroundColor: '#1976D2',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginBottom: 16,
+    alignSelf: 'center', backgroundColor: palette.ink, borderRadius: radii.full,
+    paddingHorizontal: 18, paddingVertical: 8,
   },
-  sliderBadgeText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: 'bold',
+  sliderBadgeText: { color: '#FFFFFF', fontFamily: fonts.medium, fontSize: 18, fontVariant: ['tabular-nums'] },
+  trackWrapper: { height: KNOB_HIT, justifyContent: 'center' },
+  track: { height: 12, borderRadius: radii.full, backgroundColor: WHITE, overflow: 'hidden' },
+  trackFill: { height: '100%', borderRadius: radii.full, backgroundColor: palette.outline },
+  thumbHit: {
+    position: 'absolute', top: 0, width: KNOB_HIT, height: KNOB_HIT,
+    alignItems: 'center', justifyContent: 'center',
   },
-  trackWrapper: {
-    height: 24,
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  track: {
-    height: 8,
-    borderRadius: 4,
-    width: '100%',
-  },
-  thumb: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#FFF',
-    borderWidth: 2,
-    borderColor: '#1976D2',
-    position: 'absolute',
-    top: 0,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-  sliderLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
-  },
-  sliderLabel: {
-    fontSize: 13,
-    color: '#6B7280',
-    fontWeight: '500',
-  }
+  thumb: { width: KNOB, height: KNOB, borderRadius: radii.full, backgroundColor: palette.ink },
+  sliderLabels: { flexDirection: 'row', justifyContent: 'space-between' },
+  sliderLabel: { ...text, fontFamily: fonts.medium, fontSize: 13, color: palette.muted },
 });
