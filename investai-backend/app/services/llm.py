@@ -149,8 +149,15 @@ def _chain() -> tuple[_Provider, ...]:
     return live
 
 
-@lru_cache
 def _async_client(base_url: str, api_key: str, timeout: float) -> openai.AsyncOpenAI:
+    import asyncio
+    return _async_client_for_loop(base_url, api_key, timeout,
+                                  id(asyncio.get_running_loop()))
+
+
+@lru_cache(maxsize=16)
+def _async_client_for_loop(base_url: str, api_key: str, timeout: float,
+                           _loop_id: int) -> openai.AsyncOpenAI:
     return openai.AsyncOpenAI(base_url=base_url, api_key=api_key, timeout=timeout,
                               max_retries=0)  # retries are our job, per-provider
 
