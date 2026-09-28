@@ -1,7 +1,6 @@
 // src/screens/auth/AuthSuccessScreen.js — v2 "Soft pastel" lime success state.
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -10,7 +9,8 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Screen, Card, PillButton } from '../../components/ui';
-import { palette, fonts, radii } from '../../theme/tokens';
+import { PillPal } from '../../components/PillPals';
+import { palette, fonts } from '../../theme/tokens';
 import { useT } from '../../store/languageStore';
 
 const AuthSuccessScreen = ({ navigation, route }) => {
@@ -46,8 +46,8 @@ const AuthSuccessScreen = ({ navigation, route }) => {
             footer={<View style={styles.footer}><PillButton title={buttonLabel} onPress={handleProceed} /></View>}
         >
             <Card tone="lime" style={styles.card}>
-                <Animated.View style={[styles.badge, animatedIconStyle]}>
-                    <MaterialIcons name="check" size={56} color={palette.lime} />
+                <Animated.View style={[styles.pal, animatedIconStyle]}>
+                    <PillPal tone="yellow" mood="joy" pose="cheer" badge="check" size={190} confetti />
                 </Animated.View>
                 <Text style={styles.title} accessibilityRole="header">{title}</Text>
                 <Text style={styles.message}>{message}</Text>
@@ -59,10 +59,7 @@ const AuthSuccessScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
     content: { justifyContent: 'center', paddingBottom: 24 },
     card: { paddingVertical: 36, paddingHorizontal: 24, gap: 16 },
-    badge: {
-        width: 104, height: 104, borderRadius: radii.full, backgroundColor: palette.limeInk,
-        alignItems: 'center', justifyContent: 'center', marginBottom: 8,
-    },
+    pal: { alignSelf: 'center', marginBottom: 4 },
     title: { fontFamily: fonts.regular, fontSize: 40, lineHeight: 44, letterSpacing: -1.5, color: palette.limeInk },
     message: { fontFamily: fonts.regular, fontSize: 16, lineHeight: 23, color: palette.limeInk },
     footer: { paddingHorizontal: 20, paddingBottom: 16 },

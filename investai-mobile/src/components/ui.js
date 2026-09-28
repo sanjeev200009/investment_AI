@@ -16,7 +16,7 @@
 //   <Title>, <Label>   type styles
 //   <Field>            full-round text input with a hidden-but-read label
 //   <EmptyState>       icon + message (+ action) for empty / error states
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, StatusBar,
 } from 'react-native';
@@ -25,6 +25,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import TouchableTick from './TouchableTick';
 import { palette, fonts, radii, sizes, changeTone } from '../theme/tokens';
+import { useT } from '../store/languageStore';
+import { PillPal, PillLoader } from './PillPals';
 
 const ACCENTS = {
   lime: { bg: palette.lime, ink: palette.limeInk },
@@ -113,7 +115,8 @@ export function IconCircle({ icon, color = palette.ink, size = sizes.circleSm, b
   );
 }
 
-export function PillButton({ title, onPress, icon, variant = 'primary', loading, disabled, style, label }) {
+// knob: an accent name; draws the Splash-style round arrow knob on the right.
+export function PillButton({ title, onPress, icon, variant = 'primary', loading, disabled, style, label, knob }) {
   const primary = variant === 'primary';
   const off = disabled || loading;
   return (
@@ -123,7 +126,7 @@ export function PillButton({ title, onPress, icon, variant = 'primary', loading,
       accessibilityRole="button"
       accessibilityLabel={label || title}
       accessibilityState={{ disabled: !!off, busy: !!loading }}
-      style={[styles.pill, primary ? styles.pillPrimary : styles.pillSecondary, off && { opacity: 0.5 }, style]}
+      style={[styles.pill, primary ? styles.pillPrimary : styles.pillSecondary, knob && styles.pillKnob, off && { opacity: 0.5 }, style]}
     >
       {loading ? (
         <ActivityIndicator color={primary ? '#FFFFFF' : palette.ink} />
@@ -131,6 +134,11 @@ export function PillButton({ title, onPress, icon, variant = 'primary', loading,
         <>
           {icon ? <MaterialIcons name={icon} size={20} color={primary ? '#FFFFFF' : palette.ink} /> : null}
           <Text style={[styles.pillText, { color: primary ? '#FFFFFF' : palette.ink }]}>{title}</Text>
+          {knob ? (
+            <View style={[styles.knob, { backgroundColor: accent(knob).bg }]}>
+              <MaterialIcons name="arrow-forward" size={22} color={palette.ink} />
+            </View>
+          ) : null}
         </>
       )}
     </TouchableTick>
@@ -225,34 +233,88 @@ export const Body = ({ children, style, ...props }) => <Text style={[styles.body
 
 // ── Inputs & states ──────────────────────────────────────────────────────────
 
-export function Field({ label, error, style, inputStyle, ...props }) {
+// icon + tone: a pastel icon circle inside the pill. secureTextEntry fields
+// get a show/hide eye.
+export function Field({ label, error, style, inputStyle, icon, tone = 'lavender', secureTextEntry, ...props }) {
+  const { t } = useT();
+  const [revealed, setRevealed] = useState(false);
+  if (!icon && !secureTextEntry) {
+    return (
+      <View style={[{ gap: 6 }, style]}>
+        {label ? <Text style={styles.fieldLabel}>{label}</Text> : null}
+        <TextInput
+          placeholderTextColor={palette.faint}
+          accessibilityLabel={props.accessibilityLabel || label || props.placeholder}
+          style={[styles.field, error && styles.fieldInvalid, inputStyle]}
+          {...props}
+        />
+        {error ? <Text style={styles.fieldError}>{error}</Text> : null}
+      </View>
+    );
+  }
+  const a = accent(tone);
   return (
     <View style={[{ gap: 6 }, style]}>
       {label ? <Text style={styles.fieldLabel}>{label}</Text> : null}
-      <TextInput
-        placeholderTextColor={palette.faint}
-        accessibilityLabel={props.accessibilityLabel || label || props.placeholder}
-        style={[styles.field, error && { borderColor: palette.error, borderWidth: 1.5 }, inputStyle]}
-        {...props}
-      />
+      <View style={[styles.field, styles.fieldRow, icon && { paddingLeft: 8 }, error && styles.fieldInvalid]}>
+        {icon ? (
+          <View style={[styles.fieldIcon, { backgroundColor: a.bg }]}>
+            <MaterialIcons name={icon} size={20} color={a.ink} />
+          </View>
+        ) : null}
+        <TextInput
+          placeholderTextColor={palette.faint}
+          accessibilityLabel={props.accessibilityLabel || label || props.placeholder}
+          secureTextEntry={secureTextEntry && !revealed}
+          style={[styles.fieldInput, inputStyle]}
+          {...props}
+        />
+        {secureTextEntry ? (
+          <TouchableTick
+            onPress={() => setRevealed(r => !r)}
+            accessibilityRole="button"
+            accessibilityLabel={revealed ? t('field_hide_password') : t('field_show_password')}
+            style={styles.fieldEye}
+          >
+            <MaterialIcons name={revealed ? 'visibility-off' : 'visibility'} size={20} color={palette.muted} />
+          </TouchableTick>
+        ) : null}
+      </View>
       {error ? <Text style={styles.fieldError}>{error}</Text> : null}
     </View>
   );
 }
 
+// A Pill Pal in a contrasting colour holds the icon; errors get the "oops" face.
+const PAL_FOR = { lavender: 'yellow', yellow: 'lavender', lime: 'coral', coral: 'lime', white: 'lavender' };
+const OOPS_ICONS = ['cloud-off', 'error-outline', 'wifi-off', 'warning', 'warning-amber'];
+
 export function EmptyState({ icon = 'inbox', title, message, action, onAction, tone = 'lavender' }) {
   const a = accent(tone);
   return (
-    <Card tone={tone} style={{ alignItems: 'flex-start', gap: 10 }}>
-      <IconCircle icon={icon} color={a.ink} borderColor="rgba(0,0,0,0.15)" />
-      {title ? <Text style={[styles.heading, { color: a.ink }]}>{title}</Text> : null}
-      {message ? <Text style={[styles.body, { color: a.ink }]}>{message}</Text> : null}
-      {action ? <PillButton title={action} onPress={onAction} style={{ alignSelf: 'stretch', marginTop: 4 }} /> : null}
+    <Card tone={tone} style={{ gap: 12 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+        <PillPal
+          tone={PAL_FOR[tone] || 'lavender'}
+          mood={OOPS_ICONS.includes(icon) ? 'oops' : 'happy'}
+          pose={OOPS_ICONS.includes(icon) ? 'rest' : 'wave'}
+          badge={icon}
+          size={116}
+        />
+        <View style={{ flex: 1, gap: 6 }}>
+          {title ? <Text style={[styles.heading, { color: a.ink }]}>{title}</Text> : null}
+          {message ? <Text style={[styles.body, { color: a.ink }]}>{message}</Text> : null}
+        </View>
+      </View>
+      {action ? <PillButton title={action} onPress={onAction} style={{ alignSelf: 'stretch' }} /> : null}
     </Card>
   );
 }
 
-export const Loading = () => <ActivityIndicator style={{ marginVertical: 32 }} color={palette.ink} />;
+export function Loading() {
+  const { t } = useT();
+  return <PillLoader label={t('loading')} />;
+}
 
 const text = { color: palette.ink, fontFamily: fonts.regular };
 
@@ -274,6 +336,8 @@ const styles = StyleSheet.create({
   pillPrimary: { backgroundColor: palette.ink },
   pillSecondary: { backgroundColor: '#FFFFFF' },
   pillText: { fontFamily: fonts.medium, fontSize: 16 },
+  pillKnob: { justifyContent: 'space-between', paddingLeft: 28, paddingRight: 7 },
+  knob: { width: 48, height: 48, borderRadius: radii.full, alignItems: 'center', justifyContent: 'center' },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
     borderRadius: radii.full, paddingHorizontal: 14, paddingVertical: 8,
@@ -298,5 +362,10 @@ const styles = StyleSheet.create({
     height: sizes.control, borderRadius: radii.full, backgroundColor: 'rgba(255,255,255,0.92)',
     paddingHorizontal: 22, fontSize: 16, fontFamily: fonts.regular, color: palette.ink,
   },
+  fieldInvalid: { borderColor: palette.error, borderWidth: 1.5 },
+  fieldRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingRight: 6 },
+  fieldIcon: { width: 44, height: 44, borderRadius: radii.full, alignItems: 'center', justifyContent: 'center' },
+  fieldInput: { flex: 1, height: '100%', fontSize: 16, fontFamily: fonts.regular, color: palette.ink },
+  fieldEye: { width: 44, height: 44, borderRadius: radii.full, alignItems: 'center', justifyContent: 'center' },
   fieldError: { ...text, fontSize: 13, color: palette.error, paddingLeft: 18 },
 });

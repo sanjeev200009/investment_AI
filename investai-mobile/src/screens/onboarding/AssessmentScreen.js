@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, Animated, PanResponder, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Screen, Header, PillButton, Title, Label } from '../../components/ui';
+import { PillPal } from '../../components/PillPals';
 import TouchableTick from '../../components/TouchableTick';
 import { palette, fonts, radii } from '../../theme/tokens';
 import { useAuthStore } from '../../store/authStore';
@@ -296,9 +297,12 @@ export default function AssessmentScreen({ navigation }) {
         }
       />
 
-      <View style={styles.intro}>
-        <Label>{t('assess_header')}</Label>
-        <Title style={styles.title}>{t('assess_subtitle')}</Title>
+      <View style={styles.introRow}>
+        <View style={[styles.intro, { flex: 1 }]}>
+          <Label>{t('assess_header')}</Label>
+          <Title style={styles.title}>{t('assess_subtitle')}</Title>
+        </View>
+        <PillPal tone="lavender" mood="calm" badge="quiz" size={120} />
       </View>
 
       {/* Progress */}
@@ -323,6 +327,7 @@ const WHITE = 'rgba(255,255,255,0.92)';
 const styles = StyleSheet.create({
   content: { paddingBottom: 24, gap: 24 },
   intro: { gap: 6 },
+  introRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   title: { fontSize: 40, lineHeight: 44, letterSpacing: -1.5 },
   skip: {
     minHeight: 44, paddingHorizontal: 20, borderRadius: radii.full,
