@@ -36,6 +36,15 @@ class UserProfile(Base):
 	occupation = Column(String(120))
 	income_level = Column(String(80))
 	investment_experience = Column(String(80))
+	# FCM registration token for this user's current device. Existed in the
+	# database since migration a1b2c3d4e5f6 but not on this model, so every
+	# push lookup returned None forever (I-12). String(512): FCM v1 tokens run
+	# ~140-250 chars and Google reserves the right to grow them.
+	device_token = Column(String(512))
+	# UI + LLM output language (en | si | ta). Same migration; same story —
+	# the column was there, the model never mapped it, so the preference the
+	# risk quiz collected was unreadable server-side (I-15).
+	language = Column(String(5), nullable=False, default="en", server_default="en")
 
 	user = relationship("User", back_populates="profile")
 

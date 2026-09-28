@@ -105,23 +105,13 @@ async def _async_check_rules():
             if not fired:
                 continue
 
-            # Check if we already sent this notification recently (dedup window 1h)
+            # Dedup: one alert per rule per hour, keyed on the rule itself.
             from datetime import timedelta
-            from sqlalchemy import and_
-            recent = (
-                db.query(Notification)
-                .filter(
-                    and_(
-                        Notification.user_id == rule.user_id,
-                        Notification.type == "rule_alert",
-                        Notification.message.like(f"%{rule.symbol}%"),
-                        Notification.timestamp
-                        >= datetime.now(timezone.utc) - timedelta(hours=1),
-                    )
-                )
-                .first()
-            )
-            if recent:
+            now = datetime.now(timezone.utc)
+            last = rule.last_triggered_at
+            if last is not None and last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            if last is not None and last >= now - timedelta(hours=1):
                 continue
 
             # Generate AI explanation
@@ -136,6 +126,7 @@ async def _async_check_rules():
                 timestamp=datetime.now(timezone.utc),
             )
             db.add(notif)
+            rule.last_triggered_at = now
             db.commit()
             db.refresh(notif)
 

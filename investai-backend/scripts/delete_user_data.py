@@ -68,5 +68,8 @@ def main(email: str):
         print(f"Error with Supabase Auth admin client: {e}")
 
 if __name__ == "__main__":
-    email_to_delete = sys.argv[1] if len(sys.argv) > 1 else "sanjayhsanjeev2000@gmail.com"
-    main(email_to_delete)
+    # No default: this hard-deletes a user from the database and Supabase Auth,
+    # so running it without an argument must do nothing.
+    if len(sys.argv) != 2:
+        sys.exit("usage: python -m scripts.delete_user_data <email>")
+    main(sys.argv[1])

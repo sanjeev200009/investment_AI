@@ -29,6 +29,9 @@ class RefreshRequest(BaseModel):
 class OTPVerifyRequest(BaseModel):
     email: EmailStr
     otp_code: str = Field(min_length=6, max_length=6)
+    # Set on the Supabase account at verification, not at registration; see
+    # routers/auth.py verify_registration_otp.
+    password: str = Field(min_length=8)
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
