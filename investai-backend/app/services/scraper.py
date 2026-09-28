@@ -530,6 +530,7 @@ async def scrape_cse_data() -> list[dict]:
                     logger.debug('Record parse error: %s', e)
     except Exception as e:
         logger.error('CSE scrape failed: %s', e)
+        raise
 
     if not results:
         status = await get_market_status()

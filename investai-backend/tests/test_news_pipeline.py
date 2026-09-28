@@ -534,18 +534,33 @@ def test_substring_ticker_is_not_a_match(matcher):
 
 
 def test_longest_match_wins_between_related_companies(matcher):
-    """"john keells hotels" identifies KHL, so JKH is not also attributed.
+    """"john keells hotels" identifies KHL specifically; the bare group name
+    attributes to every entity sharing it, by design.
 
     Six phrases in company_info are genuinely shared between different corporate
     entities ("aitken spence", "amana takaful", "c t", "capital alliance",
     "john keells", "richard pieris"); the other 28 shared phrases are one
     company's two share classes, where attributing both is correct.
+
+    The two cases behave differently, and the split is the contract:
+
+    * Where the article's phrase is *more specific* than one company's, the
+      longest-match rule suppresses the shorter-phrase entity — "john keells
+      hotels" is KHL alone, not KHL plus the group holding company.
+    * Where the article uses exactly the *shared* phrase ("John Keells"), there
+      is nothing in the language to prefer one entity with, and the matcher
+      attributes to all of them — SymbolMatcher.match's docstring records the
+      measured position: "the ambiguity is in the language, not in the matcher".
+      A group-level story legitimately concerns both, and inventing a tiebreak
+      (primary listing first, longest name wins) would attribute by
+      administrative accident rather than by evidence in the text.
     """
     hits = matcher.match("John Keells Hotels reports higher occupancy")
     assert set(hits) == {"KHL.N0000"}
 
-    # With only the group name, the group holding company is the match.
-    assert set(matcher.match("John Keells to invest in new venture")) == {"JKH.N0000"}
+    # The bare group name: every entity that shares it, not a single winner.
+    assert set(matcher.match("John Keells to invest in new venture")) == {
+        "JKH.N0000", "KHL.N0000"}
 
 
 def test_longest_match_distinguishes_softlogic_entities(matcher):
