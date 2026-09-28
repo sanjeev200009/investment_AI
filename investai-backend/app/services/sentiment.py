@@ -95,15 +95,50 @@ async def score_unseen_news(db, symbol: str = None) -> int:
     db.commit()
     return count
 
-def get_symbol_sentiment_summary(db, symbol: str):
+SENTIMENT_WINDOW_DAYS = 30
+
+
+def sentiment_label_for(avg: float | None) -> str:
+    """VADER's conventional +/-0.05 cut-offs; "none" when nothing was scored."""
+    if avg is None:
+        return "none"
+    if avg >= 0.05:
+        return "positive"
+    if avg <= -0.05:
+        return "negative"
+    return "neutral"
+
+
+def get_symbol_sentiment_summary(db, symbol: str) -> dict:
+    """Average news sentiment for one company over the last 30 days.
+
+    Keys match schemas.stock.SentimentSummary. They used not to (average_score /
+    overall_label / article_count), so GET /stocks/sentiment/{symbol} failed
+    response validation with a 500 on every call. A symbol with no scored
+    article gets avg_score None and label "none", never a neutral 0.0: "no news"
+    and "neutral news" are different facts.
+    """
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import func
     from app.models.stock import NewsSentiment
-    rows = db.query(NewsSentiment).filter(NewsSentiment.symbol == symbol).all()
-    if not rows:
-        return {"symbol": symbol, "average_score": 0.0, "overall_label": "neutral", "article_count": 0}
+
+    since = datetime.now(timezone.utc) - timedelta(days=SENTIMENT_WINDOW_DAYS)
+    rows = (
+        db.query(NewsSentiment)
+        .filter(
+            NewsSentiment.symbol == symbol,
+            func.coalesce(NewsSentiment.published_at, NewsSentiment.scraped_at) >= since,
+        )
+        .order_by(NewsSentiment.published_at.desc().nullslast(), NewsSentiment.scraped_at.desc())
+        .all()
+    )
     scores = [r.sentiment_score for r in rows if r.sentiment_score is not None]
-    avg = sum(scores) / len(scores) if scores else 0.0
-    label = "neutral"
-    if avg >= 0.05: label = "positive"
-    elif avg <= -0.05: label = "negative"
-    return {"symbol": symbol, "average_score": avg, "overall_label": label, "article_count": len(rows)}
+    avg = round(sum(scores) / len(scores), 4) if scores else None
+    return {
+        "symbol": symbol,
+        "count": len(scores),
+        "avg_score": avg,
+        "label": sentiment_label_for(avg),
+        "recent_headlines": [r.headline for r in rows[:5]],
+    }
 

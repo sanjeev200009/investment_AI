@@ -125,6 +125,24 @@ def _snapshot_portfolios():
         db.close()
 
 
+@celery_app.task(bind=True, max_retries=3,
+                 name="tasks.scrape_tasks.snapshot_recommendations")
+def snapshot_recommendations(self):
+    """Evaluation plan E5: store today's top recommendations per risk category."""
+    from app.database import SessionLocal
+    from app.services.recommendations import snapshot_recommendations as snap
+
+    db = SessionLocal()
+    try:
+        logger.info("Recommendation snapshots: %d rows", snap(db))
+    except Exception as exc:
+        db.rollback()
+        logger.exception("snapshot_recommendations failed: %s", exc)
+        raise self.retry(exc=exc, countdown=300)
+    finally:
+        db.close()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Company fundamentals
 # ─────────────────────────────────────────────────────────────────────────────
@@ -168,6 +186,38 @@ async def _async_refresh_company_info(symbols: list[str] | None):
         logger.info("Company info refresh: %d rows written", written)
     finally:
         db.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Price predictions
+# ─────────────────────────────────────────────────────────────────────────────
+
+@celery_app.task(bind=True, max_retries=2,
+                 name="tasks.scrape_tasks.update_price_predictions")
+def update_price_predictions(self):
+    """
+    Write one price_predictions row per symbol with enough daily_close history.
+
+    Runs after the daily portfolio snapshot (15:10) so it reads the day's final
+    close. The model is a least-squares trend extrapolation — see
+    app/services/predictor.py for why that is the honest choice for a series
+    this young — and the agent's get_price_prediction tool reads the latest row
+    per symbol. Until this task existed the table was written by nothing and
+    the tool errored on every call (I-16).
+    """
+    try:
+        from app.database import SessionLocal
+        from app.services.predictor import update_predictions
+
+        db = SessionLocal()
+        try:
+            written = update_predictions(db)
+            logger.info("Price predictions: %d rows written", written)
+        finally:
+            db.close()
+    except Exception as exc:
+        logger.exception("update_price_predictions failed: %s", exc)
+        raise self.retry(exc=exc, countdown=300)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
