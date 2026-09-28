@@ -7,7 +7,7 @@ from alembic import context
 
 # ── InvestAI: import Base and all models so Alembic detects them ──────────────
 from app.database import Base  # noqa: F401
-from app.models import user, portfolio, stock, chat, notification  # noqa: F401
+from app.models import user, portfolio, stock, chat, notification, evaluation  # noqa: F401
 from app.config import get_settings
 
 _settings = get_settings()

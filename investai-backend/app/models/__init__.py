@@ -10,9 +10,10 @@ from app.database import Base
 from .chat import ChatSession, ChatMessage
 from .notification import Notification
 from .portfolio import (InvestmentRule, Portfolio, PortfolioHolding,
-                        PortfolioSnapshot)
+                        PortfolioSnapshot, Watchlist)
 from .stock import (CompanyInfo, DailyClose, MarketData, MarketDataLatest,
                     MarketIndex, MarketIndexLatest, NewsSentiment,
                     PricePrediction)
 from .otp import OTPCode, PasswordResetToken
 from .user import User, UserProfile, RiskProfile
+from .evaluation import LessonView, RecommendationSnapshot
