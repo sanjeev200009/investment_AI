@@ -1,95 +1,87 @@
-# Investment AI
+# InvestAI
 
-Final Year Project workspace for the Investment AI platform.
+An AI-powered, educational investment assistant for beginner investors on the
+Colombo Stock Exchange (CSE). Final-year project, BIT (Hons) Network & Mobile
+Computing, Horizon Campus.
 
-## Repository Overview
+| Part | Stack |
+|---|---|
+| `investai-backend/` | FastAPI, SQLAlchemy + Alembic on Supabase Postgres (pgvector), Supabase Auth (JWT via JWKS), Celery + Redis, NVIDIA NIM with OpenRouter failover, Brevo email, Firebase Cloud Messaging |
+| `investai-mobile/` | React Native (Expo SDK 54), React Navigation, Zustand, axios + SSE streaming chat |
 
-This repository currently contains:
+InvestAI is educational. It never places trades and never tells a user to buy
+or sell; the assistant's system prompt and every AI surface enforce that.
 
-- `investai-mobile/` - React Native + Expo mobile application
-- `backend/` - Backend service folder (currently scaffolded, implementation pending)
+## Run locally
 
-## Project Structure
+### Backend
 
-```text
-investment_AI/
-  backend/
-  investai-mobile/
-    App.js
-    app.json
-    index.js
-    package.json
-    .env.example
-    src/
-      api/
-      navigation/
-      screens/
-      store/
-      theme/
+```bash
+cd investai-backend
+python -m venv venv && venv/Scripts/activate   # Windows; use venv/bin/activate elsewhere
+pip install -r requirements.txt
+cp .env.example .env                            # then fill in the values
+python -m alembic upgrade head
+python -m uvicorn app.main:app --reload --port 8000
 ```
 
-## Prerequisites
+- Every route is under `/api/v1`. Interactive docs: `http://localhost:8000/docs` (development only).
+- `GET /health` checks the database too and returns 503 if it is unreachable.
+- Tests are offline and read-only: `python -m pytest`.
 
-Install the following before running the app:
+Background jobs (market scrapes, news, rule alerts, daily snapshots) need Redis:
 
-- Node.js 18+
-- npm 9+
-- Expo CLI (optional globally, can use `npx expo`)
-- Android Studio emulator or Expo Go app on a physical device
+```bash
+celery -A celery_worker.celery_app worker --loglevel=info -Q default --pool=solo
+celery -A celery_worker.celery_app beat --loglevel=info
+```
 
-## Mobile App Setup (`investai-mobile`)
+`--pool=solo` is for Windows only. Beat times are Asia/Colombo.
 
-1. Go to the mobile folder:
+### Mobile
 
 ```bash
 cd investai-mobile
-```
-
-2. Install dependencies:
-
-```bash
 npm install
+cp .env.example .env    # EXPO_PUBLIC_API_BASE_URL=http://<your LAN IP>:8000/api/v1
+npx expo start
 ```
 
-3. Create environment file from example:
+Push notifications need a development or EAS build (not Expo Go) and a
+`google-services.json` from Firebase next to `app.json` (gitignored).
+
+## Deploy
+
+### Backend: one free Oracle Cloud VM
+
+The whole backend runs on an Oracle Cloud Always Free VM with Docker Compose:
+FastAPI, Celery worker, Celery Beat, Redis and Flower, with Caddy providing
+HTTPS. It is the architecture in the proposal, unchanged. Supabase stays the
+database and auth provider.
+
+Step-by-step guide: **[deploy/README.md](deploy/README.md)**. In short:
 
 ```bash
-cp .env.example .env
+curl -fsSL https://raw.githubusercontent.com/sanjeev200009/investment_AI/main/deploy/setup.sh | bash
+cd ~/investment_AI/deploy && docker compose up -d --build
 ```
 
-For Windows PowerShell:
+The same image also runs on any Docker or Procfile host (`investai-backend/Dockerfile`,
+`investai-backend/Procfile`). Off the VM, set `FIREBASE_CREDENTIALS_JSON` to the
+service-account JSON itself instead of mounting a key file.
 
-```powershell
-Copy-Item .env.example .env
-```
+`python -m scripts.run_jobs market|news|daily` runs the scheduled jobs once by
+hand, without Redis, which is useful for testing.
 
-4. Update `.env` values:
+### Mobile (Android)
 
-- `EXPO_PUBLIC_API_BASE_URL` - Your backend API base URL (for example: `https://your-backend.up.railway.app/api/v1`)
-- `EXPO_PUBLIC_FIREBASE_API_KEY` - Firebase API key used by the app
+Push notifications need `google-services.json` (Firebase project
+`investai-33294`, package `lk.investai.mobile`) and a real build, not Expo Go.
+See section 6 of [deploy/README.md](deploy/README.md). A release build refuses to
+start without `EXPO_PUBLIC_API_BASE_URL`, on purpose. The package id becomes
+permanent once the first build is uploaded to a store.
 
-## Run the Mobile App
+## Project documents
 
-From `investai-mobile/`:
-
-```bash
-npm run start
-```
-
-Platform shortcuts:
-
-```bash
-npm run android
-npm run ios
-npm run web
-```
-
-## Backend Status
-
-`backend/` is present for service development, but no backend source files or run scripts are committed yet.
-
-## Notes
-
-- Expo config is in `investai-mobile/app.json`.
-- API client configuration is in `investai-mobile/src/api/`.
-- Auth state management uses Zustand in `investai-mobile/src/store/authStore.js`.
+- `project_documentation.md` — research aim, requirements and design.
+- `HANDOVER.md`, `INVESTIGATION_REPORT.md`, `investai-backend/docs/REMEDIATION_LOG.md` — audit history.

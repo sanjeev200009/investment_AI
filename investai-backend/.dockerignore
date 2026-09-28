@@ -1,0 +1,13 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+.env.*
+!.env.example
+*firebase-adminsdk*.json
+scratch/
+scratch_dev_only/
+tests/
+firebase-key.json

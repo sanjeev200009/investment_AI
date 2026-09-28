@@ -1,0 +1,91 @@
+# InvestAI production stack for one server (the Oracle Always Free VM).
+# Exactly the architecture in the project proposal: FastAPI + Celery worker +
+# Celery Beat + Redis + Flower, with Caddy in front for automatic HTTPS.
+#
+#   cd deploy && docker compose up -d --build
+#
+# Needs, next to this file:
+#   ../investai-backend/.env              backend settings (see .env.example)
+#   ../investai-backend/firebase-key.json Firebase service-account key (push)
+#   ./.env                                DOMAIN=<ip>.sslip.io and FLOWER_BASIC_AUTH=user:pass
+
+x-backend: &backend
+  build: ../investai-backend
+  image: investai-backend
+  restart: unless-stopped
+  env_file: ../investai-backend/.env
+  environment:
+    ENVIRONMENT: production
+    # Inside this network Redis is reachable by its service name; these override
+    # whatever the local-development .env says.
+    CELERY_BROKER_URL: redis://redis:6379/0
+    CELERY_RESULT_BACKEND: redis://redis:6379/1
+    FIREBASE_CREDENTIALS_PATH: /run/secrets/firebase-key.json
+  volumes:
+    - ../investai-backend/firebase-key.json:/run/secrets/firebase-key.json:ro
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Queue only; nothing here needs to survive a restart (Beat re-derives its
+    # schedule, and every task is idempotent against the database).
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 5
+
+  api:
+    <<: *backend
+    # Migrations run here, once, before the API accepts traffic.
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+             --proxy-headers --forwarded-allow-ips='*'"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  worker:
+    <<: *backend
+    command: celery -A celery_worker.celery_app worker --loglevel=info -Q default --concurrency=2
+
+  beat:
+    <<: *backend
+    # Schedule state in /tmp: it is only "when did each entry last fire", and
+    # Beat rebuilds it on start. Avoids a volume the non-root user cannot write.
+    command: celery -A celery_worker.celery_app beat --loglevel=info --schedule /tmp/celerybeat-schedule
+
+  flower:
+    <<: *backend
+    command: celery -A celery_worker.celery_app flower --port=5555 --basic_auth=${FLOWER_BASIC_AUTH:?set FLOWER_BASIC_AUTH in deploy/.env}
+    # Bound to the server's loopback only. Open it through an SSH tunnel:
+    #   ssh -L 5555:localhost:5555 ubuntu@<server-ip>   then http://localhost:5555
+    ports:
+      - "127.0.0.1:5555:5555"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in deploy/.env, e.g. 203-0-113-7.sslip.io}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  caddy_data:
+  caddy_config:

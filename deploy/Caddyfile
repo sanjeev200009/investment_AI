@@ -1,0 +1,10 @@
+# Caddy fetches and renews a free Let's Encrypt certificate for $DOMAIN.
+# With no domain of your own, <server-ip-with-dashes>.sslip.io resolves to the
+# server and works for this.
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy api:8000 {
+		# Chat answers stream as server-sent events; flush each chunk at once.
+		flush_interval -1
+	}
+}

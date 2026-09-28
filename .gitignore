@@ -17,3 +17,4 @@ __pycache__/
 
 # Alembic auto-migrations (keep alembic/ but ignore local cache)
 alembic/versions/__pycache__/
+.freebuff/

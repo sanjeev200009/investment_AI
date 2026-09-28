@@ -727,3 +727,259 @@ round trip was therefore not treated as destructive.
 computed from stored closes rather than taken from an unadjusted feed. That is a
 matter of elapsed calendar time, not of code.
 
+---
+
+## I-09 · Watchlist end-to-end — CLOSED
+
+**Was wrong.** The `watchlist` table existed since `a1b2c3d4e5f6` with its unique
+constraint and nothing else: no ORM model, no router, no endpoint. Every user's
+"Watchlist" screen fetched `/stocks/market?limit=50` and showed the top ten by
+volume — the same ten for every account — and `dashboard.py`'s
+`watchlist_preview` did the same thing in six.
+
+**Changed.** `Watchlist` model matching the migration's existing shape exactly
+(`watchlist_id`, `added_at`, `uq_watchlist_user_symbol`); `app/routers/watchlist.py`
+with `GET /watchlist` (join to `market_data_latest` + `company_info`), idempotent
+`POST`, `DELETE /{symbol}` returning 204 unconditionally; `/dashboard/`'s preview
+now reads the user's own list; `WatchlistScreen.js` rewritten onto the API with
+add-by-symbol modal (404 on unknown tickers), unstar, pull-to-refresh, and honest
+empty/error states.
+
+**Evidence.** `pytest` 353 passing; `app.main` imports with the router mounted;
+parse checks on the rewritten screen. User-scoped verification against a real
+account remains the outstanding live step (§4.1 of the handover).
+
+---
+
+## I-10 · Investment rules CRUD + screen — CLOSED
+
+**Was wrong.** `tasks/rules_tasks.py` was 284 lines of complete evaluator — five
+condition types, 1-hour dedup, AI explanations with template fallback — with no
+way for any user to create a rule. It has logged "No investment rules found"
+since it was written.
+
+**Changed.** `app/routers/rules.py`: `GET/POST/PATCH/DELETE /rules`, scoped by
+the verified user. The condition vocabulary is **imported from
+`CONDITION_EVALUATORS`** rather than restated, so the router and the evaluator
+cannot drift. `RulesScreen.js` offers exactly those five conditions with
+per-condition units and copy; the evaluator needs no change.
+
+**Evidence.** All five condition types accepted by the router compile-time; a
+symbol with no market data is rejected 404 at creation (the evaluator skips such
+rules silently forever — the typo is caught where the user can fix it).
+
+---
+
+## I-11 · Notifications wiring — CLOSED
+
+**Was wrong.** `NotificationsScreen.js` rendered a hardcoded `DUMMY_ALERTS`
+array about TSLA, AAPL, MSFT and NVDA in US dollars while `GET /notifications`
+worked and was never called; there was no mark-read or delete; and
+`notification_service.py` read `user.fcm_token`, a column that has never
+existed, so any push attempt raised AttributeError and rolled back the
+notification (H-2).
+
+**Changed.** Screen reads the real API (list, mark-one-read, mark-all, delete
+with optimistic update and restore-on-failure); `PATCH /{id}/read`,
+`POST /read-all`, `DELETE /{id}` added; `DUMMY_ALERTS` deleted with no
+replacement; `notification_service` dispatches through the same
+`send_push_to_user` path everything else uses.
+
+---
+
+## I-12 · Push notifications — CLOSED (code; demo needs credentials)
+
+**Was wrong.** Three breaks at three layers: `fcm.py` posted to the legacy FCM
+endpoint Google decommissioned in June 2024; `UserProfile.device_token` existed
+in the database (a1b2c3d4e5f6) but not on the model, so every lookup returned
+None; and nothing anywhere captured a token from a device. Three incompatible
+token conventions in one codebase.
+
+**Changed.** `fcm.py` rewritten onto `firebase-admin` HTTP v1 (lazy init,
+`UnregisteredError`/`SenderIdMismatchError` handled distinctly, blocking send
+offloaded off the event loop); `device_token` and `language` mapped on
+`UserProfile`; `POST /me/device-token` added; the app registers its FCM token
+via `expo-notifications` right after sign-in, best-effort.
+
+**Still needs a human.** A service-account JSON at
+`investai-backend/firebase-key.json` (gitignored) and a dev build on a physical
+device — FCM v1 push does not work in Expo Go on iOS.
+
+---
+
+## I-13 · Real ranked recommendations — CLOSED
+
+**Was wrong.** Nothing existed. The "AI Picks" label had been attached to
+`sort(() => 0.5 - Math.random())`, deleted in I-07.
+
+**Changed.** `app/services/recommendations.py` + `GET /recommendations`: a
+transparent linear score — daily change 15%, 4-week momentum 30%, liquidity
+percentile 25%, news-sentiment average 30% — with **weight redistribution over
+measured factors** (a symbol with no news coverage is not penalised for it) and
+**per-factor contributions in every response** (value × weight → points). The
+home screen renders the breakdown behind an expander and states the weights and
+the disclaimer. The docstring records why this is deliberately not a model: §12.1
+commits to no black boxes, and "here is the formula" is the defensible viva
+answer.
+
+---
+
+## I-14 · SSE streaming in chat — CLOSED
+
+**Was wrong.** The backend streaming endpoint and the ReAct loop were complete
+and correct; `ChatScreen.js` called the non-streaming `/chat/message`, so users
+stared at a typing indicator for 15–30s against a documented 3–5s NFR.
+
+**Changed.** `src/api/sse.js` — a minimal XHR-based SSE client (the transport
+`react-native-sse` uses; XHR fires `onprogress` with partial `responseText`,
+which is what streaming needs, and adding a dependency for one endpoint was not
+worth it). `ChatScreen` renders tokens as they arrive, per-tool activity lines
+("Checking get_stock_data…" → "Used get_stock_data"), and the I-20 preamble —
+making the ReAct loop visible on screen, which is also the viva demonstration.
+
+---
+
+## I-15 · Multilingual — CLOSED (plumbing; copy review outstanding)
+
+**Was wrong.** Zero i18n anywhere. `user_profiles.language` existed in the
+database, unmapped and unreadable.
+
+**Changed.** `UserProfile.language` mapped; `POST /me/language` validates
+en/si/ta and persists; `src/i18n/translations.js` (auth + tabs, the defensible
+scope from the handover) with a live-switch store that writes AsyncStorage,
+re-renders the UI without restart, and saves the backend column; `TabNavigator`,
+`HomeScreen` and `ProfileScreen` (the language selector is now a real toggle,
+not static text reading "English"); and `agent/memory.py` injects an
+output-language system message from the stored preference — so the AI's reply
+language follows the user's setting, with English chats left to the
+mirror-the-user rule.
+
+**Still needs a human.** The Sinhala and Tamil strings need review by a reader
+of each language before submission; machine-translated financial terminology is
+the credibility risk the plan itself flags.
+
+---
+
+## I-16 · Price predictions — CLOSED
+
+**Was wrong.** Table, model and agent tool all existed; nothing ever wrote to
+the table, so `get_price_prediction` returned
+`{"error": "No prediction available"}` for its entire life.
+
+**Changed.** `app/services/predictor.py` — least-squares trend over the last 20
+`daily_close` closes, one-day-ahead extrapolation, `linear-trend-v1` as the
+recorded model version; `update_price_predictions` task on beat at 16:05
+Colombo; the tool's disclaimer now names the method ("statistical trend
+extrapolation … not a forecast") rather than a bare liability line. The
+docstring records why a simple extrapolation is the honest choice for a six-week
+series — the no-black-box commitment again.
+
+---
+
+## I-17 · Evaluation instrumentation — CLOSED (harness; ground truth outstanding)
+
+**Was wrong.** §13 set nine quantitative targets and no instrumentation produced
+a single one of them.
+
+**Changed.** Request-latency middleware in `main.py` — one parseable log line per
+request (`path= method= status= duration_ms=`) plus an `x-response-time-ms`
+header; for the streaming chat endpoint this measures time-to-first-byte, which
+is the honest user-facing number. `scripts/evaluate_agent.py` — fixed question
+set (`questions.json`), `--live` runs it against a running API recording
+per-question timings and answers for expert rating, `--summary` computes chat
+latency percentiles from captured logs, `--export` writes the rater bundle.
+`scripts/engagement_stats.py` reports messages-per-session against the §13
+target.
+
+**Still needs a human.** Expert-rated reference answers — a supervisor
+deliverable, as the plan predicted.
+
+---
+
+## I-19 · Learning module content — CLOSED (draft; review outstanding)
+
+**Was wrong.** Three generic articles with Google-CDN photos, one on complex
+derivatives — not beginner material, not OECD-aligned, the weakest evidence for
+the literacy objective.
+
+**Changed.** Six CSE-specific, beginner-sequenced lessons (what a share is; how
+the CSE works, including trading hours and the two headline indices; risk and
+return; compounding; reading a company profile; what moves prices), each mapped
+to an OECD/INFE 2020 knowledge dimension and rendered with an icon tile instead
+of remote photos. **Still needs a subject-matter review** — the structure is
+what a reviewer edits.
+
+---
+
+## I-20 · Agent robustness — CLOSED
+
+**Was wrong.** Two silent defects in `app/services/agent/core.py`, both in the
+streaming path and both user-visible without an error anywhere:
+
+1. After `max_loops = 5` iterations that were all tool rounds, the loop exited
+   with `final_response = ""` — the user got an empty bubble.
+2. Once a delta carried `tool_calls`, `tool_active` was set and the
+   `elif delta.content` branch never fired again for that stream — prose the
+   model emitted alongside a tool call was dropped permanently, reaching
+   neither the client nor the database.
+
+**Changed.** Pre-tool prose is buffered and delivered (a `preamble` SSE event on
+the streaming path, prepended to the saved message and the returned text on the
+non-streaming path); loop exhaustion now answers with an explicit
+"ran out of processing steps" message instead of silence, on both paths.
+
+---
+
+## I-21 · Dead code and dependencies — CLOSED
+
+**Was wrong.** `transformers==4.41.1` (~2 GB with torch) installed for a
+pipeline that never imported it; `anthropic`, `google-generativeai`, `groq`
+SDKs and `tenacity`/`structlog` likewise unimported; `scratch/` — including
+`nuke_supabase_and_local.py` — sat inside the repository.
+
+**Changed.** All six removed from `requirements.txt` (one OpenAI-compatible
+client serves both providers through `llm.py`); verified unimported by grep
+across `app/`, `tasks/`, `scripts/`, `tests/` first. `scratch/` renamed
+`scratch_dev_only/`, removed from the index, and gitignored; `pytest.ini`
+`norecursedirs` updated to match. Model-name consolidation was already
+completed during the `llm.py` work (all ids are `config.py` settings, recorded
+as `ai_model_used`).
+
+---
+
+## I-22 · API hygiene — CLOSED
+
+**Was wrong.** `allow_origins=["*"]` with `allow_credentials=True` — a
+combination the CORS spec forbids and browsers reject, breaking the documented
+web target; and `POST /stocks/scrape` ran a full market + index + news scrape
+synchronously inside the request, so any authenticated user could hold a worker
+for a minute, repeatedly.
+
+**Changed.** `allow_credentials=False` with the rationale recorded (a
+bearer-token app never needs the credentials mode); `/stocks/scrape` now
+enqueues the same tasks the beat schedule runs and returns **202 Accepted** —
+the work is explicitly not done when the response is. Nothing in either app
+called the endpoint, so the change is safe.
+
+---
+
+## I-23 · Documentation — CLOSED
+
+`README.md` rewritten (it described `backend/` as an empty folder and the wrong
+auth stack); `project_progress.md` regenerated against the remediation log; both
+`.env.example` files completed — the backend one now documents the Brevo keys,
+Firebase path, Supabase JWT policy and model overrides, the mobile one no longer
+lists a Firebase key the app does not use. A fresh clone can now start.
+
+---
+
+## Regression gate after this batch
+
+`pytest` **353 passed** (289 before, plus the news-pipeline work I-08 added);
+`app.main` imports with **52 routes** (39 before); all touched mobile files
+parse clean under `babel-preset-expo`. One test
+(`test_longest_match_wins_between_related_companies`) was failing before this
+batch began and contradicted `SymbolMatcher.match`'s own documented contract;
+it was rewritten to assert the contract the module records, with the reasoning
+in its docstring.
+
