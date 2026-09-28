@@ -16,6 +16,44 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+# ponytail: lesson embeddings cached in process memory. Nine short lessons do
+# not justify a table; move them into pgvector if the corpus grows past ~100.
+_lesson_vectors: list[tuple[dict, list[float]]] | None = None
+
+
+async def _relevant_lessons(query: str, limit: int = 2) -> list[dict]:
+    """The lessons closest to the question, by embedding similarity; keyword
+    ranking if the embedding service is unavailable. Never raises."""
+    global _lesson_vectors
+    from app.content.lessons import LESSONS, keyword_rank, lesson_text
+
+    ranked: list[dict] = []
+    try:
+        from app.services.agent.embeddings import get_embedding, get_embeddings_batch
+        if _lesson_vectors is None:
+            vectors = await get_embeddings_batch([lesson_text(l) for l in LESSONS], input_type="passage")
+            _lesson_vectors = list(zip(LESSONS, vectors))
+        q = await get_embedding(query, input_type="query")
+
+        def cosine(a, b):
+            dot = sum(x * y for x, y in zip(a, b))
+            na = sum(x * x for x in a) ** 0.5
+            nb = sum(y * y for y in b) ** 0.5
+            return dot / (na * nb) if na and nb else 0.0
+
+        scored = sorted(((cosine(q, v), l) for l, v in _lesson_vectors), key=lambda s: s[0], reverse=True)
+        ranked = [l for sim, l in scored[:limit] if sim > 0.2]
+    except Exception as exc:  # embedding outage: still answer from the lessons
+        logger.warning("Lesson embedding search failed (%s); using keyword ranking", exc)
+        ranked = keyword_rank(query, limit)
+
+    return [
+        {"lesson_id": l["id"], "title": l["title"], "text": lesson_text(l)}
+        for l in ranked
+    ]
+
+PREDICTION_MAX_AGE_DAYS = 3
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Tool schemas (OpenAI-compatible function-calling format)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -109,9 +147,11 @@ TOOL_SCHEMAS: list[dict] = [
         "function": {
             "name": "search_financial_knowledge",
             "description": (
-                "Semantic search across indexed CSE news and market reports using RAG. "
-                "Use this for broad questions like 'what sectors are performing well' or "
-                "'what are analysts saying about the banking sector'."
+                "Semantic search (RAG) across InvestAI's beginner lessons and indexed CSE "
+                "news. Use it for concept questions ('what is a P/E ratio', 'how does the "
+                "CSE work', 'what is diversification') and for broad news questions like "
+                "'what is happening in the banking sector'. Prefer the lesson text when "
+                "explaining a concept."
             ),
             "parameters": {
                 "type": "object",
@@ -188,7 +228,10 @@ class ToolExecutor:
             return json.dumps(result, default=str)
         except Exception as exc:
             logger.exception("Tool %s failed: %s", tool_name, exc)
-            return json.dumps({"error": str(exc)})
+            # A failed statement leaves the Postgres transaction aborted; without
+            # this every later tool and the final save_assistant_message fail too.
+            self.db.rollback()
+            return json.dumps({"error": f"{tool_name} failed; the data is unavailable right now."})
 
     # ── individual tool implementations ──────────────────────────────────────
 
@@ -327,6 +370,15 @@ class ToolExecutor:
         if not pred:
             return {"error": f"No prediction available for {symbol}"}
 
+        # A trend line from last week says nothing about tomorrow; refuse stale
+        # rows rather than let the model quote them as current.
+        from datetime import datetime, timedelta, timezone
+        generated = pred.generated_at
+        if generated is not None and generated.tzinfo is None:
+            generated = generated.replace(tzinfo=timezone.utc)
+        if generated is None or generated < datetime.now(timezone.utc) - timedelta(days=PREDICTION_MAX_AGE_DAYS):
+            return {"error": f"No recent prediction available for {symbol}"}
+
         upside = None
         if current and current.price:
             upside = round(
@@ -339,7 +391,17 @@ class ToolExecutor:
             "upside_pct": upside,
             "model_version": pred.model_version,
             "generated_at": str(pred.generated_at),
-            "disclaimer": "This is an AI-generated forecast for educational purposes only. Not financial advice.",
+            # Without these the model read upside_pct as a price target.
+            "horizon": "next trading day",
+            "current_price_recorded_at": str(current.recorded_at) if current else None,
+            # Names the method, not just the liability: the model is a linear
+            # trend extrapolation over recent daily closes (I-16), not a
+            # learned forecast, and the wording says so.
+            "disclaimer": (
+                "This is a statistical trend extrapolation from recent closing "
+                "prices, not a forecast of what the price will do. For "
+                "educational purposes only — not financial advice."
+            ),
         }
 
     async def _search_financial_knowledge(self, query: str, limit: int = 5) -> dict:
@@ -388,6 +450,7 @@ class ToolExecutor:
             ]
         except Exception as e:
             logger.warning("pgvector search failed (%s), falling back to keyword", e)
+            self.db.rollback()   # the failed statement aborted the transaction
             # Keyword fallback
             rows = (
                 self.db.query(NewsSentiment)
@@ -412,7 +475,13 @@ class ToolExecutor:
                 for r in rows
             ]
 
-        return {"query": query, "results": results, "total": len(results)}
+        lessons = await _relevant_lessons(query)
+        return {
+            "query": query,
+            "lessons": lessons,
+            "results": results,
+            "total": len(results),
+        }
 
     async def _get_market_overview(self, category: str = "all") -> dict:
         from app.models.stock import MarketDataLatest
