@@ -53,6 +53,13 @@ class UpdateProfileRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=255)
 
 
+
+_LANGUAGE_CODES = {
+    'en': 'en', 'english': 'en',
+    'si': 'si', 'sinhala': 'si', 'සිංහල': 'si',
+    'ta': 'ta', 'tamil': 'ta', 'தமிழ்': 'ta',
+}
+
 @router.patch('', response_model=UserOut)
 def update_own_profile(
     payload: UpdateProfileRequest,
@@ -118,6 +125,13 @@ def update_risk_profile(
     rp.score = result.score
     rp.category = result.category
     rp.answers = result.answers
+
+    # Q14 asks for the preferred language; chat reads user_profiles.language.
+    # This was never written, so a Sinhala or Tamil choice never reached chat.
+    lang = _LANGUAGE_CODES.get(str(result.preferred_language or '').strip().lower())
+    if lang:
+        from app.routers.device import _ensure_profile
+        _ensure_profile(db, current_user).language = lang
 
     try:
         db.commit()

@@ -1,11 +1,13 @@
 # app/routers/auth.py
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from supabase import create_client
 from datetime import timedelta
 import logging
 
-from app.dependencies import get_db, get_current_user
+from app.dependencies import bearer_scheme, get_db, get_current_user
+from app.rate_limit import limit
 from app.models.user import User
 from app.schemas.auth import (RegisterRequest, LoginRequest,
                                TokenResponse, UserOut, OTPVerifyRequest,
@@ -14,19 +16,39 @@ from app.schemas.auth import (RegisterRequest, LoginRequest,
 from app.config import get_settings
 from app.services.email_service import (send_registration_otp,
                                 send_welcome_email, send_reset_otp)
-from app.services.otp import create_otp, verify_otp
+from app.services.otp import OTPRateLimited, create_otp, verify_otp
 from app.utils.security import create_reset_token, verify_reset_token
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-router = APIRouter(prefix='/auth', tags=['Authentication'])
+# Every auth endpoint is rate limited per client IP: 10 calls a minute is far
+# above what a person typing needs and far below what guessing needs.
+router = APIRouter(prefix='/auth', tags=['Authentication'],
+                   dependencies=[Depends(limit('auth', 10, 60))])
+
+OTP_TOO_SOON = 'Please wait a minute before requesting another code.'
+
+
+def _find_supabase_user_id(admin_client, email: str):
+    # list_users() returns one page (50 by default); walk the pages so a
+    # re-registration still finds the account once there are more users.
+    page = 1
+    while True:
+        batch = admin_client.auth.admin.list_users(page=page, per_page=200)
+        users = getattr(batch, 'users', batch) or []
+        for u in users:
+            if (u.email or '').lower() == email.lower():
+                return u.id
+        if len(users) < 200:
+            return None
+        page += 1
 
 def get_supabase():
     return create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
 
 @router.post('/register', status_code=201)
-async def register(
+def register(
     payload: RegisterRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -70,17 +92,15 @@ async def register(
         if 'already' in error_msg:
             # User exists in Supabase. We must fetch them to get their ID for the local sync.
             try:
-                users_res = admin_client.auth.admin.list_users()
-                user_list = getattr(users_res, 'users', users_res)
-                target = next((u for u in user_list if u.email == payload.email), None)
-                if target:
-                    user_id = target.id
+                user_id = (str(existing.user_id) if existing
+                           else _find_supabase_user_id(admin_client, payload.email))
             except Exception as inner_e:
                 logger.error(f"Failed to fetch existing user from Supabase: {str(inner_e)}")
         
         if not user_id:
             db.rollback()
-            raise HTTPException(400, f'Registration error: {str(e)}')
+            logger.error('Registration failed for %s: %s', payload.email, e)
+            raise HTTPException(400, 'Registration failed. Please check your details and try again.')
 
     # Final Local sync
     try:
@@ -103,11 +123,18 @@ async def register(
     except Exception as db_e:
         db.rollback()
         logger.error(f"Local sync failed: {str(db_e)}")
-        # If it's a duplicate ID error, we might be in a race condition. 
-        # But we've already done our best to clean it up.
+        # Returning 201 here sent an OTP for an account /verify-otp could never
+        # find. Fail visibly instead so the user can simply retry.
+        raise HTTPException(503, 'Registration is temporarily unavailable. Please try again.')
 
-    # Generate and send OTP
-    otp = create_otp(db, payload.email, purpose='register')
+    # Generate and send OTP. The password given here is NOT authoritative: if
+    # this email already had an unconfirmed Supabase account (someone else may
+    # have registered it first), that account keeps its old password until
+    # /verify-otp sets the one supplied by whoever holds the emailed code.
+    try:
+        otp = create_otp(db, payload.email, purpose='register')
+    except OTPRateLimited:
+        raise HTTPException(429, OTP_TOO_SOON)
     background_tasks.add_task(
         send_registration_otp, payload.email, otp, payload.full_name)
 
@@ -118,7 +145,7 @@ async def register(
     }
 
 @router.post('/verify-otp')
-async def verify_registration_otp(
+def verify_registration_otp(
     payload: OTPVerifyRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -146,8 +173,12 @@ async def verify_registration_otp(
     # failure is safe.
     admin = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
     try:
+        # The password is set here, by whoever proved they own the inbox. Setting
+        # it at /register let anyone pre-register a victim's email with their own
+        # password and inherit the account once the victim verified.
         admin.auth.admin.update_user_by_id(
-            str(user.user_id), {'email_confirm': True})
+            str(user.user_id),
+            {'email_confirm': True, 'password': payload.password})
     except Exception as exc:
         logger.exception(
             'Could not confirm Supabase email for %s; OTP left unspent so the '
@@ -169,25 +200,26 @@ async def verify_registration_otp(
     return {'message': 'Email verified! You can now log in.'}
 
 @router.post('/resend-otp')
-async def resend_otp(
+def resend_otp(
     payload: ForgotPasswordRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """Resend registration OTP if user did not receive it."""
+    # Same answer whether or not the email exists or is verified, so this
+    # endpoint cannot be used to discover who has an account.
     user = db.query(User).filter(User.email == payload.email).first()
-    if not user:
-        raise HTTPException(404, 'Email not registered')
-    if user.is_email_verified:
-        raise HTTPException(400, 'Email already verified')
-
-    otp = create_otp(db, payload.email, purpose='register')
-    background_tasks.add_task(
-        send_registration_otp, payload.email, otp, user.full_name or '')
-    return {'message': 'New OTP sent to your email'}
+    if user and not user.is_email_verified:
+        try:
+            otp = create_otp(db, payload.email, purpose='register')
+        except OTPRateLimited:
+            raise HTTPException(429, OTP_TOO_SOON)
+        background_tasks.add_task(
+            send_registration_otp, payload.email, otp, user.full_name or '')
+    return {'message': 'If that email is awaiting verification, a new code has been sent.'}
 
 @router.post('/login', response_model=TokenResponse)
-async def login(payload: LoginRequest, db: Session = Depends(get_db)):
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
     """
     Login. Blocked if email not verified locally.
     Returns Supabase JWT for authenticated access.
@@ -223,7 +255,7 @@ async def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post('/refresh', response_model=TokenResponse)
-async def refresh_session(payload: RefreshRequest, db: Session = Depends(get_db)):
+def refresh_session(payload: RefreshRequest, db: Session = Depends(get_db)):
     """Exchange a refresh token for a fresh Supabase access token.
 
     Needed because access tokens live about an hour and app/dependencies.py now
@@ -262,7 +294,7 @@ async def refresh_session(payload: RefreshRequest, db: Session = Depends(get_db)
     )
 
 @router.post('/forgot-password')
-async def forgot_password(
+def forgot_password(
     payload: ForgotPasswordRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -274,8 +306,12 @@ async def forgot_password(
     user = db.query(User).filter(User.email == payload.email).first()
     # Always return success message for security (don't reveal user existence)
     if user:
-        otp = create_otp(db, payload.email, purpose='reset_password')
-        background_tasks.add_task(send_reset_otp, payload.email, otp)
+        try:
+            otp = create_otp(db, payload.email, purpose='reset_password')
+            background_tasks.add_task(send_reset_otp, payload.email, otp)
+        except OTPRateLimited:
+            # Silently skip: a 429 here would reveal that the email exists.
+            logger.info('Reset OTP rate-limited for %s', payload.email)
     
     return {
         'message': 'If that email exists, an OTP has been sent.',
@@ -283,7 +319,7 @@ async def forgot_password(
     }
 
 @router.post('/verify-reset-otp')
-async def verify_reset_otp_endpoint(
+def verify_reset_otp_endpoint(
     payload: VerifyResetOTPRequest,
     db: Session = Depends(get_db),
 ):
@@ -303,7 +339,7 @@ async def verify_reset_otp_endpoint(
     }
 
 @router.post('/reset-password')
-async def reset_password(
+def reset_password(
     payload: ResetPasswordRequest,
     db: Session = Depends(get_db),
 ):
@@ -328,7 +364,8 @@ async def reset_password(
             {'password': payload.new_password}
         )
     except Exception as e:
-        raise HTTPException(500, f'Password update failed: {str(e)}')
+        logger.error('Password update failed for %s: %s', email, e)
+        raise HTTPException(503, 'Could not update the password. Please try again.')
 
     return {'message': 'Password reset successfully. You can now log in.'}
 
@@ -337,5 +374,16 @@ def me(current_user: User = Depends(get_current_user)):
     return current_user
 
 @router.post('/logout')
-def logout():
+def logout(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)):
+    """Revoke the caller's Supabase refresh tokens (all devices).
+
+    Best effort: the client clears its own tokens regardless, and an expired or
+    missing access token just means there is nothing left to revoke.
+    """
+    if credentials:
+        try:
+            admin = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+            admin.auth.admin.sign_out(credentials.credentials)
+        except Exception as exc:
+            logger.info('Logout revoke skipped: %s', exc)
     return {'message': 'Logged out successfully'}

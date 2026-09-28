@@ -31,6 +31,16 @@ OTP_EXPIRY_MINUTES = 10
 # brute-force search.
 MAX_OTP_ATTEMPTS = 5
 
+# Issuing limits. The attempt cap above is per code, so without these a caller
+# could loop "request code, guess 5 times" indefinitely (and mail-bomb the
+# address while doing it).
+OTP_RESEND_COOLDOWN_SECONDS = 60
+MAX_OTPS_PER_HOUR = 5
+
+
+class OTPRateLimited(Exception):
+    """A new code was requested too soon or too often for this email."""
+
 
 def generate_otp() -> str:
     """Generate a cryptographically secure 6-digit OTP."""
@@ -57,14 +67,33 @@ def create_otp(db: Session, email: str, purpose: str) -> str:
     Deletes any existing unused OTPs for same email+purpose first.
     purpose: 'register' or 'reset_password'
     """
-    # Delete old OTPs for this email+purpose. This is also what guarantees at
+    now = datetime.now(timezone.utc)
+    recent = (
+        db.query(OTPCode.created_at)
+        .filter(
+            OTPCode.email == email,
+            OTPCode.purpose == purpose,
+            OTPCode.created_at >= now - timedelta(hours=1),
+        )
+        .order_by(OTPCode.created_at.desc())
+        .all()
+    )
+    latest = _as_utc(recent[0][0]) if recent and recent[0][0] else None
+    if len(recent) >= MAX_OTPS_PER_HOUR or (
+        latest is not None
+        and latest >= now - timedelta(seconds=OTP_RESEND_COOLDOWN_SECONDS)
+    ):
+        raise OTPRateLimited()
+
+    # Retire old codes for this email+purpose. They are marked used rather than
+    # deleted so they still count toward MAX_OTPS_PER_HOUR. This also keeps at
     # most one live code per (email, purpose), which `verify_otp` relies on when
     # it looks the record up without knowing the code.
     db.query(OTPCode).filter(
         OTPCode.email == email,
         OTPCode.purpose == purpose,
         OTPCode.is_used == False
-    ).delete()
+    ).update({OTPCode.is_used: True})
     db.commit()
 
     otp = generate_otp()
@@ -105,14 +134,16 @@ def verify_otp(db: Session, email: str, otp_code: str, purpose: str,
         return False  # no live code for this email+purpose
 
     now = datetime.now(timezone.utc)
+    # Dead codes are retired (is_used) rather than deleted: deleting them also
+    # erased the issue timestamp that create_otp's cooldown and hourly cap count.
     if _as_utc(record.expires_at) < now:
-        db.delete(record)
+        record.is_used = True
         db.commit()
         return False  # expired
 
     if (record.attempts or 0) >= MAX_OTP_ATTEMPTS:
-        # Out of guesses. Destroy it so the only way forward is a fresh code.
-        db.delete(record)
+        # Out of guesses. Retire it so the only way forward is a fresh code.
+        record.is_used = True
         db.commit()
         return False
 

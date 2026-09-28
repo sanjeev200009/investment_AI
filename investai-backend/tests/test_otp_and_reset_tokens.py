@@ -34,7 +34,8 @@ from sqlalchemy.orm import sessionmaker
 
 from app.models.otp import OTPCode, PasswordResetToken
 from app.services import otp as otp_service
-from app.services.otp import (MAX_OTP_ATTEMPTS, OTP_EXPIRY_MINUTES,
+from app.services.otp import (MAX_OTP_ATTEMPTS, MAX_OTPS_PER_HOUR,
+                              OTP_EXPIRY_MINUTES, OTPRateLimited,
                               create_otp, generate_otp, verify_otp)
 from app.utils.security import (RESET_TOKEN_EXPIRY_MINUTES, _hash_token,
                                 create_reset_token,
@@ -58,8 +59,18 @@ def db():
 
 
 def _record(db, email=EMAIL, purpose="register") -> OTPCode:
+    """The live (unused) code; retired codes are kept for rate limiting."""
     return db.query(OTPCode).filter(
-        OTPCode.email == email, OTPCode.purpose == purpose).first()
+        OTPCode.email == email, OTPCode.purpose == purpose,
+        OTPCode.is_used == False).first()
+
+
+def _age_codes(db, seconds):
+    """Pretend every stored code was issued `seconds` earlier."""
+    for row in db.query(OTPCode).all():
+        created = row.created_at or datetime.now(timezone.utc)
+        row.created_at = created - timedelta(seconds=seconds)
+    db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +134,7 @@ def test_code_is_scoped_to_its_email(db):
 
 def test_requesting_a_new_code_invalidates_the_old_one(db):
     first = create_otp(db, EMAIL, purpose="register")
+    _age_codes(db, 120)
     second = create_otp(db, EMAIL, purpose="register")
     assert first != second
     assert verify_otp(db, EMAIL, first, purpose="register") is False
@@ -189,6 +201,7 @@ def test_a_fresh_code_clears_the_attempt_count(db):
     for _ in range(MAX_OTP_ATTEMPTS):
         verify_otp(db, EMAIL, wrong, purpose="register")
 
+    _age_codes(db, 120)
     replacement = create_otp(db, EMAIL, purpose="register")
     assert _record(db).attempts == 0
     assert verify_otp(db, EMAIL, replacement, purpose="register") is True
@@ -238,7 +251,7 @@ def test_consume_false_leaves_the_code_spendable(db):
     assert verify_otp(db, EMAIL, code, purpose="register", consume=False) is True
     assert _record(db).is_used is False
     assert verify_otp(db, EMAIL, code, purpose="register") is True
-    assert _record(db).is_used is True
+    assert _record(db) is None   # spent: no live code remains
 
 
 def test_consume_false_still_counts_a_wrong_guess(db):
@@ -355,3 +368,26 @@ def test_purge_removes_only_expired_tokens(db):
     assert purge_expired_reset_tokens(db) == 1
     assert verify_reset_token(db, stale) is None
     assert verify_reset_token(db, live) == EMAIL
+
+
+# ---------------------------------------------------------------------------
+# issuing limits: the per-code attempt cap is useless if codes are unlimited
+# ---------------------------------------------------------------------------
+def test_a_second_code_within_the_cooldown_is_refused(db):
+    create_otp(db, EMAIL, purpose="register")
+    with pytest.raises(OTPRateLimited):
+        create_otp(db, EMAIL, purpose="register")
+
+
+def test_codes_per_hour_are_capped(db):
+    for _ in range(MAX_OTPS_PER_HOUR):
+        create_otp(db, EMAIL, purpose="register")
+        _age_codes(db, 120)
+    with pytest.raises(OTPRateLimited):
+        create_otp(db, EMAIL, purpose="register")
+
+
+def test_limits_are_per_email_and_purpose(db):
+    create_otp(db, EMAIL, purpose="register")
+    create_otp(db, OTHER, purpose="register")
+    create_otp(db, EMAIL, purpose="reset_password")

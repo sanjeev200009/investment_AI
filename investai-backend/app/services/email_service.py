@@ -4,12 +4,12 @@ import logging
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 def _send(to_email: str, subject: str, html: str) -> bool:
     """Core send function via Brevo HTTP API (Synchronous for stability)."""
+    settings = get_settings()
     if not settings.BREVO_API_KEY:
         logger.warning('BREVO_API_KEY not set — skipping email')
         return False
