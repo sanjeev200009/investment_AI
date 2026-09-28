@@ -1,391 +1,195 @@
-import TouchableTick from '../components/TouchableTick';
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
-import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
-import { useAuthStore } from '../store/authStore';
-import api from '../api/axiosConfig';
-
-const colors = {
-  background: '#faf9fc',
-  surface: '#faf9fc',
-  surfaceLowest: '#ffffff',
-  surfaceHigh: '#e8e8ea',
-  surfaceHighest: '#e3e2e5',
-  surfaceLow: '#f4f3f6',
-  surfaceVariant: '#e3e2e5',
-  onSurface: '#1a1c1e',
-  onSurfaceVariant: '#43474d',
-  primary: '#002743',
-  primaryFixed: '#cfe5ff',
-  primaryContainer: '#1c3d5a',
-  onPrimaryContainer: '#89a8ca',
-  onPrimary: '#ffffff',
-  secondaryContainer: '#dae3f5',
-  outlineVariant: '#c3c7ce',
-  error: '#ba1a1a',
-  errorContainer: '#ffdad6',
-  cardShadow: 'rgba(28, 61, 90, 0.06)'
-};
-
-const Sparkline = ({ type }) => {
-  const isPositive = type === 'positive';
-  const color = isPositive ? colors.primary : colors.error;
-  
-  // Custom paths based on the HTML mockup
-  const pathDataPositive = isPositive ? "M0,35 Q20,30 40,20 T60,10 T80,15 T100,0" : "";
-  const areaDataPositive = isPositive ? "M0,40 L0,35 Q20,30 40,20 T60,10 T80,15 T100,0 L100,40 Z" : "";
-  
-  const pathDataNegative = !isPositive ? "M0,5 Q20,10 40,25 T60,20 T80,35 T100,30" : "";
-  const areaDataNegative = !isPositive ? "M0,40 L0,5 Q20,10 40,25 T60,20 T80,35 T100,30 L100,40 Z" : "";
-
-  return (
-    <Svg width="100%" height="100%" viewBox="0 0 100 40" style={{ overflow: 'visible' }}>
-      <Defs>
-        <LinearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0%" stopColor={color} stopOpacity="0.2" />
-          <Stop offset="100%" stopColor={color} stopOpacity="0" />
-        </LinearGradient>
-      </Defs>
-      <Path 
-        d={isPositive ? areaDataPositive : areaDataNegative} 
-        fill="url(#grad)" 
-      />
-      <Path 
-        d={isPositive ? pathDataPositive : pathDataNegative} 
-        fill="none" 
-        stroke={color} 
-        strokeWidth="2" 
-        strokeLinecap="round" 
-        strokeLinejoin="round" 
-      />
-    </Svg>
-  );
-};
+// src/screens/WatchlistScreen.js
+//
+// The user's own watchlist (GET/POST/DELETE /watchlist), v2 "Soft pastel":
+// a white card per stock with a yellow ticker and star, big light price and
+// change pill, and a black "Add symbol" action opening a white sheet.
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, Modal, Alert } from 'react-native';
+import {
+  Screen, Header, CircleButton, PillButton, Chip, Card, BigNumber, ChangePill,
+  Title, Heading, Label, Field, EmptyState, Loading,
+} from '../components/ui';
+import { watchlistApi } from '../api/api';
+import { useT } from '../store/languageStore';
+import { palette, fonts, radii } from '../theme/tokens';
 
 export default function WatchlistScreen({ navigation }) {
-  const user = useAuthStore(state => state.user);
+  const { t } = useT();
   const [watchlist, setWatchlist] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [symbolInput, setSymbolInput] = useState('');
+  const [adding, setAdding] = useState(false);
 
-  useEffect(() => {
-    async function fetchWatchlist() {
-      try {
-        const res = await api.get('/stocks/market?limit=50');
-
-        // Sort by volume descending as a proxy for "active" watchlist stocks
-        const sorted = res.data.sort((a,b) => b.volume - a.volume).slice(0, 10);
-        setWatchlist(sorted);
-      } catch (err) {
-        console.error("Failed to fetch watchlist", err);
-      } finally {
-        setLoading(false);
-      }
+  const fetchWatchlist = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    try {
+      const data = await watchlistApi.list();
+      setWatchlist(Array.isArray(data) ? data : []);
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(err?.response?.data?.detail || err?.message || 'LOAD_ERROR');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-    fetchWatchlist();
   }, []);
 
+  useEffect(() => { fetchWatchlist(); }, [fetchWatchlist]);
+
+  const handleAdd = async () => {
+    const symbol = symbolInput.trim().toUpperCase();
+    if (!symbol) return;
+    setAdding(true);
+    try {
+      await watchlistApi.add(symbol);
+      setSymbolInput('');
+      setAddModalVisible(false);
+      fetchWatchlist();
+    } catch (err) {
+      Alert.alert(
+        t('watchlist_add_failed_title'),
+        err?.response?.status === 404
+          ? t('watchlist_not_listed').replace('{symbol}', symbol)
+          : err?.response?.data?.detail || t('watchlist_try_again'));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleRemove = async (symbol) => {
+    const snapshot = watchlist;
+    setWatchlist(watchlist.filter(w => w.symbol !== symbol));
+    try {
+      await watchlistApi.remove(symbol);
+    } catch (err) {
+      console.warn('[Watchlist] remove failed:', err?.message || err);
+      setWatchlist(snapshot);
+    }
+  };
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
-      
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <View style={styles.avatarContainer}>
-            <Image
-              source={{ uri: `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.full_name || 'Investor')}&background=0052FF&color=fff` }}
-              style={styles.avatar}
-            />
-          </View>
-          <Text style={styles.headerTitle}>InvestAI</Text>
-        </View>
-        <TouchableTick style={styles.settingsBtn}>
-          <MaterialIcons name="settings" size={24} color={colors.primary} />
-        </TouchableTick>
+    <Screen refreshing={refreshing} onRefresh={() => fetchWatchlist(true)}>
+      {navigation.canGoBack() ? (
+        <Header onBack={() => navigation.goBack()} backLabel={t('movers_back')} />
+      ) : null}
+
+      <View style={{ gap: 6 }}>
+        <Title>{t('watchlist_title')}</Title>
+        <Label>{t('watchlist_subtitle')}</Label>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        
-        {/* Page Header */}
-        <View style={styles.pageHeader}>
-          <View>
-            <Text style={styles.pageTitle}>Watchlist</Text>
-            <Text style={styles.pageSubtitle}>AI-monitored assets</Text>
-          </View>
-          <TouchableTick style={styles.sortBtn}>
-            <MaterialIcons name="sort" size={18} color={colors.primary} />
-            <Text style={styles.sortBtnText}>Sort</Text>
-          </TouchableTick>
-        </View>
-
-        <View style={styles.cardsGrid}>
-          {loading ? (
-             <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
-          ) : watchlist.map((stock, idx) => {
-             const isPositive = stock.change_pct >= 0;
-             return (
-               <TouchableTick key={idx} style={styles.card}>
-                 <View style={styles.cardTop}>
-                   <View style={styles.cardHeaderLeft}>
-                     <View style={styles.tickerBox}>
-                       <Text style={styles.tickerBoxText}>{stock.symbol}</Text>
-                     </View>
-                     <View>
-                       <Text style={styles.companyName}>{stock.name || stock.symbol}</Text>
-                       <Text style={styles.sectorText}>CSE Listed</Text>
-                     </View>
-                   </View>
-                   <MaterialIcons name="star" size={20} color={colors.primary} />
-                 </View>
-                 <View style={styles.cardBottom}>
-                   <View>
-                     <Text style={styles.priceText}>LKR {Number(stock.price).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</Text>
-                     <View style={isPositive ? styles.changeBadgePos : styles.changeBadgeNeg}>
-                       <MaterialIcons name={isPositive ? "trending-up" : "trending-down"} size={16} color={isPositive ? colors.primary : colors.error} />
-                       <Text style={isPositive ? styles.changeTextPos : styles.changeTextNeg}>
-                         {isPositive ? '+' : ''}{Number(stock.change_pct).toFixed(2)}%
-                       </Text>
-                     </View>
-                   </View>
-                   <View style={styles.sparklineContainer}>
-                     <Sparkline type={isPositive ? "positive" : "negative"} />
-                   </View>
-                 </View>
-                 {Math.abs(stock.change_pct) > 5 && (
-                   <View style={styles.aiAlertChip}>
-                     <MaterialIcons name="psychology" size={12} color={colors.onPrimary} />
-                     <Text style={styles.aiAlertText}>Volatility Alert</Text>
-                   </View>
-                 )}
-               </TouchableTick>
-             );
+      {loading ? (
+        <Loading />
+      ) : loadError ? (
+        <EmptyState icon="cloud-off" tone="coral" message={loadError === 'LOAD_ERROR' ? t('watchlist_load_error') : loadError} />
+      ) : watchlist.length === 0 ? (
+        <EmptyState icon="star-border" tone="yellow" message={t('watchlist_empty')} />
+      ) : (
+        <View style={{ gap: 14 }}>
+          {watchlist.map((stock) => {
+            const pct = Number.isFinite(stock.change_pct) ? stock.change_pct : null;
+            const isPositive = pct !== null && pct >= 0;
+            return (
+              <Card
+                key={stock.symbol}
+                style={{ gap: 16 }}
+                label={stock.name || stock.symbol}
+                onPress={() => navigation.navigate('StockDetail', { stock: {
+                  symbol: stock.symbol,
+                  name: stock.name || stock.symbol,
+                  price: stock.price,
+                  change: pct === null ? '—' : `${pct.toFixed(2)}%`,
+                  isPositive,
+                } })}
+              >
+                <View style={styles.cardTop}>
+                  <View style={styles.ticker}>
+                    <Text style={styles.tickerText}>{stock.symbol.split('.')[0].slice(0, 4)}</Text>
+                  </View>
+                  <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+                    <Text style={styles.companyName} numberOfLines={1}>{stock.name || stock.symbol}</Text>
+                    <Label numberOfLines={1}>{stock.sector || t('watchlist_cse_listed')}</Label>
+                  </View>
+                  {/* Unstar = remove. Keyed by symbol; the API is idempotent. */}
+                  <CircleButton
+                    icon="star"
+                    tone="yellow"
+                    size={48}
+                    onPress={() => handleRemove(stock.symbol)}
+                    label={t('watchlist_remove').replace('{symbol}', stock.symbol)}
+                  />
+                </View>
+                <View style={{ gap: 10 }}>
+                  {typeof stock.price === 'number'
+                    ? <BigNumber value={stock.price} prefix="LKR" size={40} />
+                    : <Heading style={{ color: palette.muted }}>{t('watchlist_no_quote')}</Heading>}
+                  {pct === null
+                    ? <Chip label={t('watchlist_no_prior_close')} />
+                    : <ChangePill pct={pct} />}
+                </View>
+              </Card>
+            );
           })}
         </View>
+      )}
 
-        {/* Quick Add */}
-        <View style={styles.quickAddContainer}>
-          <TouchableTick style={styles.quickAddBtn}>
-            <MaterialIcons name="add" size={20} color={colors.onPrimary} />
-            <Text style={styles.quickAddText}>Add Asset</Text>
-          </TouchableTick>
+      <PillButton icon="add" title={t('watchlist_add')} onPress={() => setAddModalVisible(true)} />
+
+      {/* Add-symbol sheet */}
+      <Modal visible={addModalVisible} animationType="fade" transparent onRequestClose={() => setAddModalVisible(false)}>
+        <View style={styles.overlay}>
+          <View style={styles.sheet}>
+            <View style={{ gap: 6 }}>
+              <Heading>{t('watchlist_modal_title')}</Heading>
+              <Label>{t('watchlist_modal_hint')}</Label>
+            </View>
+            <Field
+              value={symbolInput}
+              onChangeText={setSymbolInput}
+              placeholder={t('watchlist_symbol_placeholder')}
+              accessibilityLabel={t('watchlist_modal_title')}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              autoFocus
+              onSubmitEditing={handleAdd}
+              inputStyle={styles.sheetField}
+            />
+            <View style={styles.actions}>
+              <PillButton
+                variant="secondary"
+                title={t('cancel')}
+                onPress={() => setAddModalVisible(false)}
+                style={[styles.action, styles.cancel]}
+              />
+              <PillButton
+                title={t('watchlist_add_button')}
+                onPress={handleAdd}
+                loading={adding}
+                style={styles.action}
+              />
+            </View>
+          </View>
         </View>
-
-      </ScrollView>
-    </SafeAreaView>
+      </Modal>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
+  cardTop: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  ticker: {
+    width: 48, height: 48, borderRadius: radii.full, backgroundColor: palette.yellow,
+    alignItems: 'center', justifyContent: 'center',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    height: 64,
-    backgroundColor: colors.surface,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  avatarContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.surfaceHighest,
-    overflow: 'hidden',
-  },
-  avatar: {
-    width: '100%',
-    height: '100%',
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontFamily: 'Satoshi-Bold',
-    color: colors.primary,
-  },
-  settingsBtn: {
-    padding: 8,
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 120,
-  },
-  pageHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginBottom: 24,
-  },
-  pageTitle: {
-    fontSize: 32,
-    fontFamily: 'Satoshi-Bold',
-    color: colors.primary,
-    letterSpacing: -0.5,
-  },
-  pageSubtitle: {
-    fontSize: 16,
-    fontFamily: 'Satoshi-Regular',
-    color: colors.onSurfaceVariant,
-    marginTop: 4,
-  },
-  sortBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  sortBtnText: {
-    fontSize: 14,
-    fontFamily: 'Satoshi-Medium',
-    color: colors.primary,
-  },
-  cardsGrid: {
-    gap: 20,
-  },
-  card: {
-    backgroundColor: colors.surfaceLowest,
-    borderRadius: 12,
-    padding: 20,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 30,
-    elevation: 10,
-    position: 'relative',
-  },
-  cardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  cardHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  tickerBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 8,
-    backgroundColor: colors.surfaceLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tickerBoxText: {
-    fontSize: 18,
-    fontFamily: 'Satoshi-Bold',
-    color: colors.primary,
-  },
-  companyName: {
-    fontSize: 18,
-    fontFamily: 'Satoshi-Bold',
-    color: colors.onSurface,
-  },
-  sectorText: {
-    fontSize: 12,
-    fontFamily: 'Satoshi-Medium',
-    color: colors.onSurfaceVariant,
-  },
-  cardBottom: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  priceText: {
-    fontSize: 36,
-    fontFamily: 'Satoshi-Bold',
-    color: colors.onSurface,
-    letterSpacing: -1,
-    lineHeight: 40,
-  },
-  changeBadgePos: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(218, 227, 245, 0.3)', // secondary-container / 30
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginTop: 8,
-    alignSelf: 'flex-start',
-    gap: 4,
-  },
-  changeTextPos: {
-    fontSize: 14,
-    fontFamily: 'Satoshi-Medium',
-    color: colors.primary,
-  },
-  changeBadgeNeg: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 218, 214, 0.3)', // error-container / 30
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginTop: 8,
-    alignSelf: 'flex-start',
-    gap: 4,
-  },
-  changeTextNeg: {
-    fontSize: 14,
-    fontFamily: 'Satoshi-Medium',
-    color: colors.error,
-  },
-  sparklineContainer: {
-    width: 96,
-    height: 48,
-  },
-  aiAlertChip: {
-    position: 'absolute',
-    bottom: -12,
-    right: 20,
-    backgroundColor: colors.primary,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 16,
-    gap: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.18,
-    shadowRadius: 4,
-    elevation: 10,
-  },
-  aiAlertText: {
-    color: colors.onPrimary,
-    fontSize: 12,
-    fontFamily: 'Satoshi-Medium',
-  },
-  quickAddContainer: {
-    marginTop: 32,
-    alignItems: 'center',
-  },
-  quickAddBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary,
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  quickAddText: {
-    color: colors.onPrimary,
-    fontSize: 14,
-    fontFamily: 'Satoshi-Medium',
-  }
+  tickerText: { fontFamily: fonts.bold, fontSize: 11, letterSpacing: 0.3, color: palette.yellowInk },
+  companyName: { color: palette.ink, fontFamily: fonts.medium, fontSize: 17 },
+  overlay: { flex: 1, backgroundColor: 'rgba(15,17,21,0.45)', justifyContent: 'center', paddingHorizontal: 20 },
+  sheet: { backgroundColor: '#FFFFFF', borderRadius: radii.xl, padding: 24, gap: 18 },
+  sheetField: { backgroundColor: '#EEF0F5', textTransform: 'uppercase' },
+  actions: { flexDirection: 'row', gap: 10 },
+  action: { flex: 1, paddingHorizontal: 12 },
+  cancel: { backgroundColor: '#EEF0F5' },
 });

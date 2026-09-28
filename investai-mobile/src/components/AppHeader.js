@@ -1,114 +1,19 @@
-import TouchableTick from './TouchableTick';
-// src/components/AppHeader.js
+// src/components/AppHeader.js — v2 header. Kept for older call sites; new
+// screens use Header from ./ui directly. `title`, `onBack`, `rightAction` and
+// `children` (a custom title block) behave as before.
 import React from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    TouchableOpacity,
-    Platform,
-    StatusBar
-} from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import { useAppTheme } from '../hooks/useAppTheme';
+import { View } from 'react-native';
+import { Header } from './ui';
 
-/**
- * Reusable Header component for navigation screens.
- * Handles back navigation, title, right-side actions, and custom children.
- */
-const AppHeader = ({
-    title,
-    onBack,
-    rightAction,
-    transparent = false,
-    style,
-    children,
-    titleContainerStyle
-}) => {
-    const theme = useAppTheme();
-
-    return (
-        <View style={[
-            styles.container,
-            {
-                backgroundColor: transparent ? 'transparent' : theme.colors.surface,
-                borderBottomColor: transparent ? 'transparent' : theme.colors.divider,
-                borderBottomWidth: transparent ? 0 : 1,
-                paddingTop: Platform.OS === 'ios' ? 44 : (StatusBar.currentHeight || 0),
-            },
-            style
-        ]}>
-            <View style={styles.content}>
-                <View style={styles.leftContainer}>
-                    {onBack && (
-                        <TouchableTick
-                            onPress={onBack}
-                            style={[styles.backButton, { backgroundColor: transparent ? 'rgba(255, 255, 255, 0.1)' : 'transparent' }]}
-                        >
-                            <MaterialIcons
-                                name="arrow-back-ios"
-                                size={22}
-                                color={transparent ? '#FFFFFF' : theme.colors.textPrimary}
-                            />
-                        </TouchableTick>
-                    )}
-                </View>
-
-                <View style={[styles.titleContainer, titleContainerStyle]}>
-                    {children ? children : (
-                        title ? (
-                            <Text style={[
-                                styles.title,
-                                { color: transparent ? '#FFFFFF' : theme.colors.textPrimary, fontSize: theme.typography.sizes.h4 }
-                            ]}>
-                                {title}
-                            </Text>
-                        ) : null
-                    )}
-                </View>
-
-                <View style={styles.rightContainer}>
-                    {rightAction || null}
-                </View>
-            </View>
-        </View>
-    );
-};
-
-const styles = StyleSheet.create({
-    container: {
-        width: '100%',
-        zIndex: 100,
-    },
-    content: {
-        height: 64,
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 20,
-    },
-    leftContainer: {
-        flex: 1,
-        alignItems: 'flex-start',
-    },
-    titleContainer: {
-        flex: 3,
-        alignItems: 'center',
-    },
-    rightContainer: {
-        flex: 1,
-        alignItems: 'flex-end',
-    },
-    title: {
-        fontWeight: '700',
-    },
-    backButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 12,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingLeft: 8,
-    }
-});
+const AppHeader = ({ title, onBack, rightAction, children, style }) => (
+    <View style={[{ paddingHorizontal: 20, paddingTop: 8 }, style]}>
+        {children ? (
+            <Header onBack={onBack} right={rightAction} title={null} />
+        ) : (
+            <Header title={title} onBack={onBack} right={rightAction} />
+        )}
+        {children || null}
+    </View>
+);
 
 export default AppHeader;

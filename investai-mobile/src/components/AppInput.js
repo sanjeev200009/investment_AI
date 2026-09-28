@@ -1,89 +1,37 @@
-// src/components/AppInput.js
+// src/components/AppInput.js — v2 full-round input with optional leading icon.
+// Same props as before (label, error, icon, style, ...TextInput props).
 import React from 'react';
-import {
-    View,
-    TextInput,
-    Text,
-    StyleSheet
-} from 'react-native';
-import { useAppTheme } from '../hooks/useAppTheme';
+import { View, TextInput, Text, StyleSheet } from 'react-native';
+import { palette, fonts, radii, sizes } from '../theme/tokens';
 
-/**
- * Reusable input component that implements the design system tokens.
- * Automatically handles dark mode, errors, and standardized spacing.
- */
-const AppInput = ({
-    label,
-    error,
-    icon,
-    style,
-    ...props
-}) => {
-    const theme = useAppTheme();
-
-    return (
-        <View style={[styles.container, style]}>
-            {label && (
-                <Text style={[styles.label, { color: theme.colors.textSecondary, marginBottom: theme.spacing.sm }]}>
-                    {label}
-                </Text>
-            )}
-
-            <View style={[
-                styles.inputWrapper,
-                {
-                    backgroundColor: theme.colors.field,
-                    borderColor: error ? theme.colors.error : theme.colors.border,
-                    borderWidth: theme.isDark ? 0 : 1,
-                    borderRadius: theme.radii.lg,
-                    paddingHorizontal: theme.spacing.lg,
-                    height: 64,
-                }
-            ]}>
-                {icon && <View style={styles.icon}>{icon}</View>}
-                <TextInput
-                    placeholderTextColor={theme.colors.textSecondary}
-                    style={[
-                        styles.input,
-                        {
-                            color: theme.colors.textPrimary,
-                            fontSize: theme.typography.sizes.body1,
-                        }
-                    ]}
-                    {...props}
-                />
-            </View>
-
-            {error && (
-                <Text style={[styles.error, { color: theme.colors.error, marginTop: theme.spacing.xs }]}>
-                    {error}
-                </Text>
-            )}
+const AppInput = ({ label, error, icon, style, ...props }) => (
+    <View style={[styles.container, style]}>
+        {label ? <Text style={styles.label}>{label}</Text> : null}
+        <View style={[styles.wrapper, error && styles.wrapperError]}>
+            {icon ? <View style={styles.icon}>{icon}</View> : null}
+            <TextInput
+                placeholderTextColor={palette.faint}
+                accessibilityLabel={props.accessibilityLabel || label || props.placeholder}
+                style={styles.input}
+                {...props}
+            />
         </View>
-    );
-};
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+    </View>
+);
 
 const styles = StyleSheet.create({
-    container: {
-        width: '100%',
+    container: { width: '100%', gap: 6 },
+    label: { fontFamily: fonts.medium, fontSize: 13, color: palette.muted, paddingLeft: 18 },
+    wrapper: {
+        height: sizes.control, borderRadius: radii.full, backgroundColor: 'rgba(255,255,255,0.92)',
+        flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20,
+        borderWidth: 1.5, borderColor: 'transparent',
     },
-    inputWrapper: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    input: {
-        flex: 1,
-    },
-    icon: {
-        marginRight: 12,
-    },
-    label: {
-        fontSize: 14,
-        fontWeight: '500',
-    },
-    error: {
-        fontSize: 12,
-    }
+    wrapperError: { borderColor: palette.error },
+    icon: { marginRight: 10 },
+    input: { flex: 1, fontSize: 16, fontFamily: fonts.regular, color: palette.ink },
+    error: { fontFamily: fonts.regular, fontSize: 13, color: palette.error, paddingLeft: 18 },
 });
 
 export default AppInput;

@@ -1,131 +1,98 @@
 // src/navigation/TabNavigator.js
-import React, { useEffect, useRef } from 'react';
+//
+// v2 tab bar: a floating glass pill of round icon buttons over the gradient,
+// as in the design canvas. The focused tab is a larger white circle; the AI
+// tab is always the black circle. Alerts shows the unread count.
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
-import { View, Text, StyleSheet, Platform, Animated } from 'react-native';
-import { useAppTheme } from '../hooks/useAppTheme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
+import TouchableTick from '../components/TouchableTick';
+import { palette, radii } from '../theme/tokens';
+import { useT } from '../store/languageStore';
+import { notificationsApi } from '../api/api';
 
 import { HomeStack, MarketsStack, PortfolioStack, AlertsStack } from './TabStacks';
 import ChatScreen from '../screens/ChatScreen';
 
 const Tab = createBottomTabNavigator();
 
-const AnimatedTabItem = ({ focused, routeName, theme }) => {
-    const scaleValue = useRef(new Animated.Value(focused ? 1 : 0)).current;
+const ICONS = {
+    Home: 'home',
+    Markets: 'show-chart',
+    AIChat: 'auto-awesome',
+    Portfolio: 'pie-chart-outline',
+    Alerts: 'notifications-none',
+};
+const LABEL_KEYS = {
+    Home: 'tab_home',
+    Markets: 'tab_markets',
+    AIChat: 'tab_ai',
+    Portfolio: 'tab_portfolio',
+    Alerts: 'tab_alerts',
+};
 
+function PillTabBar({ state, navigation }) {
+    const insets = useSafeAreaInsets();
+    const { t } = useT();
+    const [unread, setUnread] = useState(0);
+
+    // Refresh the unread count whenever the tab changes; cheap, and keeps the
+    // badge honest without a background poll.
     useEffect(() => {
-        Animated.spring(scaleValue, {
-            toValue: focused ? 1 : 0,
-            useNativeDriver: true,
-            tension: 60,
-            friction: 8,
-        }).start();
-    }, [focused]);
-
-    if (routeName === 'AIChat') {
-        return (
-            <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: -24 }}>
-                <View style={[styles.aiButtonContainer, { borderColor: theme.colors.background }]}>
-                    <View style={[styles.aiButton, { backgroundColor: theme.colors.primary }]}>
-                        <Ionicons name='sparkles' size={24} color="#FFFFFF" />
-                    </View>
-                </View>
-                <Text style={{ fontSize: 11, fontFamily: 'Satoshi-Bold', color: theme.colors.textSecondary, marginTop: 4 }}>AI</Text>
-            </View>
-        );
-    }
-
-    const icons = {
-        Home: focused ? 'home' : 'home-outline',
-        Markets: focused ? 'compass' : 'compass-outline',
-        Portfolio: focused ? 'pie-chart' : 'pie-chart-outline',
-        Alerts: focused ? 'notifications' : 'notifications-outline',
-    };
-    
-    const labels = {
-        Home: 'Home',
-        Markets: 'Discover',
-        Portfolio: 'Portfolio',
-        Alerts: 'Alerts',
-    };
-
-    const iconName = icons[routeName] || 'help-circle';
-    const label = labels[routeName] || routeName;
-    const color = focused ? theme.colors.primary : theme.colors.textSecondary;
-
-    const opacity = scaleValue.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, 1]
-    });
-    
-    const scale = scaleValue.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0.8, 1]
-    });
+        let cancelled = false;
+        notificationsApi.list()
+            .then(items => { if (!cancelled) setUnread((items || []).filter(n => !n.is_read).length); })
+            .catch(() => {});
+        return () => { cancelled = true; };
+    }, [state.index]);
 
     return (
-        <View style={{ alignItems: 'center', justifyContent: 'center', height: 52, width: 68 }}>
-            {focused && (
-                <Animated.View style={{ 
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: theme.isDark ? 'rgba(25, 118, 210, 0.2)' : '#cfe5ff', 
-                    borderRadius: 12, 
-                    opacity,
-                    transform: [{ scale }],
-                }} />
-            )}
-            
-            <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name={iconName} size={24} color={color} />
-                <Text style={{ 
-                    fontSize: 12, 
-                    fontFamily: focused ? 'Satoshi-Bold' : 'Satoshi-Medium', 
-                    color: color, 
-                    marginTop: 4 
-                }} numberOfLines={1}>
-                    {label}
-                </Text>
+        <View pointerEvents="box-none" style={[styles.wrap, { bottom: Math.max(insets.bottom, 12) }]}>
+            <View style={styles.bar}>
+                {state.routes.map((route, index) => {
+                    const focused = state.index === index;
+                    const isAI = route.name === 'AIChat';
+                    const onPress = () => {
+                        const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+                        if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
+                    };
+                    const size = focused || isAI ? 58 : 50;
+                    const bg = isAI ? palette.ink : focused ? '#FFFFFF' : 'rgba(255,255,255,0.7)';
+                    const color = isAI ? '#FFFFFF' : focused ? palette.ink : palette.faint;
+                    const badge = route.name === 'Alerts' && unread > 0 ? unread : 0;
+                    return (
+                        <TouchableTick
+                            key={route.key}
+                            onPress={onPress}
+                            accessibilityRole="tab"
+                            accessibilityState={{ selected: focused }}
+                            accessibilityLabel={badge ? `${t(LABEL_KEYS[route.name])}, ${badge}` : t(LABEL_KEYS[route.name])}
+                            style={[styles.item, {
+                                width: size, height: size, backgroundColor: bg,
+                                borderWidth: focused && !isAI ? 1 : 0, borderColor: palette.hairline,
+                            }]}
+                        >
+                            <MaterialIcons name={ICONS[route.name]} size={22} color={color} />
+                            {badge ? (
+                                <View style={styles.badgePill}>
+                                    <Text style={styles.badgeText}>{badge > 99 ? '99+' : badge}</Text>
+                                </View>
+                            ) : null}
+                        </TouchableTick>
+                    );
+                })}
             </View>
         </View>
     );
-};
+}
 
 export default function TabNavigator() {
-    const theme = useAppTheme();
-
     return (
         <Tab.Navigator
-            screenOptions={({ route }) => ({
-                tabBarShowLabel: false,
-                tabBarStyle: {
-                    height: Platform.OS === 'ios' ? 88 : 74,
-                    backgroundColor: theme.colors.background,
-                    borderTopColor: theme.colors.divider,
-                    borderTopWidth: 1,
-                    paddingBottom: Platform.OS === 'ios' ? 30 : 12,
-                    paddingTop: 8,
-                    // Modern subtle shadow for the tab bar
-                    ...Platform.select({
-                        ios: {
-                            shadowColor: '#000',
-                            shadowOffset: { width: 0, height: -2 },
-                            shadowOpacity: 0.05,
-                            shadowRadius: 10,
-                        },
-                        android: {
-                            elevation: 8,
-                        }
-                    })
-                },
-                headerShown: false,
-                tabBarIcon: ({ focused }) => (
-                    <AnimatedTabItem focused={focused} routeName={route.name} theme={theme} />
-                ),
-            })}
+            tabBar={(props) => <PillTabBar {...props} />}
+            screenOptions={{ headerShown: false }}
         >
             <Tab.Screen name='Home' component={HomeStack} />
             <Tab.Screen name='Markets' component={MarketsStack} />
@@ -137,26 +104,16 @@ export default function TabNavigator() {
 }
 
 const styles = StyleSheet.create({
-    aiButtonContainer: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        borderWidth: 4,
-        backgroundColor: 'transparent',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 50,
+    wrap: { position: 'absolute', left: 16, right: 16, alignItems: 'center' },
+    bar: {
+        flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8,
+        borderRadius: radii.full, backgroundColor: 'rgba(255,255,255,0.6)',
+        shadowColor: '#0F1115', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.08, shadowRadius: 24, elevation: 6,
     },
-    aiButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: '#0052FF',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 6,
+    item: { borderRadius: radii.full, alignItems: 'center', justifyContent: 'center' },
+    badgePill: {
+        position: 'absolute', top: 0, right: 0, minWidth: 18, height: 18, paddingHorizontal: 4,
+        borderRadius: radii.full, backgroundColor: palette.badge, alignItems: 'center', justifyContent: 'center',
     },
+    badgeText: { color: '#FFFFFF', fontSize: 10, fontFamily: 'Satoshi-Bold' },
 });

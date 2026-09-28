@@ -1,90 +1,106 @@
+// src/screens/NotificationsScreen.js
+//
+// Alerts, v2 "Soft pastel": unread notifications are pastel cards in a stack
+// (tone by type), read ones turn white. Swipe left to delete.
 import TouchableTick from '../components/TouchableTick';
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar, Animated as RNAnimated, Dimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, Animated as RNAnimated } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
+import {
+  Screen, CircleButton, IconCircle, Chip, Card, StackCard, Title, Label, Body, EmptyState, Loading, accent,
+} from '../components/ui';
+import { notificationsApi } from '../api/api';
+import { useT } from '../store/languageStore';
+import { palette, fonts, radii, sizes } from '../theme/tokens';
 
-const { width } = Dimensions.get('window');
-
-const colors = {
-  surface: '#faf9fc',
-  surfaceLowest: '#ffffff',
-  surfaceHigh: '#e8e8ea',
-  surfaceHighest: '#e3e2e5',
-  onSurface: '#1a1c1e',
-  onSurfaceVariant: '#43474d',
-  primary: '#002743',
-  primaryContainer: '#1c3d5a',
-  primaryFixed: '#cfe5ff',
-  onPrimaryFixed: '#001d34',
-  secondaryContainer: '#dae3f5',
-  onSecondaryContainer: '#5c6574',
-  tertiaryContainer: '#e1e2e4',
-  onTertiaryContainer: '#a3a5a7',
-  error: '#ba1a1a',
-  errorContainer: '#ffdad6',
-  onErrorContainer: '#93000a',
-  success: '#137333',
-  successContainer: '#E6F4EA',
+// A relative time, without pulling a date library into one screen. The API
+// returns ISO timestamps in UTC.
+const timeAgo = (iso, t) => {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (mins < 1) return t('alerts_just_now');
+  if (mins < 60) return t('alerts_minutes_ago').replace('{n}', mins);
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return t('alerts_hours_ago').replace('{n}', hours);
+  const days = Math.round(hours / 24);
+  if (days < 7) return t('alerts_days_ago').replace('{n}', days);
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 };
 
-const DUMMY_ALERTS = [
-  {
-    id: '1',
-    type: 'ai',
-    title: 'AI Portfolio Insight',
-    time: '2m ago',
-    message: 'Unusual options activity detected in TSLA. Model suggests a 78% probability of volatility within 48 hours.',
-    unread: true,
-    tags: ['High Priority', 'TSLA']
-  },
-  {
-    id: '2',
-    type: 'price_down',
-    title: 'Price Target Hit',
-    time: '1h ago',
-    message: 'AAPL has dropped below your set alert threshold of $170.00. Current price: $169.45.',
-    unread: false,
-  },
-  {
-    id: '3',
-    type: 'price_up',
-    title: '52-Week High',
-    time: '3h ago',
-    message: 'MSFT has reached a new 52-week high of $420.50. Consider reviewing your position.',
-    unread: false,
-  },
-  {
-    id: '4',
-    type: 'news',
-    title: 'Earnings Report Release',
-    time: 'Yesterday',
-    message: 'NVDA released Q4 earnings beating expectations by 15%. Revenue up 265% YoY.',
-    unread: false,
-    opacity: 0.7,
-  },
-  {
-    id: '5',
-    type: 'system',
-    title: 'New Login Detected',
-    time: 'Oct 12',
-    message: 'A new sign-in to your InvestAI account was detected from an unrecognized device in New York, NY.',
-    unread: false,
-    opacity: 0.7,
+// Icon and pastel tone per notification type: yellow = needs attention,
+// lime = done/ok, lavender = information.
+const typeStyle = (type) => {
+  switch (type) {
+    case 'rule_alert': return { icon: 'notifications-active', tone: 'yellow' };
+    case 'TEST': return { icon: 'check-circle', tone: 'lime' };
+    case 'news': return { icon: 'newspaper', tone: 'lavender' };
+    case 'system': return { icon: 'shield', tone: 'lavender' };
+    default: return { icon: 'notifications', tone: 'lavender' };
   }
-];
+};
+
+// Chip with a 44px touch target (the kit's chip is 40 tall).
+const FilterChip = ({ label, selected, onPress }) => (
+  <TouchableTick onPress={onPress} accessibilityRole="button" accessibilityState={{ selected }} style={styles.chipHit}>
+    <Chip label={label} selected={selected} />
+  </TouchableTick>
+);
 
 export default function NotificationsScreen({ navigation }) {
-  const [alerts, setAlerts] = useState(DUMMY_ALERTS);
-  const [activeTab, setActiveTab] = useState('All Alerts');
+  const { t } = useT();
+  // Real notifications from GET /notifications (I-11).
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [activeTab, setActiveTab] = useState('all');
 
-  const handleDelete = (id) => {
-    setAlerts(alerts.filter(alert => alert.id !== id));
+  const fetchAlerts = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    try {
+      const data = await notificationsApi.list();
+      setAlerts(Array.isArray(data) ? data : []);
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(err?.response?.data?.detail || err?.message || t('alerts_load_error'));
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchAlerts(); }, [fetchAlerts]);
+
+  const handleDelete = async (notifId) => {
+    // Optimistic removal, reconciled by the server call; a failed delete is
+    // restored on the next refresh rather than silently vanishing.
+    const snapshot = alerts;
+    setAlerts(alerts.filter(a => a.notif_id !== notifId));
+    try {
+      await notificationsApi.remove(notifId);
+    } catch (err) {
+      console.warn('[Notifications] delete failed:', err?.message || err);
+      setAlerts(snapshot);
+    }
   };
 
-  const markAllRead = () => {
-    setAlerts(alerts.map(a => ({ ...a, unread: false })));
+  const markAllRead = async () => {
+    setAlerts(alerts.map(a => ({ ...a, is_read: true })));
+    try {
+      await notificationsApi.markAllRead();
+    } catch (err) {
+      console.warn('[Notifications] mark-all failed:', err?.message || err);
+      fetchAlerts();
+    }
+  };
+
+  const markOneRead = async (notifId) => {
+    setAlerts(prev => prev.map(a => a.notif_id === notifId ? { ...a, is_read: true } : a));
+    try {
+      await notificationsApi.markRead(notifId);
+    } catch { /* the next fetch reconciles */ }
   };
 
   const renderRightActions = (progress, dragX, id) => {
@@ -93,310 +109,126 @@ export default function NotificationsScreen({ navigation }) {
       outputRange: [1, 0],
       extrapolate: 'clamp',
     });
-    
+
     return (
-      <TouchableTick 
+      <TouchableTick
         style={styles.deleteAction}
         onPress={() => handleDelete(id)}
+        accessibilityRole="button"
+        accessibilityLabel={t('delete')}
       >
-        <RNAnimated.View style={{ transform: [{ scale: trans }] }}>
-          <MaterialIcons name="delete" size={24} color="#FFF" />
+        <RNAnimated.View style={[styles.deleteCircle, { transform: [{ scale: trans }] }]}>
+          <MaterialIcons name="delete-outline" size={24} color={palette.coralInk} />
         </RNAnimated.View>
       </TouchableTick>
     );
   };
 
-  const getIconData = (type) => {
-    switch(type) {
-      case 'ai': return { name: 'psychology', bg: colors.primary, color: '#FFF' };
-      case 'price_down': return { name: 'trending-down', bg: colors.errorContainer, color: colors.error };
-      case 'price_up': return { name: 'trending-up', bg: colors.successContainer, color: colors.success };
-      case 'news': return { name: 'newspaper', bg: colors.secondaryContainer, color: colors.onSecondaryContainer };
-      case 'system': return { name: 'shield', bg: colors.tertiaryContainer, color: colors.onSurfaceVariant };
-      default: return { name: 'notifications', bg: colors.surfaceHigh, color: colors.primary };
-    }
-  };
+  // Tabs that match the data the API actually sends.
+  const TABS = [
+    { id: 'all', label: t('alerts_tab_all') },
+    { id: 'unread', label: t('alerts_tab_unread') },
+  ];
+  const visibleAlerts = activeTab === 'unread'
+    ? alerts.filter(a => !a.is_read)
+    : alerts;
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
-      
+    <Screen refreshing={refreshing} onRefresh={() => fetchAlerts(true)}>
       {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Image
-            source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDLVR6r3X1jaRf-8ZQCTtRjik1MQwU2fEXj9bz30-gRzRVHXkAnVf-K4D5UR1SVgABUX5KuQ98tUpiAG9cSNuS-TgpfoEK9f4iIUUa_fmAETLF7FJ8s4TZeJQ9pnJivpieUwKB28YutCbqsZwNWaeIVJf26tG4I54Dtxle4RLmypNv2ARaKKM4hMvPeCbu7MvREnbTg4M8QcqDPeEgPnF2Wg7ZG8MWJABEP-UJQy209aujDuve73FpEC4Ty6C7HtOfxe5bDAr_n0Pc' }}
-            style={styles.avatar}
-          />
-          <Text style={styles.headerTitle}>InvestAI</Text>
-        </View>
-        <TouchableTick 
-          style={styles.settingsBtn}
-          onPress={() => navigation.navigate('ProfileMain')}
-        >
-          <MaterialIcons name="settings" size={24} color={colors.onSurfaceVariant} />
-        </TouchableTick>
+      <View style={styles.headRow}>
+        <Title style={{ flex: 1 }}>{t('alerts_title')}</Title>
+        <CircleButton icon="done-all" label={t('alerts_mark_all')} onPress={markAllRead} />
+        <CircleButton icon="settings" label={t('profile_title')} onPress={() => navigation.navigate('ProfileMain')} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        
-        {/* Page Title & Actions */}
-        <View style={styles.pageHeader}>
-          <Text style={styles.pageTitle}>Alerts</Text>
-          <TouchableTick style={styles.markReadBtn} onPress={markAllRead}>
-            <MaterialIcons name="done-all" size={18} color={colors.primary} />
-            <Text style={styles.markReadText}>Mark all read</Text>
-          </TouchableTick>
-        </View>
+      {/* Filters */}
+      <View style={styles.chipRow}>
+        {TABS.map(tab => (
+          <FilterChip key={tab.id} label={tab.label} selected={activeTab === tab.id} onPress={() => setActiveTab(tab.id)} />
+        ))}
+      </View>
 
-        {/* Tab Bar */}
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false} 
-          contentContainerStyle={styles.tabContainer}
-        >
-          {['All Alerts', 'Price Alerts', 'News', 'System'].map((tab) => (
-            <TouchableTick 
-              key={tab}
-              style={[styles.tabBtn, activeTab === tab ? styles.tabBtnActive : styles.tabBtnInactive]}
-              onPress={() => setActiveTab(tab)}
-            >
-              <Text style={[styles.tabText, activeTab === tab ? styles.tabTextActive : styles.tabTextInactive]}>
-                {tab}
-              </Text>
-            </TouchableTick>
-          ))}
-        </ScrollView>
+      {/* Entry point to the rules manager (I-10): the screen that makes
+          rule_alert notifications exist in the first place. */}
+      {navigation && (
+        <Card onPress={() => navigation.navigate('Rules')} label={t('alerts_manage_rules')} style={styles.rulesRow}>
+          <IconCircle icon="rule" />
+          <Text style={styles.rowTitle}>{t('alerts_manage_rules')}</Text>
+          <MaterialIcons name="arrow-forward" size={22} color={palette.ink} />
+        </Card>
+      )}
 
-        {/* Alerts List */}
-        <View style={styles.alertsList}>
-          {alerts.map((alert) => {
-            const icon = getIconData(alert.type);
+      {/* Alerts stack */}
+      {loading ? (
+        <Loading />
+      ) : loadError ? (
+        <EmptyState icon="cloud-off" tone="coral" message={loadError} />
+      ) : visibleAlerts.length === 0 ? (
+        <EmptyState
+          icon={activeTab === 'unread' ? 'done-all' : 'notifications-none'}
+          tone={activeTab === 'unread' ? 'lime' : 'lavender'}
+          message={activeTab === 'unread' ? t('alerts_caught_up') : t('alerts_empty_hint')}
+        />
+      ) : (
+        <View>
+          {visibleAlerts.map((alert, i) => {
+            const { icon, tone: typeTone } = typeStyle(alert.type);
+            const tone = alert.is_read ? 'white' : typeTone;
+            const a = accent(tone);
+            const title = t(alert.type === 'rule_alert' ? 'alerts_type_rule' : alert.type === 'TEST' ? 'alerts_type_test' : 'alerts_type_other');
             return (
               <Swipeable
-                key={alert.id}
-                renderRightActions={(prog, drag) => renderRightActions(prog, drag, alert.id)}
+                key={alert.notif_id}
+                renderRightActions={(prog, drag) => renderRightActions(prog, drag, alert.notif_id)}
                 overshootRight={false}
+                containerStyle={{ marginTop: i === 0 ? 0 : -22, borderRadius: radii.xxl }}
               >
-                <View style={[styles.alertCard, { opacity: alert.opacity || 1 }]}>
-                  {alert.unread && <View style={styles.unreadDot} />}
-                  
-                  <View style={[styles.iconBox, { backgroundColor: icon.bg }]}>
-                    <MaterialIcons name={icon.name} size={24} color={icon.color} />
-                  </View>
-                  
-                  <View style={styles.alertContent}>
-                    <View style={styles.alertHeaderRow}>
-                      <Text style={styles.alertTitle}>{alert.title}</Text>
-                      <Text style={styles.alertTime}>{alert.time}</Text>
-                    </View>
-                    <Text style={styles.alertMessage}>{alert.message}</Text>
-                    
-                    {alert.tags && (
-                      <View style={styles.tagsContainer}>
-                        {alert.tags.map((tag, i) => (
-                          <View 
-                            key={i} 
-                            style={[styles.tag, i === 0 ? styles.tagPrimary : styles.tagSecondary]}
-                          >
-                            <Text style={[styles.tagText, i === 0 ? styles.tagTextPrimary : styles.tagTextSecondary]}>
-                              {tag}
-                            </Text>
-                          </View>
-                        ))}
+                <StackCard
+                  tone={tone}
+                  first
+                  last={i === visibleAlerts.length - 1}
+                  onPress={() => markOneRead(alert.notif_id)}
+                  label={`${alert.is_read ? '' : `${t('alerts_tab_unread')}, `}${title}, ${alert.message}`}
+                >
+                  <View style={styles.cardRow}>
+                    <IconCircle icon={icon} color={a.ink} borderColor="rgba(0,0,0,0.15)" />
+                    <View style={{ flex: 1, gap: 4 }}>
+                      <View style={styles.titleRow}>
+                        {!alert.is_read && <View style={[styles.unreadDot, { backgroundColor: a.ink }]} />}
+                        <Text style={[styles.cardTitle, { color: a.ink }, !alert.is_read && { fontFamily: fonts.bold }]} numberOfLines={1}>
+                          {title}
+                        </Text>
+                        <Label style={{ color: alert.is_read ? palette.faint : a.ink }}>{timeAgo(alert.timestamp, t)}</Label>
                       </View>
-                    )}
+                      <Body style={{ color: alert.is_read ? palette.muted : a.ink }}>{alert.message}</Body>
+                    </View>
                   </View>
-                </View>
+                </StackCard>
               </Swipeable>
             );
           })}
         </View>
-
-      </ScrollView>
-    </SafeAreaView>
+      )}
+    </Screen>
   );
 }
 
+const text = { color: palette.ink, fontFamily: fonts.regular };
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.surface,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    height: 64,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.surfaceHigh,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontFamily: 'Satoshi-Bold',
-    color: colors.primary,
-    letterSpacing: -0.5,
-  },
-  settingsBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 120,
-  },
-  pageHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  pageTitle: {
-    fontSize: 32,
-    fontFamily: 'Satoshi-Bold',
-    color: colors.primary,
-    letterSpacing: -0.5,
-  },
-  markReadBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  markReadText: {
-    fontSize: 14,
-    fontFamily: 'Satoshi-Medium',
-    color: colors.primary,
-  },
-  tabContainer: {
-    gap: 8,
-    paddingBottom: 24,
-  },
-  tabBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  tabBtnActive: {
-    backgroundColor: colors.primary,
-  },
-  tabBtnInactive: {
-    backgroundColor: colors.surfaceHigh,
-  },
-  tabText: {
-    fontSize: 14,
-    fontFamily: 'Satoshi-Medium',
-  },
-  tabTextActive: {
-    color: '#FFF',
-  },
-  tabTextInactive: {
-    color: colors.onSurfaceVariant,
-  },
-  alertsList: {
-    gap: 12,
-  },
-  deleteAction: {
-    backgroundColor: colors.error,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 80,
-    borderTopRightRadius: 12,
-    borderBottomRightRadius: 12,
-  },
-  alertCard: {
-    flexDirection: 'row',
-    backgroundColor: colors.surfaceLowest,
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 39, 67, 0.05)',
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 30,
-    elevation: 10,
-  },
-  unreadDot: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.primary,
-  },
-  iconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  alertContent: {
-    flex: 1,
-    paddingRight: 12, // Space for unread dot
-  },
-  alertHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginBottom: 4,
-  },
-  alertTitle: {
-    fontSize: 16,
-    fontFamily: 'Satoshi-Bold',
-    color: colors.primary,
-  },
-  alertTime: {
-    fontSize: 12,
-    fontFamily: 'Satoshi-Medium',
-    color: colors.onTertiaryContainer,
-  },
-  alertMessage: {
-    fontSize: 14,
-    fontFamily: 'Satoshi-Regular',
-    color: colors.onSurfaceVariant,
-    lineHeight: 20,
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-  },
-  tag: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  tagPrimary: {
-    backgroundColor: colors.primaryFixed,
-  },
-  tagSecondary: {
-    backgroundColor: colors.surfaceHigh,
-  },
-  tagText: {
-    fontSize: 12,
-    fontFamily: 'Satoshi-Medium',
-  },
-  tagTextPrimary: {
-    color: colors.onPrimaryFixed,
-  },
-  tagTextSecondary: {
-    color: colors.onSurfaceVariant,
+  headRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  chipRow: { flexDirection: 'row', gap: 8, marginTop: -8 },
+  chipHit: { minHeight: sizes.touch, justifyContent: 'center' },
+  rulesRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14 },
+  rowTitle: { ...text, flex: 1, fontFamily: fonts.medium, fontSize: 16 },
+  cardRow: { flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  unreadDot: { width: 8, height: 8, borderRadius: radii.full },
+  cardTitle: { ...text, flex: 1, fontFamily: fonts.medium, fontSize: 17 },
+  deleteAction: { width: 88, alignItems: 'center', justifyContent: 'center' },
+  deleteCircle: {
+    width: 56, height: 56, borderRadius: radii.full, backgroundColor: palette.coral,
+    alignItems: 'center', justifyContent: 'center',
   },
 });
