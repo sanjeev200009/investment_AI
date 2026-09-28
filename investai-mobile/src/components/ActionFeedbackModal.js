@@ -1,31 +1,31 @@
-import TouchableTick from './TouchableTick';
 // src/components/ActionFeedbackModal.js
+//
+// Success / error / info feedback after an action, v2 "Soft pastel": a white
+// radius-32 sheet with a pastel icon circle (lime success, coral error,
+// lavender info) and, when it does not auto-close, a black Done button.
 import React, { useEffect } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    Modal,
-    Animated,
-    TouchableOpacity
-} from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import { useAppTheme } from '../hooks/useAppTheme';
+import { View, Text, StyleSheet, Modal, Animated } from 'react-native';
+import TouchableTick from './TouchableTick';
+import { IconCircle, PillButton, accent } from './ui';
+import { palette, fonts, radii } from '../theme/tokens';
+import { useT } from '../store/languageStore';
 
-/**
- * A reusable modal for providing visual feedback (Success/Error/Loading) 
- * for front-end actions to simulate a full app experience.
- */
-const ActionFeedbackModal = ({ 
-    visible, 
-    onClose, 
-    title = "Success", 
-    message = "Your action was completed.",
-    type = "success", // success, error, info
+const TYPES = {
+    success: { icon: 'check', tone: 'lime' },
+    error: { icon: 'error-outline', tone: 'coral' },
+    info: { icon: 'info-outline', tone: 'lavender' },
+};
+
+const ActionFeedbackModal = ({
+    visible,
+    onClose,
+    title,
+    message,
+    type = 'success', // success, error, info
     autoClose = true,
-    duration = 2000
+    duration = 2000,
 }) => {
-    const theme = useAppTheme();
+    const { t } = useT();
     const opacity = new Animated.Value(0);
     const scale = new Animated.Value(0.8);
 
@@ -41,7 +41,7 @@ const ActionFeedbackModal = ({
                     toValue: 1,
                     friction: 8,
                     useNativeDriver: true,
-                })
+                }),
             ]).start();
 
             if (autoClose) {
@@ -64,21 +64,14 @@ const ActionFeedbackModal = ({
                 toValue: 0.8,
                 duration: 200,
                 useNativeDriver: true,
-            })
+            }),
         ]).start(() => {
             onClose && onClose();
         });
     };
 
-    const getIcon = () => {
-        switch(type) {
-            case 'error': return { name: 'error-outline', color: '#EF4444' };
-            case 'info': return { name: 'info-outline', color: '#3B82F6' };
-            default: return { name: 'check-circle-outline', color: '#10B981' };
-        }
-    };
-
-    const icon = getIcon();
+    const kind = TYPES[type] || TYPES.success;
+    const a = accent(kind.tone);
 
     return (
         <Modal
@@ -88,34 +81,27 @@ const ActionFeedbackModal = ({
             onRequestClose={handleClose}
         >
             <View style={styles.overlay}>
-                <Animated.View style={[
-                    styles.backdrop, 
-                    { opacity: opacity, backgroundColor: 'rgba(0,0,0,0.4)' }
-                ]}>
-                    <TouchableTick style={styles.flex1} onPress={handleClose} />
+                <Animated.View style={[styles.backdrop, { opacity }]}>
+                    <TouchableTick
+                        style={styles.flex1}
+                        onPress={handleClose}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('feedback_done')}
+                    />
                 </Animated.View>
 
-                <Animated.View style={[
-                    styles.modalContainer,
-                    { 
-                        opacity: opacity,
-                        transform: [{ scale: scale }],
-                        backgroundColor: theme.colors.surface
-                    }
-                ]}>
-                    <View style={[styles.iconWrapper, { backgroundColor: icon.color + '15' }]}>
-                        <MaterialIcons name={icon.name} size={48} color={icon.color} />
+                <Animated.View
+                    accessibilityLiveRegion="polite"
+                    style={[styles.sheet, { opacity, transform: [{ scale }] }]}
+                >
+                    <View style={[styles.iconFill, { backgroundColor: a.bg }]}>
+                        <IconCircle icon={kind.icon} color={a.ink} borderColor="rgba(0,0,0,0.15)" size={64} />
                     </View>
-                    <Text style={[styles.title, { color: theme.colors.textPrimary }]}>{title}</Text>
-                    <Text style={[styles.message, { color: theme.colors.textSecondary }]}>{message}</Text>
-                    
+                    <Text style={styles.title}>{title ?? t('feedback_default_title')}</Text>
+                    <Text style={styles.message}>{message ?? t('feedback_default_message')}</Text>
+
                     {!autoClose && (
-                        <TouchableTick 
-                            style={[styles.closeBtn, { backgroundColor: theme.colors.primary }]}
-                            onPress={handleClose}
-                        >
-                            <Text style={styles.closeBtnText}>Done</Text>
-                        </TouchableTick>
+                        <PillButton title={t('feedback_done')} onPress={handleClose} style={styles.done} />
                     )}
                 </Animated.View>
             </View>
@@ -124,59 +110,17 @@ const ActionFeedbackModal = ({
 };
 
 const styles = StyleSheet.create({
-    overlay: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
+    overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
+    backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(15,17,21,0.4)' },
+    flex1: { flex: 1 },
+    sheet: {
+        width: '100%', maxWidth: 380, padding: 28, borderRadius: radii.xl,
+        backgroundColor: '#FFFFFF', alignItems: 'center', gap: 12,
     },
-    backdrop: {
-        ...StyleSheet.absoluteFillObject,
-    },
-    flex1: {
-        flex: 1,
-    },
-    modalContainer: {
-        width: '80%',
-        padding: 32,
-        borderRadius: 24,
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.18,
-        shadowRadius: 20,
-        elevation: 10,
-    },
-    iconWrapper: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 20,
-    },
-    title: {
-        fontSize: 22,
-        fontWeight: '800',
-        marginBottom: 12,
-        textAlign: 'center',
-    },
-    message: {
-        fontSize: 16,
-        textAlign: 'center',
-        lineHeight: 24,
-        marginBottom: 8,
-    },
-    closeBtn: {
-        marginTop: 24,
-        paddingHorizontal: 32,
-        paddingVertical: 12,
-        borderRadius: 12,
-    },
-    closeBtnText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '700',
-    }
+    iconFill: { borderRadius: radii.full, padding: 10, marginBottom: 6 },
+    title: { color: palette.ink, fontFamily: fonts.medium, fontSize: 22, textAlign: 'center' },
+    message: { color: palette.muted, fontFamily: fonts.regular, fontSize: 16, lineHeight: 23, textAlign: 'center' },
+    done: { alignSelf: 'stretch', marginTop: 12 },
 });
 
 export default ActionFeedbackModal;

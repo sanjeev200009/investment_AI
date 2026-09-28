@@ -12,7 +12,7 @@ import SplashScreen from '../screens/SplashScreen';
 import AssessmentScreen from '../screens/onboarding/AssessmentScreen';
 
 import { useAuthStore } from '../store/authStore';
-import { ActivityIndicator, View } from 'react-native';
+import { Screen, Loading } from '../components/ui';
 
 const Stack = createStackNavigator();
 
@@ -38,9 +38,9 @@ const SignedInStack = () => {
 
     if (isChecking) {
         return (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                <ActivityIndicator size="large" color="#1976D2" />
-            </View>
+            <Screen scroll={false} contentStyle={{ justifyContent: 'center' }}>
+                <Loading />
+            </Screen>
         );
     }
 

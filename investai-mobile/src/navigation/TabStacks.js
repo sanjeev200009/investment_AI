@@ -9,9 +9,11 @@ import PortfolioScreen from '../screens/PortfolioScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import WatchlistScreen from '../screens/WatchlistScreen';
+import RulesScreen from '../screens/RulesScreen';
 import LearnScreen from '../screens/LearnScreen';
 import StockDetailScreen from '../screens/StockDetailScreen';
-import FinancialAssessmentScreen from '../screens/FinancialAssessmentScreen';
+import LessonScreen from '../screens/LessonScreen';
+import LegalScreen from '../screens/LegalScreen';
 
 const Stack = createStackNavigator();
 
@@ -22,11 +24,14 @@ const screenOptions = {
 export const HomeStack = () => (
     <Stack.Navigator screenOptions={screenOptions}>
         <Stack.Screen name="HomeMain" component={HomeScreen} />
+        <Stack.Screen name="StockDetail" component={StockDetailScreen} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
+        <Stack.Screen name="Rules" component={RulesScreen} />
         <Stack.Screen name="Watchlist" component={WatchlistScreen} />
         <Stack.Screen name="ProfileMain" component={ProfileScreen} />
+        <Stack.Screen name="Legal" component={LegalScreen} />
         <Stack.Screen name="Learn" component={LearnScreen} />
-        <Stack.Screen name="Assessment" component={FinancialAssessmentScreen} />
+        <Stack.Screen name="Lesson" component={LessonScreen} />
     </Stack.Navigator>
 );
 
@@ -36,6 +41,7 @@ export const MarketsStack = () => (
         <Stack.Screen name="StockDetail" component={StockDetailScreen} />
         <Stack.Screen name="Watchlist" component={WatchlistScreen} />
         <Stack.Screen name="AllTopMovers" component={AllTopMoversScreen} />
+        <Stack.Screen name="Rules" component={RulesScreen} />
     </Stack.Navigator>
 );
 
@@ -43,12 +49,15 @@ export const PortfolioStack = () => (
     <Stack.Navigator screenOptions={screenOptions}>
         <Stack.Screen name="PortfolioMain" component={PortfolioScreen} />
         <Stack.Screen name="StockDetail" component={StockDetailScreen} />
+        <Stack.Screen name="Rules" component={RulesScreen} />
     </Stack.Navigator>
 );
 
 export const AlertsStack = () => (
     <Stack.Navigator screenOptions={screenOptions}>
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
+        <Stack.Screen name="Rules" component={RulesScreen} />
         <Stack.Screen name="ProfileMain" component={ProfileScreen} />
+        <Stack.Screen name="Legal" component={LegalScreen} />
     </Stack.Navigator>
 );
