@@ -45,3 +45,8 @@ env/
 
 # Logs
 *.log
+
+# One-off probe/debug scripts, kept out of the repository. They hit live
+# services and include destructive ones (nuke_supabase_and_local.py); they are
+# not part of the app, the tests, or the verification suite.
+scratch_dev_only/
