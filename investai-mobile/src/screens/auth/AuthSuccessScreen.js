@@ -1,11 +1,6 @@
-// src/screens/auth/AuthSuccessScreen.js
+// src/screens/auth/AuthSuccessScreen.js — v2 "Soft pastel" lime success state.
 import React, { useEffect } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    StatusBar,
-} from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import Animated, {
     useSharedValue,
@@ -14,16 +9,16 @@ import Animated, {
     withDelay,
 } from 'react-native-reanimated';
 
-// Design System Imports
-import { useAppTheme } from '../../hooks/useAppTheme';
-import AppButton from '../../components/AppButton';
+import { Screen, Card, PillButton } from '../../components/ui';
+import { palette, fonts, radii } from '../../theme/tokens';
+import { useT } from '../../store/languageStore';
 
 const AuthSuccessScreen = ({ navigation, route }) => {
-    const theme = useAppTheme();
+    const { t } = useT();
     const {
-        title = 'Success!',
-        message = 'Your action was completed successfully.',
-        buttonLabel = 'Back to Login'
+        title = t('authsuccess_title'),
+        message = t('authsuccess_message'),
+        buttonLabel = t('authsuccess_back_login')
     } = route.params || {};
 
     const scale = useSharedValue(0);
@@ -44,65 +39,33 @@ const AuthSuccessScreen = ({ navigation, route }) => {
     };
 
     return (
-        <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-            <StatusBar barStyle={theme.isDark ? "light-content" : "dark-content"} />
-
-            <View style={styles.content}>
-                <Animated.View style={[styles.iconWrapper, animatedIconStyle, { backgroundColor: theme.isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.05)' }]}>
-                    <MaterialIcons name="check-circle" size={100} color={theme.colors.success} />
+        <Screen
+            scroll={false}
+            edges={['top', 'bottom']}
+            contentStyle={styles.content}
+            footer={<View style={styles.footer}><PillButton title={buttonLabel} onPress={handleProceed} /></View>}
+        >
+            <Card tone="lime" style={styles.card}>
+                <Animated.View style={[styles.badge, animatedIconStyle]}>
+                    <MaterialIcons name="check" size={56} color={palette.lime} />
                 </Animated.View>
-
-                <Text style={[styles.title, { color: theme.colors.textPrimary, fontSize: theme.typography.sizes.h2 }]}>{title}</Text>
-                <Text style={[styles.message, { color: theme.colors.textSecondary, fontSize: theme.typography.sizes.body1 }]}>
-                    {message}
-                </Text>
-            </View>
-
-            <View style={styles.footer}>
-                <AppButton
-                    title={buttonLabel}
-                    onPress={handleProceed}
-                />
-            </View>
-        </View>
+                <Text style={styles.title} accessibilityRole="header">{title}</Text>
+                <Text style={styles.message}>{message}</Text>
+            </Card>
+        </Screen>
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        padding: 32,
-        justifyContent: 'center',
-        alignItems: 'center',
+    content: { justifyContent: 'center', paddingBottom: 24 },
+    card: { paddingVertical: 36, paddingHorizontal: 24, gap: 16 },
+    badge: {
+        width: 104, height: 104, borderRadius: radii.full, backgroundColor: palette.limeInk,
+        alignItems: 'center', justifyContent: 'center', marginBottom: 8,
     },
-    content: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        width: '100%',
-    },
-    iconWrapper: {
-        width: 160,
-        height: 160,
-        borderRadius: 80,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 40,
-    },
-    title: {
-        fontWeight: '800',
-        marginBottom: 16,
-        textAlign: 'center',
-    },
-    message: {
-        textAlign: 'center',
-        lineHeight: 26,
-        paddingHorizontal: 20,
-    },
-    footer: {
-        width: '100%',
-        paddingBottom: 40,
-    }
+    title: { fontFamily: fonts.regular, fontSize: 40, lineHeight: 44, letterSpacing: -1.5, color: palette.limeInk },
+    message: { fontFamily: fonts.regular, fontSize: 16, lineHeight: 23, color: palette.limeInk },
+    footer: { paddingHorizontal: 20, paddingBottom: 16 },
 });
 
 export default AuthSuccessScreen;

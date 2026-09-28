@@ -1,156 +1,159 @@
-// src/screens/SplashScreen.js
-// Uses React Native's built-in Animated API for full Expo Go compatibility
-import React, { useEffect, useRef, useState } from 'react';
-import {
-    View, Text, StyleSheet, useWindowDimensions, StatusBar,
-    useColorScheme, Animated, PanResponder, TouchableOpacity, ImageBackground
-} from 'react-native';
-import { BlurView } from 'expo-blur';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { colors, shadows } from '../theme/theme';
+// src/screens/SplashScreen.js — v2 "Soft pastel" splash.
+//
+// Four drifting pastel pills (Markets, Ask AI, Learn, Alerts) over the
+// gradient, a light-weight headline, and a black swipe-to-start pill. Also
+// rendered by AppNavigator, without a navigator, while the saved session
+// restores; a completed swipe then does nothing until the stack swaps in.
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Animated, PanResponder, AccessibilityInfo, Pressable } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
+import { Screen, IconCircle, Chip, accent } from '../components/ui';
+import { palette, fonts, radii } from '../theme/tokens';
+import { useT, useLanguageStore } from '../store/languageStore';
+import { LANGUAGES } from '../i18n/translations';
 
-const BUTTON_WIDTH = 300;
-const BUTTON_HEIGHT = 70;
-const THUMB_SIZE = 56;
-const SWIPE_RANGE = BUTTON_WIDTH - THUMB_SIZE - 16;
+const PILLS = [
+    { tone: 'lime', icon: 'show-chart', labelKey: 'splash_pill_markets', offset: 0 },
+    { tone: 'yellow', icon: 'auto-awesome', labelKey: 'splash_pill_ai', offset: 60 },
+    { tone: 'lavender', icon: 'menu-book', labelKey: 'splash_pill_learn', offset: 18 },
+    { tone: 'coral', icon: 'notifications-none', labelKey: 'splash_pill_alerts', offset: 90 },
+];
 
-const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
+const TRACK_PAD = 8;
+const KNOB = 56;
 
-
-
-// ────────── Main Screen ──────────
 export default function SplashScreen({ navigation }) {
-    const { width, height } = useWindowDimensions();
-    const scheme = useColorScheme();
-    const c = colors(scheme);
+    const { t, language } = useT();
+    const setLanguage = useLanguageStore(state => state.setLanguage);
+    const trackRef = useRef(0);
+    const knobX = useRef(new Animated.Value(0)).current;
+    const drift = useRef(PILLS.map(() => new Animated.Value(0))).current;
+    const done = useRef(false);
 
-    const [swiped, setSwiped] = useState(false);
-
-    // Animations
-    const fadeIn = useRef(new Animated.Value(0)).current;
-    const thumbX = useRef(new Animated.Value(0)).current;
-    const trackColor = useRef(new Animated.Value(0)).current;
-
+    // Slow drift, skipped when the user has asked the OS for reduced motion.
     useEffect(() => {
-        Animated.timing(fadeIn, { toValue: 1, duration: 900, useNativeDriver: true }).start();
-    }, []);
+        let loops = [];
+        AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
+            if (reduce) return;
+            loops = drift.map((v, i) => {
+                const loop = Animated.loop(Animated.sequence([
+                    Animated.timing(v, { toValue: 1, duration: 3000 + i * 400, useNativeDriver: true }),
+                    Animated.timing(v, { toValue: 0, duration: 3000 + i * 400, useNativeDriver: true }),
+                ]));
+                loop.start();
+                return loop;
+            });
+        });
+        return () => loops.forEach(l => l.stop());
+    }, [drift]);
 
-    // Derived values
-    const labelOpacity = thumbX.interpolate({ inputRange: [0, SWIPE_RANGE * 0.45], outputRange: [1, 0], extrapolate: 'clamp' });
-    const trackBg = trackColor.interpolate({ inputRange: [0, 1], outputRange: [c.swipeBtn, scheme === 'dark' ? 'rgba(255,255,255,0.22)' : c.primaryLight] });
-    const fillWidth = thumbX.interpolate({
-        inputRange: [0, SWIPE_RANGE],
-        outputRange: [THUMB_SIZE, THUMB_SIZE + SWIPE_RANGE],
-        extrapolate: 'clamp'
-    });
+    const maxX = () => Math.max(trackRef.current - KNOB - TRACK_PAD * 2, 0);
 
-    const navigateNext = () => {
-        navigation.navigate('Login');
+    const finish = () => {
+        if (done.current) return;
+        done.current = true;
+        Animated.timing(knobX, { toValue: maxX(), duration: 180, useNativeDriver: true }).start(() => {
+            navigation?.navigate('Login');
+            setTimeout(() => { done.current = false; knobX.setValue(0); }, 600);
+        });
     };
 
-    const onSwipeComplete = () => {
-        if (swiped) return;
-        setSwiped(true);
-        Animated.spring(thumbX, { toValue: SWIPE_RANGE, useNativeDriver: false }).start();
-        setTimeout(navigateNext, 350);
-    };
-
-    const panResponder = PanResponder.create({
-        onStartShouldSetPanResponder: () => !swiped,
-        onMoveShouldSetPanResponder: () => !swiped,
-        onPanResponderMove: (_, gs) => {
-            const x = Math.max(0, Math.min(SWIPE_RANGE, gs.dx));
-            thumbX.setValue(x);
-            trackColor.setValue(x / SWIPE_RANGE);
+    const pan = useRef(PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderMove: (_, g) => knobX.setValue(Math.min(Math.max(g.dx, 0), maxX())),
+        onPanResponderRelease: (_, g) => {
+            if (g.dx > maxX() * 0.6) finish();
+            else Animated.spring(knobX, { toValue: 0, useNativeDriver: true }).start();
         },
-        onPanResponderRelease: (_, gs) => {
-            if (gs.dx > SWIPE_RANGE * 0.78) {
-                onSwipeComplete();
-            } else {
-                Animated.spring(thumbX, { toValue: 0, useNativeDriver: false }).start();
-                Animated.timing(trackColor, { toValue: 0, duration: 250, useNativeDriver: false }).start();
-            }
-        },
-    });
+    })).current;
 
     return (
-        <View style={styles.root}>
-            <StatusBar barStyle={scheme === 'dark' ? 'light-content' : 'dark-content'} translucent backgroundColor="transparent" />
-            <ImageBackground source={require('../../assets/splash_bg_new.png')} style={styles.bg} resizeMode="cover">
+        <Screen scroll={false} edges={['top', 'bottom']} contentStyle={styles.content}>
+            <View style={styles.brand}>
+                <View style={styles.logo}><MaterialIcons name="trending-up" size={20} color="#FFFFFF" /></View>
+                <Text style={styles.brandText}>InvestAI</Text>
+            </View>
 
+            {/* First thing a new user sees: pick the app language. */}
+            <View style={styles.langs} accessibilityRole="radiogroup" accessibilityLabel={t('profile_language')}>
+                {LANGUAGES.map(({ code, label }) => (
+                    <Pressable
+                        key={code}
+                        onPress={() => setLanguage(code)}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected: language === code }}
+                    >
+                        <Chip label={label} selected={language === code} />
+                    </Pressable>
+                ))}
+            </View>
 
+            <View style={styles.pills} importantForAccessibility="no-hide-descendants">
+                {PILLS.map((p, i) => {
+                    const a = accent(p.tone);
+                    const translateY = drift[i].interpolate({ inputRange: [0, 1], outputRange: [0, -10] });
+                    return (
+                        <Animated.View key={p.tone} style={[styles.pill, { backgroundColor: a.bg, marginTop: p.offset, transform: [{ translateY }] }]}>
+                            <IconCircle icon={p.icon} color={a.ink} borderColor="rgba(0,0,0,0.15)" size={52} />
+                            <Text style={[styles.pillLabel, { color: a.ink }]}>{t(p.labelKey)}</Text>
+                        </Animated.View>
+                    );
+                })}
+            </View>
 
-                {/* ── Main content ── */}
-                <Animated.View style={[styles.content, { opacity: fadeIn }]}>
-                    <View style={styles.textWrap}>
-                        <Text style={[styles.title, { color: '#FFFFFF', fontSize: width > 400 ? 36 : 30 }]}>
-                            The Most Trusted AI Investment Assistant
-                        </Text>
-                        <Text style={[styles.subtitle, { color: 'rgba(255,255,255,0.85)' }]}>
-                            Navigate the markets with intelligent insights.
-                        </Text>
-                    </View>
+            <View style={{ gap: 12 }}>
+                <Text style={styles.title} accessibilityRole="header">
+                    {t('splash_title_1')}{'\n'}
+                    <Text style={styles.titleLight}>{t('splash_title_2')}</Text>
+                </Text>
+                <Text style={styles.subtitle}>{t('splash_subtitle')}</Text>
+            </View>
 
-                    {/* ── Swipe button ── */}
-                    <View style={styles.btnCenter}>
-                        <AnimatedBlurView intensity={scheme === 'dark' ? 30 : 50} tint={scheme === 'dark' ? 'dark' : 'light'} style={[styles.track, { width: BUTTON_WIDTH, backgroundColor: trackBg, overflow: 'hidden' }]}>
-                            {/* Blue Fill Progress perfectly matching thumb height to stay hidden initially */}
-                            <Animated.View style={{ position: 'absolute', left: 7, top: 7, height: THUMB_SIZE, width: fillWidth, borderRadius: THUMB_SIZE / 2, backgroundColor: 'rgba(25, 118, 210, 0.6)' }} />
-                            <Animated.Text style={[styles.trackLabel, { opacity: labelOpacity }]}>
-                                Swipe to get started
-                            </Animated.Text>
-                            <Animated.View style={[styles.thumbWrap, { transform: [{ translateX: thumbX }] }]} {...panResponder.panHandlers}>
-                                <LinearGradient colors={scheme === 'dark' ? ['#1976D2', '#0D47A1'] : ['#FFFFFF', '#E3F0FF']} style={styles.thumb} start={[0, 0]} end={[1, 1]}>
-                                    <Ionicons name="chevron-forward" size={28} color={scheme === 'dark' ? '#FFF' : c.primary} />
-                                </LinearGradient>
-                            </Animated.View>
-                        </AnimatedBlurView>
-                    </View>
+            <View
+                style={styles.track}
+                onLayout={(e) => { trackRef.current = e.nativeEvent.layout.width; }}
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel={t('splash_swipe')}
+                accessibilityActions={[{ name: 'activate' }]}
+                onAccessibilityAction={finish}
+            >
+                <Text style={styles.trackText}>{t('splash_swipe')}</Text>
+                <Animated.View {...pan.panHandlers} style={[styles.knob, { transform: [{ translateX: knobX }] }]}>
+                    <MaterialIcons name="arrow-forward" size={22} color={palette.ink} />
                 </Animated.View>
-
-
-
-                <View style={[styles.pill, { backgroundColor: scheme === 'dark' ? 'rgba(255,255,255,0.18)' : 'rgba(3,4,94,0.1)' }]} />
-            </ImageBackground>
-        </View>
+            </View>
+            <Text style={styles.footnote}>{t('splash_disclaimer')}</Text>
+        </Screen>
     );
 }
 
+const text = { color: palette.ink, fontFamily: fonts.regular };
+
 const styles = StyleSheet.create({
-    root: { flex: 1, width: '100%', height: '100%' },
-    bg: { flex: 1, width: '100%', height: '100%' },
-
-
-
-    content: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 28, paddingBottom: 64, zIndex: 10 },
-    textWrap: { marginBottom: 44 },
-    title: { fontFamily: 'Roboto_800ExtraBold', lineHeight: 42, fontWeight: '800', letterSpacing: -0.8 },
-    subtitle: { fontSize: 17, marginTop: 14, fontWeight: '500', lineHeight: 26, maxWidth: 310 },
-
-    btnCenter: { alignItems: 'center' },
+    content: { paddingTop: 24, paddingBottom: 16, gap: 20, justifyContent: 'space-between' },
+    brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    logo: { width: 40, height: 40, borderRadius: radii.full, backgroundColor: palette.ink, alignItems: 'center', justifyContent: 'center' },
+    brandText: { ...text, fontFamily: fonts.medium, fontSize: 20 },
+    langs: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    pills: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12, maxHeight: 380 },
+    pill: {
+        width: 72, height: 240, borderRadius: radii.full, paddingVertical: 10,
+        alignItems: 'center', justifyContent: 'space-between',
+    },
+    pillLabel: { fontFamily: fonts.medium, fontSize: 14, transform: [{ rotate: '-90deg' }], width: 120, textAlign: 'center', marginBottom: 50 },
+    title: { ...text, fontSize: 44, lineHeight: 46, letterSpacing: -1.5 },
+    titleLight: { fontFamily: fonts.light, color: palette.muted },
+    subtitle: { ...text, fontSize: 16, lineHeight: 23, color: palette.muted, maxWidth: 320 },
     track: {
-        height: BUTTON_HEIGHT,
-        borderRadius: 40,
-        paddingHorizontal: 7,
+        height: 72, borderRadius: radii.full, backgroundColor: palette.ink, padding: TRACK_PAD,
         justifyContent: 'center',
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.12)',
     },
-    trackLabel: {
-        position: 'absolute',
-        left: THUMB_SIZE + 22,
-        color: '#FFF',
-        fontSize: 15,
-        fontWeight: '700',
-        letterSpacing: 0.4,
+    trackText: { ...text, color: '#FFFFFF', fontSize: 17, textAlign: 'center', paddingLeft: KNOB },
+    knob: {
+        position: 'absolute', left: TRACK_PAD, width: KNOB, height: KNOB, borderRadius: radii.full,
+        backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
     },
-    thumbWrap: { width: THUMB_SIZE, height: THUMB_SIZE },
-    thumb: { flex: 1, borderRadius: THUMB_SIZE / 2, justifyContent: 'center', alignItems: 'center', elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.28, shadowRadius: 5 },
-
-
-
-    pill: { position: 'absolute', bottom: 14, alignSelf: 'center', width: 120, height: 5, borderRadius: 3 },
+    footnote: { ...text, fontSize: 12, color: palette.faint, textAlign: 'center' },
 });

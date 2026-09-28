@@ -1,37 +1,19 @@
-// src/screens/auth/OTPVerificationScreen.js
+// src/screens/auth/OTPVerificationScreen.js — v2 "Soft pastel" code entry.
 import React, { useState, useEffect, useRef } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    TextInput,
-    TouchableOpacity,
-    Dimensions,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    Alert,
-} from 'react-native';
-import Animated, {
-    useSharedValue,
-    useAnimatedStyle,
-    withTiming,
-    withDelay,
-    Easing
-} from 'react-native-reanimated';
+import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 
-// Design System Imports
-import { useAppTheme } from '../../hooks/useAppTheme';
-import AppButton from '../../components/AppButton';
-import AppCard from '../../components/AppCard';
-import AppHeader from '../../components/AppHeader';
+import { Screen, Header, PillButton, Title, Body } from '../../components/ui';
+import TouchableTick from '../../components/TouchableTick';
+import { palette, fonts, radii } from '../../theme/tokens';
 import { authApi } from '../../api/authApi';
-
-const { height } = Dimensions.get('window');
+import { useT } from '../../store/languageStore';
 
 const OTPVerificationScreen = ({ navigation, route }) => {
-    const theme = useAppTheme();
-    const { email, type } = route.params || {};
+    const { t } = useT();
+    // `password` travels with the navigation (memory only, never stored):
+    // the backend sets it on the account at verification, so whoever holds
+    // the emailed code chooses the password, not whoever registered first.
+    const { email, type, password } = route.params || {};
 
     // Backend uses 6 digits
     const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -39,27 +21,12 @@ const OTPVerificationScreen = ({ navigation, route }) => {
     const [loading, setLoading] = useState(false);
     const inputs = useRef([]);
 
-    // Animation values
-    const formSlideUp = useSharedValue(height * 0.5);
-    const formOpacity = useSharedValue(0);
-
     useEffect(() => {
-        formSlideUp.value = withDelay(100, withTiming(0, {
-            duration: 800,
-            easing: Easing.bezier(0.25, 0.1, 0.25, 1)
-        }));
-        formOpacity.value = withDelay(100, withTiming(1, { duration: 600 }));
-
         const interval = setInterval(() => {
             setTimer((prev) => (prev > 0 ? prev - 1 : 0));
         }, 1000);
         return () => clearInterval(interval);
     }, []);
-
-    const animatedFormStyle = useAnimatedStyle(() => ({
-        opacity: formOpacity.value,
-        transform: [{ translateY: formSlideUp.value }],
-    }));
 
     const handleOtpChange = (value, index) => {
         const newOtp = [...otp];
@@ -75,7 +42,7 @@ const OTPVerificationScreen = ({ navigation, route }) => {
     const handleVerify = async () => {
         const fullOtp = otp.join('');
         if (fullOtp.length < 6) {
-            Alert.alert('Error', 'Please enter the complete 6-digit code');
+            Alert.alert(t('auth_error'), t('otp_incomplete'));
             return;
         }
 
@@ -91,24 +58,28 @@ const OTPVerificationScreen = ({ navigation, route }) => {
                 // Marks is_email_verified locally. No token comes back, so the
                 // user logs in next — /auth/login is what mints the Supabase
                 // access token the API verifies.
-                await authApi.verifyOTP(email, fullOtp);
+                if (!password) {
+                    Alert.alert(t('otp_signin_again_title'), t('otp_signin_again_msg'));
+                    return;
+                }
+                await authApi.verifyOTP(email, fullOtp, password);
                 navigation.reset({
                     index: 0,
                     routes: [{
                         name: 'AuthSuccess',
                         params: {
-                            title: 'Email Verified!',
-                            message: 'Your email has been confirmed. Sign in to start using InvestAI.',
-                            buttonLabel: 'Continue to Login',
+                            title: t('otp_verified_title'),
+                            message: t('otp_verified_msg'),
+                            buttonLabel: t('otp_continue_login'),
                         },
                     }],
                 });
             }
         } catch (error) {
             const msg = error?.response?.data?.detail
-                || (error?.response ? 'Verification failed. Please check the code.'
-                    : 'Cannot reach the server. Check your connection.');
-            Alert.alert('Verification Error', msg);
+                || (error?.response ? t('otp_failed')
+                    : t('auth_network_error'));
+            Alert.alert(t('otp_error_title'), msg);
         } finally {
             setLoading(false);
         }
@@ -124,150 +95,94 @@ const OTPVerificationScreen = ({ navigation, route }) => {
                 await authApi.resendOTP(email);
             }
             setTimer(59);
-            Alert.alert('Sent', 'A new verification code has been sent to your email.');
+            Alert.alert(t('otp_sent_title'), t('otp_sent_msg'));
         } catch (error) {
             const msg = error?.response?.data?.detail
-                || 'Failed to resend code. Please try again later.';
-            Alert.alert('Error', msg);
+                || t('otp_resend_failed');
+            Alert.alert(t('auth_error'), msg);
         }
     };
 
     return (
         <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={[styles.container, { backgroundColor: theme.colors.background }]}
+            style={styles.flex}
         >
-            <AppHeader onBack={() => navigation.goBack()} transparent />
+            <Screen edges={['top', 'bottom']} contentStyle={styles.content}>
+                <Header onBack={() => navigation.goBack()} backLabel={t('auth_back')} />
 
-            <ScrollView
-                contentContainerStyle={styles.scrollContent}
-                bounces={false}
-                showsVerticalScrollIndicator={false}
-            >
-                <View style={styles.headerSpacer} />
+                <View style={styles.intro}>
+                    <Title style={styles.title}>{t('otp_title')}</Title>
+                    <Body style={styles.muted}>
+                        {t('otp_sent_to')}{'\n'}
+                        <Text style={styles.email}>{email}</Text>
+                    </Body>
+                </View>
 
-                <Animated.View style={[styles.formWrapper, animatedFormStyle]}>
-                    <AppCard style={styles.formContainer}>
-                        <View style={styles.formHeader}>
-                            <Text style={[styles.title, { color: theme.colors.textPrimary, fontSize: theme.typography.sizes.h3 }]}>Verification</Text>
-                            <Text style={[styles.subText, { color: theme.colors.textSecondary }]}>
-                                Enter the 6-digit code sent to{"\n"}
-                                <Text style={{ fontWeight: '700', color: theme.colors.primary }}>{email}</Text>
-                            </Text>
-                        </View>
-
-                        <View style={styles.otpContainer}>
-                            {otp.map((digit, index) => (
-                                <TextInput
-                                    key={index}
-                                    ref={(ref) => (inputs.current[index] = ref)}
-                                    style={[
-                                        styles.otpInput,
-                                        {
-                                            backgroundColor: theme.colors.field,
-                                            color: theme.colors.textPrimary,
-                                            borderColor: digit ? theme.colors.primary : theme.colors.border,
-                                            borderWidth: theme.isDark ? 0 : 1,
-                                            borderRadius: theme.radii.lg,
-                                        }
-                                    ]}
-                                    maxLength={1}
-                                    keyboardType="number-pad"
-                                    value={digit}
-                                    onChangeText={(value) => handleOtpChange(value, index)}
-                                    onKeyPress={({ nativeEvent }) => {
-                                        if (nativeEvent.key === 'Backspace' && !digit && index > 0) {
-                                            inputs.current[index - 1].focus();
-                                        }
-                                    }}
-                                />
-                            ))}
-                        </View>
-
-                        <View style={styles.timerContainer}>
-                            <Text style={[styles.timerText, { color: theme.colors.textSecondary }]}>
-                                {timer > 0 ? `Resend code in 00:${timer.toString().padStart(2, '0')}` : "Didn't receive code?"}
-                            </Text>
-                            {timer === 0 && (
-                                <TouchableOpacity onPress={handleResend}>
-                                    <Text style={[styles.resendLink, { color: theme.colors.primary }]}> Resend Now</Text>
-                                </TouchableOpacity>
-                            )}
-                        </View>
-
-                        <AppButton
-                            title="Verify & Proceed"
-                            onPress={handleVerify}
-                            loading={loading}
-                            style={styles.verifyButton}
-                            disabled={otp.some(d => !d) || loading}
+                <View style={styles.cells}>
+                    {otp.map((digit, index) => (
+                        <TextInput
+                            key={index}
+                            ref={(ref) => (inputs.current[index] = ref)}
+                            style={[styles.cell, digit ? styles.cellFilled : null]}
+                            accessibilityLabel={t('otp_digit_label').replace('{n}', index + 1)}
+                            maxLength={1}
+                            keyboardType="number-pad"
+                            value={digit}
+                            onChangeText={(value) => handleOtpChange(value, index)}
+                            onKeyPress={({ nativeEvent }) => {
+                                if (nativeEvent.key === 'Backspace' && !digit && index > 0) {
+                                    inputs.current[index - 1].focus();
+                                }
+                            }}
                         />
-                    </AppCard>
-                </Animated.View>
-            </ScrollView>
+                    ))}
+                </View>
+
+                <View style={styles.timerRow}>
+                    <Text style={styles.timerText}>
+                        {timer > 0 ? t('otp_resend_in').replace('{time}', `00:${timer.toString().padStart(2, '0')}`) : t('otp_not_received')}
+                    </Text>
+                    {timer === 0 && (
+                        <TouchableTick style={styles.resend} onPress={handleResend} accessibilityRole="button">
+                            <Text style={styles.resendText}>{t('otp_resend_now')}</Text>
+                        </TouchableTick>
+                    )}
+                </View>
+
+                <View style={styles.flex} />
+
+                <PillButton
+                    title={t('otp_verify_proceed')}
+                    onPress={handleVerify}
+                    loading={loading}
+                    disabled={otp.some(d => !d) || loading}
+                />
+            </Screen>
         </KeyboardAvoidingView>
     );
 };
 
+const text = { color: palette.ink, fontFamily: fonts.regular };
+
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
+    flex: { flex: 1 },
+    content: { flexGrow: 1, paddingBottom: 24, gap: 32 },
+    intro: { gap: 10 },
+    title: { fontSize: 42, lineHeight: 44, letterSpacing: -1.5 },
+    muted: { color: palette.muted },
+    email: { fontFamily: fonts.medium, color: palette.ink },
+    cells: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
+    cell: {
+        flex: 1, maxWidth: 52, height: 64, borderRadius: radii.full,
+        backgroundColor: 'rgba(255,255,255,0.92)', borderWidth: 1.5, borderColor: 'transparent',
+        textAlign: 'center', fontSize: 24, fontFamily: fonts.medium, color: palette.ink,
     },
-    scrollContent: {
-        flexGrow: 1,
-    },
-    headerSpacer: {
-        height: height * 0.15,
-    },
-    formWrapper: {
-        flex: 1,
-    },
-    formContainer: {
-        flex: 1,
-        borderTopLeftRadius: 48,
-        borderTopRightRadius: 48,
-        paddingHorizontal: 32,
-        paddingTop: 48,
-    },
-    formHeader: {
-        marginBottom: 40,
-    },
-    title: {
-        fontWeight: '700',
-        marginBottom: 12,
-    },
-    subText: {
-        fontSize: 16,
-        lineHeight: 24,
-    },
-    otpContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 32,
-    },
-    otpInput: {
-        width: 48,
-        height: 56,
-        textAlign: 'center',
-        fontSize: 22,
-        fontWeight: '700',
-    },
-    timerContainer: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        marginBottom: 40,
-    },
-    timerText: {
-        fontSize: 15,
-    },
-    resendLink: {
-        fontSize: 15,
-        fontWeight: '700',
-    },
-    verifyButton: {
-        marginTop: 'auto',
-        marginBottom: 20,
-    }
+    cellFilled: { borderColor: palette.ink },
+    timerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', gap: 4, minHeight: 44 },
+    timerText: { ...text, fontSize: 15, color: palette.muted },
+    resend: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: radii.full, backgroundColor: '#FFFFFF' },
+    resendText: { ...text, fontFamily: fonts.medium, fontSize: 15 },
 });
 
 export default OTPVerificationScreen;
