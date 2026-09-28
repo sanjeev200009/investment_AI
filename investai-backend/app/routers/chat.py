@@ -11,15 +11,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 from typing import AsyncGenerator, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.database import SessionLocal
 from app.dependencies import get_current_user, get_db
+from app.rate_limit import limit
 from app.models.chat import ChatMessage, ChatSession
 from app.models.user import User
 from app.services.agent import get_or_create_session, stream_agent, run_agent
@@ -55,7 +58,7 @@ class MessageOut(BaseModel):
 
 
 class SendMessageRequest(BaseModel):
-    message: str
+    message: str = Field(min_length=1, max_length=2000)
     session_id: Optional[int] = None   # if None, uses or creates the active session
     language: str = "en"               # en | si | ta
 
@@ -156,14 +159,16 @@ def get_messages(
     if not session:
         raise HTTPException(404, "Session not found")
 
+    # The latest `limit` messages, returned oldest first. Ordering ascending
+    # before the limit returned the conversation's opening instead of its end.
     messages = (
         db.query(ChatMessage)
         .filter(ChatMessage.session_id == session_id)
-        .order_by(ChatMessage.timestamp.asc())
+        .order_by(ChatMessage.timestamp.desc())
         .limit(limit)
         .all()
     )
-    return messages
+    return list(reversed(messages))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -175,6 +180,7 @@ async def stream_message(
     body: SendMessageRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    _rl: None = Depends(limit("chat", 10, 60)),
 ):
     """
     Send a message to the AI agent and stream the response via SSE.
@@ -212,19 +218,38 @@ async def stream_message(
     if not session:
         raise HTTPException(404, "Session not found")
 
+    user_id = user.user_id
+
+    # FastAPI 0.106-0.117 closes yield-dependencies (get_db) BEFORE a
+    # StreamingResponse body runs, which detached `user` and made every stream
+    # fail with DetachedInstanceError. The generator therefore owns its session
+    # and re-loads the user inside it.
     async def event_generator() -> AsyncGenerator[str, None]:
+        stream_db = SessionLocal()
+        # Evaluation plan E6: the latency middleware stops timing when the
+        # headers go out, so time the answer itself here.
+        started = time.monotonic()
+        first_token_ms = None
         try:
+            stream_user = stream_db.get(User, user_id)
             async for chunk in stream_agent(
                 user_message=body.message,
                 session_id=session_id,
-                db=db,
-                user=user,
+                db=stream_db,
+                user=stream_user,
             ):
+                if first_token_ms is None and '"type": "token"' in chunk:
+                    first_token_ms = int((time.monotonic() - started) * 1000)
                 yield chunk
+            logger.info('chat_timing first_token_ms=%s total_ms=%d',
+                        first_token_ms, int((time.monotonic() - started) * 1000))
         except Exception as e:
             logger.exception("Stream error: %s", e)
+            stream_db.rollback()
             import json
-            yield f"data: {json.dumps({'type': 'error', 'detail': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'detail': 'The assistant could not answer right now. Please try again.'})}\n\n"
+        finally:
+            stream_db.close()
 
     return StreamingResponse(
         event_generator(),
@@ -246,6 +271,7 @@ async def send_message(
     body: SendMessageRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    _rl: None = Depends(limit("chat", 10, 60)),
 ):
     """
     Send a message and wait for the full response (non-streaming).
@@ -274,7 +300,7 @@ async def send_message(
         )
     except Exception as e:
         logger.exception("Agent error: %s", e)
-        raise HTTPException(500, f"Agent error: {str(e)}")
+        raise HTTPException(500, "The assistant could not answer right now. Please try again.")
 
     # Get the saved message_id
     last_msg = (

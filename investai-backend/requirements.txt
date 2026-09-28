@@ -1,20 +1,20 @@
-# ■■ Web Framework ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+# ■■ Web Framework ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 fastapi==0.111.0
 uvicorn[standard]==0.29.0
 python-multipart==0.0.9
-# ■■ Database ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+# ■■ Database ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 sqlalchemy==2.0.30
 psycopg2-binary==2.9.9
 alembic==1.13.1
-# ■■ Validation & Settings ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+# ■■ Validation & Settings ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 pydantic==2.7.1
 pydantic-settings==2.2.1
 python-dotenv==1.0.1
-# ■■ Auth / Security ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+# ■■ Auth / Security ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 supabase==2.4.3
-# ■■ HTTP / Scraping ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+# ■■ HTTP / Scraping ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 httpx==0.27.0
 beautifulsoup4==4.12.3
 lxml==5.2.2
@@ -23,25 +23,22 @@ lxml==5.2.2
 # snapshots in exchange-local time and must not depend on a worker's transitive
 # dependency to do so.
 tzdata==2026.1
-# ■■ Celery / Redis ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+# ■■ Celery / Redis ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 celery==5.4.0
 redis==5.0.4
 flower==2.0.1
 firebase-admin==6.5.0
-# ■■ Sentiment Analysis ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+# ■■ Sentiment Analysis ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 vaderSentiment==3.3.2
-transformers==4.41.1
-# torch: uncomment for GPU/CPU inference (large download)
-# torch==2.3.0 --index-url https://download.pytorch.org/whl/cpu
-# ■■ AI Agent ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-anthropic==0.28.0 # NEW — Claude API SDK
-google-generativeai==0.5.4
-groq==0.9.0
+# ■■ AI Agent ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+# One client library serves every provider: NVIDIA NIM and OpenRouter are both
+# OpenAI-compatible, so app/services/llm.py needs only this. The anthropic /
+# google-generativeai / groq SDKs and transformers (~2 GB with its torch
+# dependencies) were installed for a multi-provider layer that was never
+# wired in; removed in I-21. If a native provider is ever added, re-pin it
+# here together with the import that uses it.
 openai==1.30.1
-# ■■ Reliability & Logging ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-tenacity==8.3.0
-structlog==24.1.0
-# ■■ Dev / Testing ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+# ■■ Dev / Testing ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 pytest==8.2.1
 pytest-asyncio==0.23.7
 httpx==0.27.0 # also used for test client
