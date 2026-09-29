@@ -228,6 +228,9 @@ async def _async_send_push(
     from app.database import SessionLocal
     from app.services.fcm import send_push_to_user
 
+    # market_data_latest.change_pct is nullable; `None >= 0` raised TypeError
+    # and the push was retried to death while the alert row sat there silent.
+    change_pct = change_pct or 0.0
     db = SessionLocal()
     try:
         title = f"📊 {symbol} Alert Triggered"

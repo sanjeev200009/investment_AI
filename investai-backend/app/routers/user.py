@@ -7,7 +7,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from pydantic import BaseModel, Field
 import logging
 
+from app.config import get_settings
 from app.dependencies import get_db, get_current_user
+from app.rate_limit import limit
 from app.models.user import User, RiskProfile
 from app.schemas.auth import UserOut
 from app.services.risk_scoring import (
@@ -151,3 +153,53 @@ def update_risk_profile(
         preferred_language=result.preferred_language,
         sectors=result.sectors,
     )
+
+
+@router.delete('', status_code=204,
+               dependencies=[Depends(limit('delete_account', 3, 60))])
+def delete_account(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Permanently delete the signed-in user's account and all their data.
+
+    Supabase Auth goes first: if it fails the local data is untouched and the
+    caller can retry (503). The users row goes second; every table that
+    references it is ON DELETE CASCADE. OTP codes and reset tokens are keyed by
+    email rather than a FK, so they are removed explicitly.
+    """
+    from supabase import create_client
+    from gotrue.errors import AuthApiError
+    from sqlalchemy import func
+
+    from app.models.otp import OTPCode, PasswordResetToken
+
+    settings = get_settings()
+    user_id, email = user.user_id, (user.email or '').lower()
+    try:
+        admin = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+        admin.auth.admin.delete_user(str(user_id))
+    except AuthApiError as exc:
+        # Already gone (e.g. a retry after the local delete failed): carry on.
+        if exc.status != 404:
+            logger.error('Supabase delete failed for %s: %s', user_id, exc)
+            raise HTTPException(503, 'Could not delete your account. Please try again.')
+    except Exception as exc:
+        logger.error('Supabase delete failed for %s: %s', user_id, exc)
+        raise HTTPException(503, 'Could not delete your account. Please try again.')
+
+    try:
+        db.query(OTPCode).filter(func.lower(OTPCode.email) == email).delete(
+            synchronize_session=False)
+        db.query(PasswordResetToken).filter(
+            func.lower(PasswordResetToken.email) == email).delete(
+            synchronize_session=False)
+        db.query(User).filter(User.user_id == user_id).delete(
+            synchronize_session=False)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        # The sign-in identity is already gone, so this row is unreachable; a
+        # retry with a still-valid access token finishes the job.
+        logger.exception('Local delete failed for %s after Supabase delete', user_id)
+        raise HTTPException(503, 'Could not delete your account. Please try again.')

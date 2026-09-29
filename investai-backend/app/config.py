@@ -46,6 +46,9 @@ class Settings(BaseSettings):
 
     # Firebase Cloud Messaging
     FIREBASE_CREDENTIALS_PATH: str = 'firebase-key.json'
+    # The service-account JSON itself, for hosts where the key cannot live on
+    # disk. Wins over the path. A setting (not os.getenv) so .env works too.
+    FIREBASE_CREDENTIALS_JSON: str = ''
     FCM_SERVER_KEY: str = ''
 
     # AI Agent
@@ -70,7 +73,9 @@ class Settings(BaseSettings):
     # needs short prose, but must not be a reasoning model that starves its own
     # output budget.
     NVIDIA_AGENT_MODEL: str = 'openai/gpt-oss-20b'
-    NVIDIA_UTILITY_MODEL: str = 'nvidia/nemotron-3-nano-30b-a3b'
+    # nemotron-3-nano reached end of life on 2026-09-01 (HTTP 410); gpt-oss-20b
+    # already serves the agent and summarises correctly with reasoning set low.
+    NVIDIA_UTILITY_MODEL: str = 'openai/gpt-oss-20b'
     OPENROUTER_AGENT_MODEL: str = 'minimax/minimax-m3:free'
     OPENROUTER_UTILITY_MODEL: str = 'minimax/minimax-m3:free'
 

@@ -45,12 +45,12 @@ class Role(str, Enum):
 
 
 # HTTP statuses meaning "this provider cannot serve the request right now" —
-# hand off to the fallback. 402 = out of credits, 404 = model retired,
+# hand off to the fallback. 402 = out of credits, 404/410 = model retired,
 # 429 = rate limited, 401/403 = key rejected, 5xx = provider fault.
 #
 # 400 is deliberately absent: a malformed request is *our* bug and will fail on
 # every provider. Failing over would burn the fallback's quota and hide the fault.
-FAILOVER_STATUSES = frozenset({401, 402, 403, 404, 408, 409, 413, 429,
+FAILOVER_STATUSES = frozenset({401, 402, 403, 404, 408, 409, 410, 413, 429,
                                500, 502, 503, 504, 529})
 
 

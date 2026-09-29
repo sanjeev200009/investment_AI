@@ -27,7 +27,7 @@ def create_access_token(subject: str, expires_delta: timedelta | None = None) ->
 
 import hashlib
 import secrets
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.otp import PasswordResetToken
@@ -76,10 +76,16 @@ def create_reset_token(db: Session, email: str) -> str:
     return token
 
 
-def verify_reset_token(db: Session, token: str) -> str | None:
+def verify_reset_token(db: Session, token: str,
+                       consume: bool = True) -> str | None:
     """Consume a reset token and return the email it was issued for.
 
     Returns None if the token is unknown, already used, or expired.
+
+    ``consume=False`` only checks it, so /auth/reset-password can update the
+    Supabase password first and spend the token after — a Supabase failure then
+    leaves the user able to retry instead of restarting the reset (the same
+    pattern as ``verify_otp``).
 
     The delete and the expiry check are one statement with RETURNING, so the
     token is spent atomically: two concurrent requests carrying the same token
@@ -87,6 +93,15 @@ def verify_reset_token(db: Session, token: str) -> str | None:
     """
     if not token:
         return None
+
+    if not consume:
+        row = db.execute(
+            select(PasswordResetToken.email).where(
+                PasswordResetToken.token_hash == _hash_token(token),
+                PasswordResetToken.expires_at > datetime.now(timezone.utc),
+            )
+        ).first()
+        return row[0] if row else None
 
     row = db.execute(
         delete(PasswordResetToken)

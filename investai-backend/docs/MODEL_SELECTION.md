@@ -63,7 +63,14 @@ Measured on the full round trip (tool call → tool result → grounded answer):
 only candidate whose streamed tool-call deltas reassembled into valid JSON on
 every attempt.
 
-## UTILITY role → `nvidia/nemotron-3-nano-30b-a3b` (NVIDIA)
+## UTILITY role → `openai/gpt-oss-20b` (NVIDIA), since 2026-09-29
+
+`nvidia/nemotron-3-nano-30b-a3b` reached end of life on 2026-09-01 and now returns
+HTTP 410. The utility role moved to `openai/gpt-oss-20b` (already the agent model,
+reasoning effort set to low for utility calls), and 410 now fails over to
+OpenRouter like 404. The original measurements below are kept for the record.
+
+### Original choice: `nvidia/nemotron-3-nano-30b-a3b`
 
 This role nearly shipped a silent data-quality bug. Current free models are
 *reasoning* models: they spend tokens on hidden reasoning before emitting visible
