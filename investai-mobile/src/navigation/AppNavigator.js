@@ -6,13 +6,14 @@
 // stack to a user the backend did not recognise.
 import React, { useEffect, useState } from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
+import { stackMotion, revealMotion } from '../theme/motion';
 import TabNavigator from './TabNavigator';
 import AuthNavigator from './AuthNavigator';
 import SplashScreen from '../screens/SplashScreen';
 import AssessmentScreen from '../screens/onboarding/AssessmentScreen';
 
 import { useAuthStore } from '../store/authStore';
-import { Screen, Loading } from '../components/ui';
+import { ScreenLoader } from '../components/ui';
 
 const Stack = createStackNavigator();
 
@@ -37,20 +38,16 @@ const SignedInStack = () => {
     }, [userId, checkProfileSetup]);
 
     if (isChecking) {
-        return (
-            <Screen scroll={false} contentStyle={{ justifyContent: 'center' }}>
-                <Loading />
-            </Screen>
-        );
+        return <ScreenLoader />;
     }
 
     return (
         <Stack.Navigator
             initialRouteName={hasCompletedProfileSetup ? 'MainTab' : 'ProfileSetup'}
-            screenOptions={{ headerShown: false }}
+            screenOptions={stackMotion}
         >
             <Stack.Screen name='ProfileSetup' component={AssessmentScreen} />
-            <Stack.Screen name='MainTab' component={TabNavigator} />
+            <Stack.Screen name='MainTab' component={TabNavigator} options={revealMotion} />
         </Stack.Navigator>
     );
 };

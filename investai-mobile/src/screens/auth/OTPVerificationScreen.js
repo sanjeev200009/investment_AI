@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 
 import { Screen, Header, PillButton, Title, Body } from '../../components/ui';
+import { PillPal } from '../../components/PillPals';
 import TouchableTick from '../../components/TouchableTick';
 import { palette, fonts, radii } from '../../theme/tokens';
 import { authApi } from '../../api/authApi';
@@ -110,6 +111,7 @@ const OTPVerificationScreen = ({ navigation, route }) => {
         >
             <Screen edges={['top', 'bottom']} contentStyle={styles.content}>
                 <Header onBack={() => navigation.goBack()} backLabel={t('auth_back')} />
+                <View style={styles.pal}><PillPal tone="yellow" pose="wave" badge="mark-email-read" size={170} /></View>
 
                 <View style={styles.intro}>
                     <Title style={styles.title}>{t('otp_title')}</Title>
@@ -154,6 +156,7 @@ const OTPVerificationScreen = ({ navigation, route }) => {
 
                 <PillButton
                     title={t('otp_verify_proceed')}
+                    knob="yellow"
                     onPress={handleVerify}
                     loading={loading}
                     disabled={otp.some(d => !d) || loading}
@@ -169,6 +172,7 @@ const styles = StyleSheet.create({
     flex: { flex: 1 },
     content: { flexGrow: 1, paddingBottom: 24, gap: 32 },
     intro: { gap: 10 },
+    pal: { alignItems: 'center', marginVertical: -12 },
     title: { fontSize: 42, lineHeight: 44, letterSpacing: -1.5 },
     muted: { color: palette.muted },
     email: { fontFamily: fonts.medium, color: palette.ink },

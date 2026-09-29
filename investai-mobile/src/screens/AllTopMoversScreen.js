@@ -9,6 +9,7 @@ import { MarketRow, detailParams } from './StockBrowseScreen';
 import api from '../api/axiosConfig';
 import { useT } from '../store/languageStore';
 import { palette, radii } from '../theme/tokens';
+import { Rise, SkeletonRows } from '../components/Motion';
 
 export default function AllTopMoversScreen({ navigation }) {
   const { t } = useT();
@@ -55,7 +56,7 @@ export default function AllTopMoversScreen({ navigation }) {
       <Header title={t('movers_title')} onBack={() => navigation.goBack()} backLabel={t('movers_back')} />
 
       {loading ? (
-        <Loading />
+        <SkeletonRows count={8} label={t('loading')} />
       ) : error !== null ? (
         <EmptyState icon="cloud-off" tone="coral" message={error === 'NETWORK_ERROR' ? t('movers_network_error') : error} />
       ) : (
@@ -68,7 +69,7 @@ export default function AllTopMoversScreen({ navigation }) {
           // One glass surface built from its rows: the first and last round the
           // corners, and each row below the first carries the hairline divider.
           renderItem={({ item: stock, index }) => (
-            <View style={[styles.cell, index === 0 && styles.cellFirst, index === last && styles.cellLast]}>
+            <Rise index={index} style={[styles.cell, index === 0 && styles.cellFirst, index === last && styles.cellLast]}>
               {index > 0 && <View style={styles.divider} />}
               <MarketRow
                 stock={stock}
@@ -77,7 +78,7 @@ export default function AllTopMoversScreen({ navigation }) {
                 a11yLabel={t('home_open_symbol').replace('{symbol}', stock.symbol)}
                 onPress={() => navigation.navigate('StockDetail', detailParams(stock))}
               />
-            </View>
+            </Rise>
           )}
         />
       )}

@@ -99,6 +99,7 @@ export default function RulesScreen({ route, navigation }) {
     } catch (err) {
       console.warn('[Rules] delete failed:', err?.message || err);
       setRules(snapshot);
+      Alert.alert(t('profile_error_title'), t('error_generic'));
     }
   };
 

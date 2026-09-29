@@ -1,8 +1,10 @@
 # app/routers/auth.py
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.security import HTTPAuthorizationCredentials
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from supabase import create_client
+from gotrue.errors import AuthRetryableError
 from datetime import timedelta
 import logging
 
@@ -44,6 +46,11 @@ def _find_supabase_user_id(admin_client, email: str):
             return None
         page += 1
 
+def _user_by_email(db: Session, email: str):
+    # Request emails arrive lowercased (schemas/auth.py); lower() the column too
+    # so rows stored mixed-case before that normalisation are still found.
+    return db.query(User).filter(func.lower(User.email) == email.lower()).first()
+
 def get_supabase():
     return create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
 
@@ -61,7 +68,7 @@ def register(
     admin_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
 
     # Check if email already registered and verified
-    existing = db.query(User).filter(User.email == payload.email).first()
+    existing = _user_by_email(db, payload.email)
     if existing and existing.is_email_verified:
         raise HTTPException(400, 'Email already registered and verified')
 
@@ -165,7 +172,7 @@ def verify_registration_otp(
                       consume=False):
         raise HTTPException(400, 'Invalid or expired OTP. Request a new one.')
 
-    user = db.query(User).filter(User.email == payload.email).first()
+    user = _user_by_email(db, payload.email)
     if not user:
         raise HTTPException(404, 'User not found')
 
@@ -208,7 +215,7 @@ def resend_otp(
     """Resend registration OTP if user did not receive it."""
     # Same answer whether or not the email exists or is verified, so this
     # endpoint cannot be used to discover who has an account.
-    user = db.query(User).filter(User.email == payload.email).first()
+    user = _user_by_email(db, payload.email)
     if user and not user.is_email_verified:
         try:
             otp = create_otp(db, payload.email, purpose='register')
@@ -225,7 +232,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     Returns Supabase JWT for authenticated access.
     """
     # Check verification BEFORE calling Supabase
-    user = db.query(User).filter(User.email == payload.email).first()
+    user = _user_by_email(db, payload.email)
     if not user:
         raise HTTPException(401, 'Invalid email or password')
     if not user.is_email_verified:
@@ -237,6 +244,9 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
             'email': payload.email,
             'password': payload.password,
         })
+    except AuthRetryableError:
+        # Network failure or Supabase 5xx: not the user's password.
+        raise HTTPException(503, 'Sign-in is temporarily unavailable. Please try again.')
     except Exception:
         raise HTTPException(401, 'Invalid email or password')
 
@@ -270,6 +280,10 @@ def refresh_session(payload: RefreshRequest, db: Session = Depends(get_db)):
     supabase = get_supabase()
     try:
         auth_response = supabase.auth.refresh_session(payload.refresh_token)
+    except AuthRetryableError:
+        # Supabase unreachable. 503, not 401: a 401 makes the app sign the user
+        # out, which an outage is no reason to do.
+        raise HTTPException(503, 'Sign-in is temporarily unavailable. Please try again.')
     except Exception:
         # Wrong, revoked, or already-redeemed token. 401 so the client's
         # interceptor treats it as "session over" and signs out.
@@ -280,8 +294,7 @@ def refresh_session(payload: RefreshRequest, db: Session = Depends(get_db)):
 
     # Keep full_name authoritative from our own users table rather than from
     # Supabase metadata, which registration does not keep in step.
-    user = db.query(User).filter(
-        User.email == auth_response.user.email).first()
+    user = _user_by_email(db, auth_response.user.email or '')
 
     return TokenResponse(
         access_token=auth_response.session.access_token,
@@ -303,7 +316,7 @@ def forgot_password(
     Step 1: User enters their email.
     Sends 6-digit OTP for password reset.
     """
-    user = db.query(User).filter(User.email == payload.email).first()
+    user = _user_by_email(db, payload.email)
     # Always return success message for security (don't reveal user existence)
     if user:
         try:
@@ -347,14 +360,15 @@ def reset_password(
     Step 3: User submits new password + reset_token.
     Updates password in Supabase Auth.
     """
-    # Verify the reset token
-    email = verify_reset_token(db, payload.reset_token)
+    # Check the token without spending it; it is spent only once Supabase has
+    # accepted the new password, so a failure below can be retried.
+    email = verify_reset_token(db, payload.reset_token, consume=False)
     if not email or email != payload.email:
         raise HTTPException(400, 'Invalid or expired reset token')
 
     # Use Supabase Admin to update the password
     admin = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
-    user = db.query(User).filter(User.email == email).first()
+    user = _user_by_email(db, email)
     if not user:
         raise HTTPException(404, 'User not found')
 
@@ -367,6 +381,7 @@ def reset_password(
         logger.error('Password update failed for %s: %s', email, e)
         raise HTTPException(503, 'Could not update the password. Please try again.')
 
+    verify_reset_token(db, payload.reset_token)
     return {'message': 'Password reset successfully. You can now log in.'}
 
 @router.get('/me', response_model=UserOut)

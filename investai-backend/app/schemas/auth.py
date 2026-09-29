@@ -1,13 +1,20 @@
-from pydantic import BaseModel, EmailStr, Field
+from typing import Annotated
+
+from pydantic import AfterValidator, BaseModel, EmailStr, Field
 from uuid import UUID
 
+# EmailStr lowercases only the domain. Supabase stores the whole address
+# lowercased, and our lookups are exact matches, so "John@x.com" at register
+# and "john@x.com" at login used to be two different accounts to us.
+Email = Annotated[EmailStr, AfterValidator(str.lower)]
+
 class RegisterRequest(BaseModel):
-    email: EmailStr
+    email: Email
     password: str = Field(min_length=8)
     full_name: str = Field(min_length=2)
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: Email
     password: str
 
 class TokenResponse(BaseModel):
@@ -27,21 +34,21 @@ class RefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=1)
 
 class OTPVerifyRequest(BaseModel):
-    email: EmailStr
+    email: Email
     otp_code: str = Field(min_length=6, max_length=6)
     # Set on the Supabase account at verification, not at registration; see
     # routers/auth.py verify_registration_otp.
     password: str = Field(min_length=8)
 
 class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
+    email: Email
 
 class VerifyResetOTPRequest(BaseModel):
-    email: EmailStr
+    email: Email
     otp_code: str = Field(min_length=6, max_length=6)
 
 class ResetPasswordRequest(BaseModel):
-    email: EmailStr
+    email: Email
     reset_token: str
     new_password: str = Field(min_length=8)
 

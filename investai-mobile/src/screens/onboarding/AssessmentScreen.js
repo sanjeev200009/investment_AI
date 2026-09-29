@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, Animated, PanResponder, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Screen, Header, PillButton, Title, Label } from '../../components/ui';
+import { PillPal } from '../../components/PillPals';
 import TouchableTick from '../../components/TouchableTick';
 import { palette, fonts, radii } from '../../theme/tokens';
 import { useAuthStore } from '../../store/authStore';
@@ -122,7 +123,10 @@ const RiskSlider = ({ value = 50, onChange }) => {
   );
 };
 
-export default function AssessmentScreen({ navigation }) {
+export default function AssessmentScreen({ navigation, route }) {
+  // Also opened from Profile to retake it; that copy returns to Profile when
+  // done instead of entering the app, and has nothing to skip.
+  const isRetake = route?.name === 'RetakeAssessment';
   // Identity comes from the backend user row, not Clerk. `user.user_id` is the
   // same UUID the API authorises against, so the per-user
   // `profile_setup_done_<id>` flag now keys on the real account.
@@ -192,6 +196,10 @@ export default function AssessmentScreen({ navigation }) {
       });
 
       await setAssessmentResults(payload);
+      if (isRetake) {
+        navigation.goBack();
+        return;
+      }
       await setProfileSetupDone(user?.user_id);
       navigation.reset({ index: 0, routes: [{ name: 'MainTab' }] });
     } catch (err) {
@@ -287,18 +295,21 @@ export default function AssessmentScreen({ navigation }) {
       }
     >
       <Header
-        onBack={() => navigation.goBack()}
+        onBack={navigation.canGoBack() ? () => navigation.goBack() : null}
         backLabel={t('auth_back')}
-        right={
+        right={isRetake ? null : (
           <TouchableTick onPress={handleSkip} style={styles.skip} accessibilityRole="button">
             <Text style={styles.skipText}>{t('assess_skip')}</Text>
           </TouchableTick>
-        }
+        )}
       />
 
-      <View style={styles.intro}>
-        <Label>{t('assess_header')}</Label>
-        <Title style={styles.title}>{t('assess_subtitle')}</Title>
+      <View style={styles.introRow}>
+        <View style={[styles.intro, { flex: 1 }]}>
+          <Label>{t('assess_header')}</Label>
+          <Title style={styles.title}>{t('assess_subtitle')}</Title>
+        </View>
+        <PillPal tone="lavender" mood="calm" badge="quiz" size={120} />
       </View>
 
       {/* Progress */}
@@ -323,6 +334,7 @@ const WHITE = 'rgba(255,255,255,0.92)';
 const styles = StyleSheet.create({
   content: { paddingBottom: 24, gap: 24 },
   intro: { gap: 6 },
+  introRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   title: { fontSize: 40, lineHeight: 44, letterSpacing: -1.5 },
   skip: {
     minHeight: 44, paddingHorizontal: 20, borderRadius: radii.full,

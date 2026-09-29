@@ -4,7 +4,7 @@
 // (tone by type), read ones turn white. Swipe left to delete.
 import TouchableTick from '../components/TouchableTick';
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Animated as RNAnimated } from 'react-native';
+import { View, Text, StyleSheet, Alert, Animated as RNAnimated } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
 import {
@@ -83,6 +83,7 @@ export default function NotificationsScreen({ navigation }) {
     } catch (err) {
       console.warn('[Notifications] delete failed:', err?.message || err);
       setAlerts(snapshot);
+      Alert.alert(t('profile_error_title'), t('error_generic'));
     }
   };
 
@@ -93,6 +94,7 @@ export default function NotificationsScreen({ navigation }) {
     } catch (err) {
       console.warn('[Notifications] mark-all failed:', err?.message || err);
       fetchAlerts();
+      Alert.alert(t('profile_error_title'), t('error_generic'));
     }
   };
 

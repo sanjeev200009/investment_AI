@@ -46,6 +46,9 @@ class Settings(BaseSettings):
 
     # Firebase Cloud Messaging
     FIREBASE_CREDENTIALS_PATH: str = 'firebase-key.json'
+    # The service-account JSON itself, for hosts where the key cannot live on
+    # disk. Wins over the path. A setting (not os.getenv) so .env works too.
+    FIREBASE_CREDENTIALS_JSON: str = ''
     FCM_SERVER_KEY: str = ''
 
     # AI Agent
@@ -69,10 +72,12 @@ class Settings(BaseSettings):
     # AGENT needs reliable multi-tool calling + streaming deltas; UTILITY only
     # needs short prose, but must not be a reasoning model that starves its own
     # output budget.
-    NVIDIA_AGENT_MODEL: str = 'openai/gpt-oss-20b'
-    NVIDIA_UTILITY_MODEL: str = 'nvidia/nemotron-3-nano-30b-a3b'
-    OPENROUTER_AGENT_MODEL: str = 'minimax/minimax-m3:free'
-    OPENROUTER_UTILITY_MODEL: str = 'minimax/minimax-m3:free'
+    NVIDIA_AGENT_MODEL: str = 'nvidia/nemotron-3-super-120b-a12b'
+    NVIDIA_UTILITY_MODEL: str = 'nvidia/nemotron-3-super-120b-a12b'
+    OPENROUTER_AGENT_MODEL: str = 'qwen/qwen3.8-27b:free'
+    OPENROUTER_UTILITY_MODEL: str = 'qwen/qwen3.8-27b:free'
+    # Last resort, on NVIDIA again: slower under load but fully tool-capable.
+    NVIDIA_BACKUP_MODEL: str = 'openai/gpt-oss-20b'
 
     # Short enough that a hung primary fails over inside the NFR-4 budget
     # (<5s perceived response), long enough not to abandon a healthy slow reply.

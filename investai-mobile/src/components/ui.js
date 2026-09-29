@@ -16,15 +16,18 @@
 //   <Title>, <Label>   type styles
 //   <Field>            full-round text input with a hidden-but-read label
 //   <EmptyState>       icon + message (+ action) for empty / error states
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, StatusBar,
+  View, Text, TextInput, StyleSheet, ScrollView, RefreshControl, StatusBar, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import TouchableTick from './TouchableTick';
 import { palette, fonts, radii, sizes, changeTone } from '../theme/tokens';
+import { useT } from '../store/languageStore';
+import { EASE_OUT, isReduceMotion } from '../theme/motion';
+import { PillPal, PillLoader, PillScreenLoader, MiniPills } from './PillPals';
 
 const ACCENTS = {
   lime: { bg: palette.lime, ink: palette.limeInk },
@@ -38,20 +41,28 @@ export const ACCENT_CYCLE = ['lime', 'yellow', 'lavender', 'coral'];
 
 // ── Layout ───────────────────────────────────────────────────────────────────
 
+// scrollY (an Animated.Value) drives scroll effects on the native thread;
+// overlay sits above the content (e.g. a bar that fades in on scroll).
 export function Screen({
-  children, scroll = true, refreshing, onRefresh, contentStyle, footer, edges = ['top'],
+  children, scroll = true, refreshing, onRefresh, contentStyle, footer, edges = ['top'], scrollY, overlay,
 }) {
+  const Scroller = scrollY ? Animated.ScrollView : ScrollView;
   const body = scroll ? (
-    <ScrollView
+    <Scroller
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={[styles.content, contentStyle]}
+      scrollEventThrottle={16}
+      onScroll={scrollY
+        ? Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })
+        : undefined}
       refreshControl={onRefresh
-        ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={palette.ink} />
+        ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={palette.ink}
+            colors={[palette.limeInk, palette.lavenderInk, palette.coralInk]} progressBackgroundColor={palette.yellow} />
         : undefined}
     >
       {children}
-    </ScrollView>
+    </Scroller>
   ) : <View style={[styles.content, { flex: 1 }, contentStyle]}>{children}</View>;
 
   return (
@@ -67,6 +78,7 @@ export function Screen({
         {body}
         {footer}
       </SafeAreaView>
+      {overlay}
     </LinearGradient>
   );
 }
@@ -113,7 +125,8 @@ export function IconCircle({ icon, color = palette.ink, size = sizes.circleSm, b
   );
 }
 
-export function PillButton({ title, onPress, icon, variant = 'primary', loading, disabled, style, label }) {
+// knob: an accent name; draws the Splash-style round arrow knob on the right.
+export function PillButton({ title, onPress, icon, variant = 'primary', loading, disabled, style, label, knob }) {
   const primary = variant === 'primary';
   const off = disabled || loading;
   return (
@@ -123,14 +136,19 @@ export function PillButton({ title, onPress, icon, variant = 'primary', loading,
       accessibilityRole="button"
       accessibilityLabel={label || title}
       accessibilityState={{ disabled: !!off, busy: !!loading }}
-      style={[styles.pill, primary ? styles.pillPrimary : styles.pillSecondary, off && { opacity: 0.5 }, style]}
+      style={[styles.pill, primary ? styles.pillPrimary : styles.pillSecondary, knob && styles.pillKnob, off && { opacity: 0.5 }, style]}
     >
       {loading ? (
-        <ActivityIndicator color={primary ? '#FFFFFF' : palette.ink} />
+        <MiniPills color={primary ? '#FFFFFF' : palette.ink} size={18} />
       ) : (
         <>
           {icon ? <MaterialIcons name={icon} size={20} color={primary ? '#FFFFFF' : palette.ink} /> : null}
           <Text style={[styles.pillText, { color: primary ? '#FFFFFF' : palette.ink }]}>{title}</Text>
+          {knob ? (
+            <View style={[styles.knob, { backgroundColor: accent(knob).bg }]}>
+              <MaterialIcons name="arrow-forward" size={22} color={palette.ink} />
+            </View>
+          ) : null}
         </>
       )}
     </TouchableTick>
@@ -188,7 +206,27 @@ export function StackCard({ tone = 'lime', first, last, children, onPress, label
 // ── Type ─────────────────────────────────────────────────────────────────────
 
 /** 21,307.90 → "21,307" large + ".90" smaller and lighter. */
+// When the value changes, the number rolls up into place and a lime (up) or
+// coral (down) wash fades behind it.
 export function BigNumber({ value, digits = 2, prefix, size = 64, color = palette.ink }) {
+  const roll = useRef(new Animated.Value(1)).current;
+  const flash = useRef(new Animated.Value(0)).current;
+  const prev = useRef(value);
+  const [up, setUp] = useState(true);
+  useEffect(() => {
+    const before = prev.current;
+    prev.current = value;
+    if (!Number.isFinite(Number(before)) || !Number.isFinite(Number(value))
+        || Number(before) === Number(value) || isReduceMotion()) return;
+    setUp(Number(value) > Number(before));
+    roll.setValue(0);
+    flash.setValue(1);
+    Animated.parallel([
+      Animated.timing(roll, { toValue: 1, duration: 420, easing: EASE_OUT, useNativeDriver: true }),
+      Animated.timing(flash, { toValue: 0, duration: 900, useNativeDriver: true }),
+    ]).start();
+  }, [value, roll, flash]);
+
   if (value === null || value === undefined || !Number.isFinite(Number(value))) {
     return <Text style={[styles.big, { fontSize: size, color }]}>—</Text>;
   }
@@ -196,11 +234,23 @@ export function BigNumber({ value, digits = 2, prefix, size = 64, color = palett
     .toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
     .split('.');
   return (
-    <Text style={[styles.big, { fontSize: size, color }]} accessibilityLabel={`${prefix || ''} ${int}${dec ? '.' + dec : ''}`}>
-      {prefix ? <Text style={[styles.bigSmall, { fontSize: size * 0.38 }]}>{prefix} </Text> : null}
-      {int}
-      {dec ? <Text style={[styles.bigSmall, { fontSize: size * 0.5 }]}>.{dec}</Text> : null}
-    </Text>
+    <View style={{ alignSelf: 'flex-start' }}>
+      <Animated.View pointerEvents="none" style={{
+        ...StyleSheet.absoluteFillObject, left: -6, right: -6, borderRadius: 14,
+        backgroundColor: up ? palette.lime : palette.coral, opacity: Animated.multiply(flash, 0.6),
+      }} />
+      <Animated.Text
+        style={[styles.big, { fontSize: size, color }, {
+          opacity: roll.interpolate({ inputRange: [0, 1], outputRange: [0.25, 1] }),
+          transform: [{ translateY: roll.interpolate({ inputRange: [0, 1], outputRange: [size * 0.3, 0] }) }],
+        }]}
+        accessibilityLabel={`${prefix || ''} ${int}${dec ? '.' + dec : ''}`}
+      >
+        {prefix ? <Text style={[styles.bigSmall, { fontSize: size * 0.38 }]}>{prefix} </Text> : null}
+        {int}
+        {dec ? <Text style={[styles.bigSmall, { fontSize: size * 0.5 }]}>.{dec}</Text> : null}
+      </Animated.Text>
+    </View>
   );
 }
 
@@ -225,34 +275,98 @@ export const Body = ({ children, style, ...props }) => <Text style={[styles.body
 
 // ── Inputs & states ──────────────────────────────────────────────────────────
 
-export function Field({ label, error, style, inputStyle, ...props }) {
+// icon + tone: a pastel icon circle inside the pill. secureTextEntry fields
+// get a show/hide eye.
+export function Field({ label, error, style, inputStyle, icon, tone = 'lavender', secureTextEntry, ...props }) {
+  const { t } = useT();
+  const [revealed, setRevealed] = useState(false);
+  if (!icon && !secureTextEntry) {
+    return (
+      <View style={[{ gap: 6 }, style]}>
+        {label ? <Text style={styles.fieldLabel}>{label}</Text> : null}
+        <TextInput
+          placeholderTextColor={palette.faint}
+          accessibilityLabel={props.accessibilityLabel || label || props.placeholder}
+          style={[styles.field, error && styles.fieldInvalid, inputStyle]}
+          {...props}
+        />
+        {error ? <Text style={styles.fieldError}>{error}</Text> : null}
+      </View>
+    );
+  }
+  const a = accent(tone);
   return (
     <View style={[{ gap: 6 }, style]}>
       {label ? <Text style={styles.fieldLabel}>{label}</Text> : null}
-      <TextInput
-        placeholderTextColor={palette.faint}
-        accessibilityLabel={props.accessibilityLabel || label || props.placeholder}
-        style={[styles.field, error && { borderColor: palette.error, borderWidth: 1.5 }, inputStyle]}
-        {...props}
-      />
+      <View style={[styles.field, styles.fieldRow, icon && { paddingLeft: 8 }, error && styles.fieldInvalid]}>
+        {icon ? (
+          <View style={[styles.fieldIcon, { backgroundColor: a.bg }]}>
+            <MaterialIcons name={icon} size={20} color={a.ink} />
+          </View>
+        ) : null}
+        <TextInput
+          placeholderTextColor={palette.faint}
+          accessibilityLabel={props.accessibilityLabel || label || props.placeholder}
+          secureTextEntry={secureTextEntry && !revealed}
+          style={[styles.fieldInput, inputStyle]}
+          {...props}
+        />
+        {secureTextEntry ? (
+          <TouchableTick
+            onPress={() => setRevealed(r => !r)}
+            accessibilityRole="button"
+            accessibilityLabel={revealed ? t('field_hide_password') : t('field_show_password')}
+            style={styles.fieldEye}
+          >
+            <MaterialIcons name={revealed ? 'visibility-off' : 'visibility'} size={20} color={palette.muted} />
+          </TouchableTick>
+        ) : null}
+      </View>
       {error ? <Text style={styles.fieldError}>{error}</Text> : null}
     </View>
   );
 }
 
+// A Pill Pal in a contrasting colour holds the icon; errors get the "oops" face.
+const PAL_FOR = { lavender: 'yellow', yellow: 'lavender', lime: 'coral', coral: 'lime', white: 'lavender' };
+const OOPS_ICONS = ['cloud-off', 'error-outline', 'wifi-off', 'warning', 'warning-amber'];
+
 export function EmptyState({ icon = 'inbox', title, message, action, onAction, tone = 'lavender' }) {
   const a = accent(tone);
   return (
-    <Card tone={tone} style={{ alignItems: 'flex-start', gap: 10 }}>
-      <IconCircle icon={icon} color={a.ink} borderColor="rgba(0,0,0,0.15)" />
-      {title ? <Text style={[styles.heading, { color: a.ink }]}>{title}</Text> : null}
-      {message ? <Text style={[styles.body, { color: a.ink }]}>{message}</Text> : null}
-      {action ? <PillButton title={action} onPress={onAction} style={{ alignSelf: 'stretch', marginTop: 4 }} /> : null}
+    <Card tone={tone} style={{ gap: 12 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+        <PillPal
+          tone={PAL_FOR[tone] || 'lavender'}
+          mood={OOPS_ICONS.includes(icon) ? 'oops' : 'happy'}
+          pose={OOPS_ICONS.includes(icon) ? 'rest' : 'wave'}
+          badge={icon}
+          size={116}
+        />
+        <View style={{ flex: 1, gap: 6 }}>
+          {title ? <Text style={[styles.heading, { color: a.ink }]}>{title}</Text> : null}
+          {message ? <Text style={[styles.body, { color: a.ink }]}>{message}</Text> : null}
+        </View>
+      </View>
+      {action ? <PillButton title={action} onPress={onAction} style={{ alignSelf: 'stretch' }} /> : null}
     </Card>
   );
 }
 
-export const Loading = () => <ActivityIndicator style={{ marginVertical: 32 }} color={palette.ink} />;
+export function Loading() {
+  const { t } = useT();
+  return <PillLoader label={t('loading')} />;
+}
+
+// Whole-screen wait (app start, a screen's first load): the pills rise into place.
+export function ScreenLoader() {
+  const { t } = useT();
+  return (
+    <Screen scroll={false} contentStyle={{ flexGrow: 1 }}>
+      <PillScreenLoader label={t('loading')} caption={t('loading_app')} />
+    </Screen>
+  );
+}
 
 const text = { color: palette.ink, fontFamily: fonts.regular };
 
@@ -274,6 +388,8 @@ const styles = StyleSheet.create({
   pillPrimary: { backgroundColor: palette.ink },
   pillSecondary: { backgroundColor: '#FFFFFF' },
   pillText: { fontFamily: fonts.medium, fontSize: 16 },
+  pillKnob: { justifyContent: 'space-between', paddingLeft: 28, paddingRight: 7 },
+  knob: { width: 48, height: 48, borderRadius: radii.full, alignItems: 'center', justifyContent: 'center' },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
     borderRadius: radii.full, paddingHorizontal: 14, paddingVertical: 8,
@@ -298,5 +414,10 @@ const styles = StyleSheet.create({
     height: sizes.control, borderRadius: radii.full, backgroundColor: 'rgba(255,255,255,0.92)',
     paddingHorizontal: 22, fontSize: 16, fontFamily: fonts.regular, color: palette.ink,
   },
+  fieldInvalid: { borderColor: palette.error, borderWidth: 1.5 },
+  fieldRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingRight: 6 },
+  fieldIcon: { width: 44, height: 44, borderRadius: radii.full, alignItems: 'center', justifyContent: 'center' },
+  fieldInput: { flex: 1, height: '100%', fontSize: 16, fontFamily: fonts.regular, color: palette.ink },
+  fieldEye: { width: 44, height: 44, borderRadius: radii.full, alignItems: 'center', justifyContent: 'center' },
   fieldError: { ...text, fontSize: 13, color: palette.error, paddingLeft: 18 },
 });

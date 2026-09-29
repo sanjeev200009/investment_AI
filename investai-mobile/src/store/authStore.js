@@ -13,15 +13,19 @@ import { setUnauthorizedHandler } from '../api/axiosConfig';
 import { pushApi } from '../api/api';
 import { useLanguageStore } from './languageStore';
 
+// Keys this store no longer writes; removed on sign-out so old installs shed them.
+const LEGACY_KEYS = ['education_enabled', 'assessment_completed', 'user_assessment'];
+
+const clearLocalSession = async (set) => {
+    await AsyncStorage.multiRemove(['token', 'refresh_token', 'cached_user', ...LEGACY_KEYS]);
+    set({ token: null, user: null, isAuthenticated: false, isLoading: false });
+};
+
 export const useAuthStore = create((set) => ({
     user: null,
     token: null,
-    riskProfile: null,
     isAuthenticated: false,
     isLoading: true,
-    isEducationEnabled: false,
-    hasCompletedAssessment: false,
-    userAssessment: null,
     hasCompletedProfileSetup: false,
 
     login: async (token, user, refreshToken) => {
@@ -31,8 +35,6 @@ export const useAuthStore = create((set) => ({
         if (refreshToken) {
             await AsyncStorage.setItem('refresh_token', refreshToken);
         }
-        const savedEdu = await AsyncStorage.getItem('education_enabled');
-        const assessmentDone = await AsyncStorage.getItem('assessment_completed');
         // Cached so the app can open signed-in while offline.
         await AsyncStorage.setItem('cached_user', JSON.stringify(user));
         set({
@@ -40,8 +42,6 @@ export const useAuthStore = create((set) => ({
             user,
             isAuthenticated: true,
             isLoading: false,
-            isEducationEnabled: savedEdu === 'true',
-            hasCompletedAssessment: assessmentDone === 'true'
         });
         // Register this device for push (I-12), best-effort — sign-in never
         // blocks on it. Also loads the saved UI language immediately.
@@ -54,15 +54,21 @@ export const useAuthStore = create((set) => ({
         // device and revoke the refresh token. Both are best effort; the local
         // sign-out below happens regardless.
         await Promise.allSettled([pushApi.unregister(), authApi.logout()]);
-        await AsyncStorage.multiRemove(['token', 'refresh_token', 'cached_user']);
-        set({ token: null, user: null, isAuthenticated: false, isLoading: false });
+        await clearLocalSession(set);
+    },
+
+    /** DELETE /me, then the local half of sign-out. Throws if the server
+     * refused, so the caller can say so; nothing local is cleared then. There
+     * is no session left to revoke or device token to unregister afterwards. */
+    deleteAccount: async () => {
+        await authApi.deleteAccount();
+        await clearLocalSession(set);
     },
 
     // Called on app start to restore session
     restoreSession: async () => {
         set({ isLoading: true });
         const token = await AsyncStorage.getItem('token');
-        const savedEdu = await AsyncStorage.getItem('education_enabled');
         if (token) {
             try {
                 // Set token in state FIRST so axios interceptor can see it
@@ -70,7 +76,6 @@ export const useAuthStore = create((set) => ({
 
                 // Fetch fresh user data from backend
                 const user = await authApi.getMe();
-                const assessmentDone = await AsyncStorage.getItem('assessment_completed');
                 // Re-read: if the access token had expired, axiosConfig's
                 // interceptor silently refreshed it during getMe(), and the
                 // value read above is now stale.
@@ -81,8 +86,6 @@ export const useAuthStore = create((set) => ({
                     user,
                     isAuthenticated: true,
                     isLoading: false,
-                    isEducationEnabled: savedEdu === 'true',
-                    hasCompletedAssessment: assessmentDone === 'true'
                 });
                 // FCM rotates tokens; re-send on every launch, not only at login.
                 useLanguageStore.getState().init(true);
@@ -99,15 +102,12 @@ export const useAuthStore = create((set) => ({
                 if (!status || (status !== 401 && status !== 403)) {
                     console.warn(`Session restore deferred (${status ? `HTTP ${status}` : 'no response'}); keeping token.`);
                     const cached = await AsyncStorage.getItem('cached_user');
-                    const assessmentDone = await AsyncStorage.getItem('assessment_completed');
                     let user = null;
                     try { user = cached ? JSON.parse(cached) : null; } catch (_) { user = null; }
                     // With a cached profile, open signed-in; screens show their
                     // own offline/error states and recover on the next request.
                     set(user
-                        ? { user, isAuthenticated: true, isLoading: false,
-                            isEducationEnabled: savedEdu === 'true',
-                            hasCompletedAssessment: assessmentDone === 'true' }
+                        ? { user, isAuthenticated: true, isLoading: false }
                         : { isLoading: false });
                     return;
                 }
@@ -124,16 +124,6 @@ export const useAuthStore = create((set) => ({
         user: { ...state.user, ...updates }
     })),
 
-    setEducationEnabled: async (enabled) => {
-        await AsyncStorage.setItem('education_enabled', enabled.toString());
-        set({ isEducationEnabled: enabled });
-    },
-
-    setAssessmentCompleted: async (completed) => {
-        await AsyncStorage.setItem('assessment_completed', completed.toString());
-        set({ hasCompletedAssessment: completed });
-    },
-
     /**
      * Persist the risk assessment. Throws if the backend rejected it.
      *
@@ -144,14 +134,14 @@ export const useAuthStore = create((set) => ({
      * written once the server has accepted the results.
      *
      * Returns the scored profile ({ score, category, ... }) so the caller can
-     * show it. `riskProfile` holds that derived result, not the raw answers —
-     * those live in `userAssessment`.
+     * show it. The server is the only copy; nothing is cached locally.
      */
     setAssessmentResults: async (results) => {
         const profile = await authApi.updateRiskProfile(results);
-        await AsyncStorage.setItem('assessment_completed', 'true');
-        await AsyncStorage.setItem('user_assessment', JSON.stringify(results));
-        set({ userAssessment: results, hasCompletedAssessment: true, riskProfile: profile });
+        // Q14 already set user_profiles.language server-side; switch the UI to
+        // match, or the next launch's init(true) would push the old code back.
+        const code = { english: 'en', sinhala: 'si', tamil: 'ta' }[String(profile?.preferred_language || '').toLowerCase()];
+        if (code) useLanguageStore.getState().setLanguage(code);
         return profile;
     },
 

@@ -35,9 +35,16 @@
       [
         "expo-notifications",
         {
-          "color": "#0052FF"
+          "color": "#0052FF",
+          "defaultChannel": "default"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "2e86bffc-a2ee-480c-8f21-c02f613f697a"
+      }
+    },
+    "owner": "sanjeevsanjay"
   }
 }

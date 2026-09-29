@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 
 import { Screen, Field, PillButton, Title, Body } from '../../components/ui';
+import { RegisterHero } from '../../components/PillPals';
 import TouchableTick from '../../components/TouchableTick';
 import { palette, fonts } from '../../theme/tokens';
 import { authApi } from '../../api/authApi';
@@ -72,6 +73,7 @@ const RegisterScreen = ({ navigation }) => {
       style={styles.flex}
     >
       <Screen edges={['top', 'bottom']} contentStyle={styles.content}>
+        <RegisterHero label={t('register_hero_alt')} />
 
         <View style={styles.intro}>
           <Title style={styles.title}>
@@ -88,6 +90,8 @@ const RegisterScreen = ({ navigation }) => {
             onChangeText={setName}
             error={errors.name}
             autoCapitalize="words"
+            icon="person-outline"
+            tone="coral"
           />
           <Field
             placeholder={t('login_email')}
@@ -96,6 +100,8 @@ const RegisterScreen = ({ navigation }) => {
             error={errors.email}
             keyboardType="email-address"
             autoCapitalize="none"
+            icon="mail-outline"
+            tone="yellow"
           />
           <Field
             placeholder={t('login_password')}
@@ -103,6 +109,8 @@ const RegisterScreen = ({ navigation }) => {
             onChangeText={setPassword}
             error={errors.password}
             secureTextEntry
+            icon="lock-outline"
+            tone="lavender"
           />
           <Field
             placeholder={t('register_confirm_password')}
@@ -110,6 +118,8 @@ const RegisterScreen = ({ navigation }) => {
             onChangeText={setConfirmPassword}
             error={errors.confirmPassword}
             secureTextEntry
+            icon="verified-user"
+            tone="lime"
           />
           <PillButton
             title={t('register_button')}
@@ -117,6 +127,7 @@ const RegisterScreen = ({ navigation }) => {
             loading={loading}
             disabled={!name || !email || !password || !confirmPassword}
             style={styles.cta}
+            knob="coral"
           />
           {/* Google sign-up removed with Clerk — see the note in
               LoginScreen.js. FR-1 is email/password + OTP. */}
@@ -156,9 +167,9 @@ const text = { color: palette.ink, fontFamily: fonts.regular };
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  content: { flexGrow: 1, paddingTop: 32, paddingBottom: 24, gap: 28 },
-  intro: { gap: 10 },
-  title: { fontSize: 40, lineHeight: 44, letterSpacing: -1.5 },
+  content: { flexGrow: 1, paddingTop: 12, paddingBottom: 24, gap: 20 },
+  intro: { gap: 8 },
+  title: { fontSize: 34, lineHeight: 38, letterSpacing: -1 },
   titleLight: { fontFamily: fonts.light, color: palette.muted },
   muted: { color: palette.muted },
   form: { gap: 12 },

@@ -18,7 +18,7 @@ import { authApi } from '../api/authApi';
 import { palette, fonts, radii, sizes } from '../theme/tokens';
 
 export default function ProfileScreen({ navigation }) {
-    const { user, logout, updateProfile } = useAuthStore();
+    const { user, logout, updateProfile, deleteAccount } = useAuthStore();
     // Language preference (I-15): the selector below is the real toggle. It
     // switches the UI immediately, persists to AsyncStorage, and saves to
     // user_profiles.language — which is also what the AI agent reads to decide
@@ -59,6 +59,27 @@ export default function ProfileScreen({ navigation }) {
         );
     };
 
+    const handleDeleteAccount = () => {
+        Alert.alert(t('profile_delete_account'), t('profile_delete_body'), [
+            { text: t('cancel'), style: 'cancel' },
+            {
+                text: t('profile_delete_account'),
+                style: 'destructive',
+                // On success the store signs out locally and AppNavigator drops
+                // to the auth stack; on failure nothing local changes.
+                onPress: async () => {
+                    try {
+                        await deleteAccount();
+                    } catch (error) {
+                        Alert.alert(t('profile_error_title'), error?.response
+                            ? (error.response.data?.detail || t('profile_delete_error'))
+                            : t('auth_network_error'));
+                    }
+                },
+            },
+        ]);
+    };
+
     const saveProfile = async () => {
         const trimmed = fullName.trim();
         if (trimmed.length < 2) {
@@ -84,11 +105,11 @@ export default function ProfileScreen({ navigation }) {
         setEditModalVisible(true);
     };
 
-    const Row = ({ icon, label, sub, right, onPress }) => (
-        <TouchableTick style={styles.row} onPress={onPress} disabled={!onPress} accessibilityRole="button" accessibilityLabel={label}>
-            <IconCircle icon={icon} />
+    const Row = ({ icon, label, sub, right, onPress, danger }) => (
+        <TouchableTick style={[styles.row, danger && styles.rowDanger]} onPress={onPress} disabled={!onPress} accessibilityRole="button" accessibilityLabel={label}>
+            <IconCircle icon={icon} color={danger ? palette.coralInk : palette.ink} />
             <View style={{ flex: 1, gap: 2 }}>
-                <Text style={styles.rowLabel}>{label}</Text>
+                <Text style={[styles.rowLabel, danger && { color: palette.coralInk }]}>{label}</Text>
                 {sub ? <Label>{sub}</Label> : null}
             </View>
             {right}
@@ -151,6 +172,12 @@ export default function ProfileScreen({ navigation }) {
                         right={<Text style={styles.manage}>{t('profile_manage')}</Text>}
                         onPress={() => navigation.navigate('Rules')}
                     />
+                    <Divider />
+                    <Row
+                        icon="assignment"
+                        label={t('profile_retake_assessment')}
+                        onPress={() => navigation.navigate('RetakeAssessment')}
+                    />
                 </Card>
             </View>
 
@@ -159,6 +186,8 @@ export default function ProfileScreen({ navigation }) {
                 <Label style={styles.sectionTitle}>{t('profile_section_security')}</Label>
                 <Card style={styles.group}>
                     <Row icon="lock-outline" label={t('profile_change_password')} onPress={handleChangePassword} />
+                    <Divider />
+                    <Row icon="delete-forever" label={t('profile_delete_account')} onPress={handleDeleteAccount} danger />
                 </Card>
             </View>
 
@@ -219,6 +248,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 64,
         paddingHorizontal: 10, paddingVertical: 8, borderRadius: radii.full,
     },
+    rowDanger: { backgroundColor: palette.coral },
     rowLabel: { ...text, fontFamily: fonts.medium, fontSize: 16 },
     manage: { ...text, fontFamily: fonts.medium, fontSize: 14, color: palette.muted },
     divider: { height: 1, backgroundColor: palette.hairline, marginHorizontal: 16 },

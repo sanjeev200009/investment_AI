@@ -2,6 +2,7 @@
 // Typed wrappers for the endpoints this app calls. Auth headers, token refresh
 // and the ngrok bypass all live in axiosConfig's request interceptor, so no
 // screen needs to handle a token.
+import { Platform } from 'react-native';
 import api from './axiosConfig';
 
 // ── Watchlist (I-09) ─────────────────────────────────────────────────────────
@@ -101,6 +102,20 @@ export const pushApi = {
   register: async () => {
     try {
       const Notifications = require('expo-notifications');
+      // Without a handler, a push that lands while the app is open is dropped.
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false,
+        }),
+      });
+      // Android 13+ shows no permission prompt until a channel exists; this is
+      // also the channel app.json names as FCM's default for background pushes.
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'Alerts',
+          importance: Notifications.AndroidImportance.HIGH,
+        });
+      }
       // Android 13+ and iOS both require an explicit grant before a token is
       // useful; without asking, the token was obtained and pushes never shown.
       const { status } = await Notifications.requestPermissionsAsync();

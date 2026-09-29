@@ -41,8 +41,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin
 
 import httpx
@@ -734,6 +736,107 @@ async def scrape_news_articles(client: httpx.AsyncClient,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Feeds: machine-readable sources that don't break on a page redesign and
+# aren't blocked the way page scraping is (EconomyNext answers its own RSS
+# with 403). Each is optional: one being down never stops the others.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Google News aggregates the Sri Lankan business press (Daily FT, EconomyNext,
+# Daily Mirror, LBO, Sunday Times...) into one stable RSS feed. No key.
+GOOGLE_NEWS_RSS = ("https://news.google.com/rss/search?q=%28%22Colombo+Stock+Exchange%22"
+                   "+OR+CSE+OR+ASPI%29+Sri+Lanka+when%3A3d&hl=en-LK&gl=LK&ceid=LK:en")
+LBO_RSS = "https://www.lankabusinessonline.com/feed/"
+# The exchange's own register of listed companies' financial reports; each
+# row links to the real PDF on the CSE's file server.
+CSE_FINANCIALS_URL = "https://www.cse.lk/api/getFinancialAnnouncement"
+CSE_FILES = "https://cdn.cse.lk/"
+MAX_FEED_ITEMS = 25
+
+
+def parse_rss(xml_text: str) -> list[dict]:
+    """RSS 2.0 items as {title, url, source, body, published_at}."""
+    items = []
+    for it in ET.fromstring(xml_text).iter("item"):
+        title = _clean(it.findtext("title"))
+        source_el = it.find("source")
+        source = _clean(source_el.text) if source_el is not None else ""
+        # Google News appends " - Publisher" to every headline.
+        if source and title.endswith(f" - {source}"):
+            title = title[: -len(source) - 3].rstrip()
+        body = _clean(BeautifulSoup(it.findtext("description") or "", "lxml").get_text(" "))
+        if body.startswith(title):   # Google's description just repeats the headline
+            body = ""
+        try:
+            published = parsedate_to_datetime(it.findtext("pubDate")).astimezone(timezone.utc)
+        except (TypeError, ValueError):
+            published = None
+        items.append({"title": title, "url": (it.findtext("link") or "").strip(),
+                      "source": source, "body": body, "published_at": published})
+    return items
+
+
+def cse_financial_records(payload: dict) -> list[dict]:
+    """getFinancialAnnouncement rows as feed items, e.g. "ACME PLC: Interim
+    Financial Statements for Q1", linking the report PDF."""
+    items = []
+    for row in payload.get("reqFinancialAnnouncemnets") or []:   # sic, CSE's spelling
+        if not row.get("path") or not row.get("name"):
+            continue
+        try:
+            published = (datetime.strptime(row["uploadedDate"], "%d %b %Y %I:%M:%S %p")
+                         .replace(tzinfo=EXCHANGE_TZ).astimezone(timezone.utc))
+        except (KeyError, TypeError, ValueError):
+            published = None
+        items.append({"title": f"{_clean(row['name']).title()}: {_clean(row.get('fileText'))}",
+                      "url": CSE_FILES + row["path"].lstrip("/"), "source": "CSE",
+                      "body": "", "published_at": published})
+    return items
+
+
+async def fetch_feed_articles(client: httpx.AsyncClient,
+                              matcher: SymbolMatcher | None = None,
+                              known_urls: set[str] | None = None) -> list[dict]:
+    """New stories from the feeds, in the same shape as scrape_news_articles."""
+    known = known_urls or set()
+    collected: list[tuple[str, dict]] = []
+    for label, url in (("Google News", GOOGLE_NEWS_RSS), ("LBO", LBO_RSS)):
+        text = await _fetch(client, url)
+        if not text:
+            logger.warning("news feed %s unreachable, skipping", label)
+            continue
+        try:
+            collected += [(label, it) for it in parse_rss(text)[:MAX_FEED_ITEMS]]
+        except ET.ParseError as exc:
+            logger.warning("news feed %s: unreadable RSS (%s)", label, exc)
+    try:
+        resp = await client.post(CSE_FINANCIALS_URL, headers={
+            "Origin": "https://www.cse.lk", "Referer": "https://www.cse.lk/"})
+        resp.raise_for_status()
+        collected += [("CSE", it) for it in cse_financial_records(resp.json())]
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("CSE financial announcements unavailable (%s)", exc)
+
+    articles = []
+    for label, it in collected:
+        url = it["url"][:MAX_URL_LEN]
+        if url in known:
+            continue
+        known.add(url)
+        record = {"title": it["title"], "url": url,
+                  # Aggregated stories keep the real publisher's name.
+                  "source": it["source"] if label == "Google News" and it["source"] else label,
+                  "body": it["body"], "summary": it["body"][:LEDE_CHARS],
+                  "published_at": it["published_at"], "symbols": {}}
+        if not validate_news_record(record):
+            continue
+        if matcher is not None:
+            record["symbols"] = matcher.match(f"{record['title']}. {record['body']}")
+        articles.append(record)
+    logger.info("news feeds: %d items, %d new", len(collected), len(articles))
+    return articles
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Persistence
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -812,6 +915,8 @@ async def scrape_and_save_news(db: Session, symbol: str | None = None) -> list[i
                                  follow_redirects=True) as client:
         articles = await scrape_news_articles(client, matcher=matcher,
                                               known_urls=known)
+        articles += await fetch_feed_articles(client, matcher=matcher,
+                                              known_urls=known | {a["url"] for a in articles})
 
     if symbol:
         want = symbol.upper()

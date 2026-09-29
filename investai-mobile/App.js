@@ -1,7 +1,8 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import {
   useFonts,
   Roboto_100Thin,
@@ -22,6 +23,9 @@ import * as SplashScreenLib from 'expo-splash-screen';
 import AppNavigator from './src/navigation/AppNavigator';
 import { useAuthStore } from './src/store/authStore';
 import { useLanguageStore } from './src/store/languageStore';
+import { pushApi } from './src/api/api';
+
+const navigationRef = createNavigationContainerRef();
 
 // Keep the splash screen visible while we fetch resources
 SplashScreenLib.preventAutoHideAsync();
@@ -36,6 +40,40 @@ export default function App() {
     // Sinhala/Tamil user never sees an English flash (I-15).
     initLanguage();
   }, []);
+
+  // A tapped push opens the Alerts tab. The tap can arrive before the signed-in
+  // stack exists (cold start, session still restoring, first-run assessment),
+  // so it is held until the root route is MainTab and retried on every
+  // navigation state change.
+  const pendingAlerts = useRef(false);
+  const openPendingAlerts = useCallback(() => {
+    if (!pendingAlerts.current || !navigationRef.isReady()) return;
+    const root = navigationRef.getRootState();
+    if (root?.routes?.[root.index]?.name !== 'MainTab') return;
+    pendingAlerts.current = false;
+    navigationRef.navigate('MainTab', { screen: 'Alerts' });
+  }, []);
+
+  useEffect(() => {
+    // Lazy-required for the same reason as in api.js: no native module on web.
+    if (Platform.OS === 'web') return undefined;
+    const Notifications = require('expo-notifications');
+    const openAlerts = () => { pendingAlerts.current = true; openPendingAlerts(); };
+    const responseSub = Notifications.addNotificationResponseReceivedListener(openAlerts);
+    // Cold start: the tap that launched the app fired before the listener existed.
+    Notifications.getLastNotificationResponseAsync()
+      .then(response => {
+        if (!response) return;
+        openAlerts();
+        Notifications.clearLastNotificationResponseAsync().catch(() => {});
+      })
+      .catch(() => {});
+    // FCM rotates tokens; send the new one while signed in.
+    const tokenSub = Notifications.addPushTokenListener(() => {
+      if (useAuthStore.getState().isAuthenticated) pushApi.register();
+    });
+    return () => { responseSub.remove(); tokenSub.remove(); };
+  }, [openPendingAlerts]);
   const [fontsLoaded] = useFonts({
     Roboto_100Thin,
     Roboto_100Thin_Italic,
@@ -70,7 +108,7 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider onLayout={onLayoutRootView}>
-        <NavigationContainer>
+        <NavigationContainer ref={navigationRef} onReady={openPendingAlerts} onStateChange={openPendingAlerts}>
           <AppNavigator />
         </NavigationContainer>
       </SafeAreaProvider>

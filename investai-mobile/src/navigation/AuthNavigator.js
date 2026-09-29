@@ -1,6 +1,7 @@
 // src/navigation/AuthNavigator.js
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
+import { stackMotion, revealMotion } from '../theme/motion';
 
 // Screen Imports
 import LoginScreen from '../screens/auth/LoginScreen';
@@ -18,10 +19,7 @@ const AuthNavigator = () => {
     return (
         <Stack.Navigator
             initialRouteName="Splash"
-            screenOptions={{
-                headerShown: false,
-                gestureEnabled: true,
-            }}
+            screenOptions={stackMotion}
         >
             <Stack.Screen name="Splash" component={SplashScreen} />
             <Stack.Screen name="Login" component={LoginScreen} />
@@ -29,7 +27,7 @@ const AuthNavigator = () => {
             <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
             <Stack.Screen name="OTPVerification" component={OTPVerificationScreen} />
             <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
-            <Stack.Screen name="AuthSuccess" component={AuthSuccessScreen} />
+            <Stack.Screen name="AuthSuccess" component={AuthSuccessScreen} options={revealMotion} />
             <Stack.Screen name="Legal" component={LegalScreen} />
         </Stack.Navigator>
     );

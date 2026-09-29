@@ -1,17 +1,15 @@
-// src/screens/auth/LoginScreen.js — v2 "Soft pastel" sign in.
+// src/screens/auth/LoginScreen.js — v2 "Soft pastel" sign in, with the Pill Pals hero.
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 
-import { Screen, Field, PillButton, Title, Body, accent, ACCENT_CYCLE } from '../../components/ui';
+import { Screen, Field, PillButton, Title, Body } from '../../components/ui';
+import { LoginHero } from '../../components/PillPals';
 import TouchableTick from '../../components/TouchableTick';
-import { palette, fonts, radii } from '../../theme/tokens';
+import { palette, fonts } from '../../theme/tokens';
 import { authApi } from '../../api/authApi';
 import { validateEmail, validatePassword } from '../../utils/validation';
 import { useAuthStore } from '../../store/authStore';
 import { useT } from '../../store/languageStore';
-
-// Decorative pastel pills from the sign-in mockup (staggered heights).
-const DECO_OFFSETS = [0, 30, 10, 44];
 
 const LoginScreen = ({ navigation }) => {
   const { t } = useT();
@@ -87,11 +85,7 @@ const LoginScreen = ({ navigation }) => {
       style={styles.flex}
     >
       <Screen edges={['top', 'bottom']} contentStyle={styles.content}>
-        <View style={styles.deco} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
-          {ACCENT_CYCLE.map((tone, i) => (
-            <View key={tone} style={[styles.decoPill, { backgroundColor: accent(tone).bg, marginTop: DECO_OFFSETS[i] }]} />
-          ))}
-        </View>
+        <LoginHero label={t('login_hero_alt')} />
 
         <View style={styles.intro}>
           <Title style={styles.title}>{t('login_title')}</Title>
@@ -106,9 +100,13 @@ const LoginScreen = ({ navigation }) => {
             error={errors.email}
             keyboardType="email-address"
             autoCapitalize="none"
+            icon="mail-outline"
+            tone="yellow"
           />
           <Field
             placeholder={t('login_password')}
+            icon="lock-outline"
+            tone="lavender"
             value={password}
             onChangeText={setPassword}
             error={errors.password}
@@ -126,6 +124,7 @@ const LoginScreen = ({ navigation }) => {
             onPress={handleLogin}
             loading={loading}
             disabled={!email || !password}
+            knob="lime"
           />
           {/* "Sign in with Google" was a Clerk OAuth flow and went with
               Clerk. Supabase can do Google OAuth, but it needs a Google
@@ -156,11 +155,9 @@ const text = { color: palette.ink, fontFamily: fonts.regular };
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  content: { flexGrow: 1, paddingTop: 32, paddingBottom: 24, gap: 32 },
-  deco: { flexDirection: 'row', gap: 10 },
-  decoPill: { width: 64, height: 150, borderRadius: radii.full },
-  intro: { gap: 8 },
-  title: { fontSize: 42, lineHeight: 44, letterSpacing: -1.5 },
+  content: { flexGrow: 1, paddingTop: 12, paddingBottom: 24, gap: 22 },
+  intro: { gap: 6 },
+  title: { fontSize: 38, lineHeight: 42, letterSpacing: -1.2 },
   muted: { color: palette.muted },
   form: { gap: 12 },
   forgot: { alignSelf: 'flex-end', minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 },

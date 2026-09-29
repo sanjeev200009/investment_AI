@@ -74,7 +74,7 @@ TOOL_SCHEMAS: list[dict] = [
                     "symbols": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "List of CSE ticker symbols e.g. ['HNB', 'COMB', 'DIAL']",
+                        "description": "CSE tickers or company names, e.g. ['HNB', 'COMB.N0000', 'John Keells']",
                     }
                 },
                 "required": ["symbols"],
@@ -175,8 +175,9 @@ TOOL_SCHEMAS: list[dict] = [
         "function": {
             "name": "get_market_overview",
             "description": (
-                "Get a snapshot of the top gainers, top losers, and most active stocks "
-                "on the CSE today. Use this when the user asks about the overall market."
+                "Get today's CSE snapshot: the ASPI and S&P SL20 index levels with their "
+                "change, plus top gainers, top losers and most active stocks. Use this "
+                "whenever the user asks about the overall market or an index."
             ),
             "parameters": {
                 "type": "object",
@@ -198,6 +199,34 @@ TOOL_SCHEMAS: list[dict] = [
 # ─────────────────────────────────────────────────────────────────────────────
 # Tool executor
 # ─────────────────────────────────────────────────────────────────────────────
+
+def resolve_symbols(db, terms: list[str]) -> dict[str, str | None]:
+    """Map what a user or model wrote to listed symbols: 'JKH', 'jkh.n0000'
+    and 'John Keells' all resolve to 'JKH.N0000'. The tool schema invites bare
+    tickers but every table keys on the full CSE symbol, so without this every
+    lookup by ticker missed. Voting shares (.N0000) win over other classes."""
+    from app.models.stock import CompanyInfo, MarketDataLatest
+
+    listed = sorted(s for (s,) in db.query(MarketDataLatest.symbol).all())
+    listed_set = set(listed)
+    names = db.query(CompanyInfo.symbol, CompanyInfo.name).all()
+    out: dict[str, str | None] = {}
+    for term in terms:
+        t = (term or "").strip()
+        up = t.upper()
+        if up in listed_set:
+            out[term] = up
+            continue
+        base = up.split(".")[0]
+        same = [s for s in listed if s.split(".")[0] == base]
+        if same:
+            out[term] = next((s for s in same if s.endswith(".N0000")), same[0])
+            continue
+        low = t.lower()
+        hits = [sym for sym, name in names if name and len(low) >= 3 and low in name.lower()]
+        out[term] = (next((h for h in hits if h.endswith(".N0000")), hits[0]) if hits else None)
+    return out
+
 
 class ToolExecutor:
     """
@@ -239,14 +268,16 @@ class ToolExecutor:
         from app.models.stock import MarketDataLatest
 
         # One query for the whole request rather than one per symbol.
-        wanted = [s.upper().strip() for s in symbols]
+        resolved = resolve_symbols(self.db, symbols)
+        wanted = [v for v in resolved.values() if v]
         rows = {
             r.symbol: r
             for r in self.db.query(MarketDataLatest).filter(
                 MarketDataLatest.symbol.in_(wanted)).all()
         }
 
-        results = {}
+        results = {term: {"error": f"No listed CSE company matches '{term}'"}
+                   for term, sym in resolved.items() if not sym}
         for sym in wanted:
             row = rows.get(sym)
             if row:
@@ -267,7 +298,7 @@ class ToolExecutor:
         from app.models.stock import NewsSentiment
 
         limit = min(limit, 10)
-        symbol = symbol.upper().strip()
+        symbol = resolve_symbols(self.db, [symbol])[symbol] or symbol.upper().strip()
         rows = (
             self.db.query(NewsSentiment)
             .filter(NewsSentiment.symbol == symbol)
@@ -355,7 +386,7 @@ class ToolExecutor:
     async def _get_price_prediction(self, symbol: str) -> dict:
         from app.models.stock import PricePrediction, MarketDataLatest
 
-        symbol = symbol.upper().strip()
+        symbol = resolve_symbols(self.db, [symbol])[symbol] or symbol.upper().strip()
         pred = (
             self.db.query(PricePrediction)
             .filter(PricePrediction.symbol == symbol)
@@ -519,7 +550,12 @@ class ToolExecutor:
         # older timestamp, so report the newest rather than assuming uniformity.
         as_of = max(r.recorded_at for r in rows)
 
-        result: dict = {"as_of": str(as_of)}
+        from app.models.stock import MarketIndexLatest
+        result: dict = {"as_of": str(as_of), "indices": {
+            i.index_code: {"name": i.name, "value": i.value, "change_pct": i.change_pct,
+                           "as_of": str(i.updated_at)}
+            for i in self.db.query(MarketIndexLatest).filter(
+                MarketIndexLatest.index_code.in_(["ASPI", "SPSL20"])).all()}}
         if category in ("gainers", "all"):
             result["top_gainers"] = sorted_by_change[:5]
         if category in ("losers", "all"):

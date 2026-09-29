@@ -45,12 +45,11 @@ def _get_messaging():
             return None
 
         import json
-        import os
         from app.config import get_settings
         path = get_settings().FIREBASE_CREDENTIALS_PATH
         # FIREBASE_CREDENTIALS_JSON holds the service-account JSON itself, for
         # hosts where the key cannot live on disk. It wins over the file path.
-        inline = os.getenv("FIREBASE_CREDENTIALS_JSON", "").strip()
+        inline = get_settings().FIREBASE_CREDENTIALS_JSON.strip()
         try:
             _cred = credentials.Certificate(json.loads(inline) if inline else path)
             path = "FIREBASE_CREDENTIALS_JSON" if inline else path
@@ -67,14 +66,20 @@ def _get_messaging():
 
 async def send_push(device_token: str, title: str, body: str,
                     data: dict = {}) -> bool:
-    """Send one push via FCM HTTP v1. Returns delivery success.
+    """Send one push via FCM HTTP v1. Returns delivery success."""
+    return await _send_push_status(device_token, title, body, data) == "ok"
+
+
+async def _send_push_status(device_token: str, title: str, body: str,
+                            data: dict = {}) -> str:
+    """Send one push; returns "ok", "unregistered" or "failed".
 
     firebase_admin's send is blocking; offloaded to a thread so callers in the
     event loop (rules evaluator, notification service) do not stall it.
     """
     messaging = _get_messaging()
     if messaging is None:
-        return False
+        return "failed"
 
     # FCM data payloads must be string→string; anything else is rejected with
     # an error that surfaces two layers away from the bug.
@@ -91,20 +96,20 @@ async def send_push(device_token: str, title: str, body: str,
     def _send():
         try:
             messaging.send(message)
-            return True
+            return "ok"
         except messaging.UnregisteredError:
             # Token rotated or the app was uninstalled — permanent, so the
             # caller should stop using it. Logged at warning, not error.
             logger.warning("FCM token is unregistered (stale device token)")
-            return False
+            return "unregistered"
         except messaging.SenderIdMismatchError:
             logger.error("FCM token belongs to a different sender/project — "
                          "check FIREBASE_CREDENTIALS_PATH matches the app's "
                          "Firebase project")
-            return False
+            return "failed"
         except Exception as exc:  # noqa: BLE001 - transient FCM failures
             logger.error("FCM send failed: %s: %s", type(exc).__name__, exc)
-            return False
+            return "failed"
 
     import asyncio
     return await asyncio.to_thread(_send)
@@ -135,4 +140,10 @@ async def send_push_to_user(
         logger.info("FCM: no device token registered for user %s", user_id)
         return False
 
-    return await send_push(device_token, title, body, data)
+    status = await _send_push_status(device_token, title, body, data)
+    if status == "unregistered":
+        # Dead for good; clear it so every later alert stops paying for a
+        # doomed FCM round trip. The app re-registers on its next sign-in.
+        profile.device_token = None
+        db.commit()
+    return status == "ok"

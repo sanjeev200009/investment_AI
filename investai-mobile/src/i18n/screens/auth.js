@@ -187,4 +187,10 @@ export default {
   splash_pill_learn: 'Learn',
   splash_pill_alerts: 'Alerts',
   splash_disclaimer: 'Educational information only, not financial advice.',
+  // Pill Pals + field eye
+  login_hero_alt: 'Two cartoon characters: a yellow one waves while holding a phone with a rising chart, a green one holds up a golden key.',
+  register_hero_alt: 'A lavender cartoon character waters a coin pot whose plant grows into a rising chart, while a coral character cheers.',
+  field_show_password: 'Show password',
+  field_hide_password: 'Hide password',
+  loading_app: 'Getting your markets ready…',
 };

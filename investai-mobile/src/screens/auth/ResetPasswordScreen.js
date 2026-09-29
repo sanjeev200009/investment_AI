@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 
 import { Screen, Field, PillButton, Title, Body } from '../../components/ui';
+import { PillPal } from '../../components/PillPals';
 import TouchableTick from '../../components/TouchableTick';
 import { palette, fonts } from '../../theme/tokens';
 import { authApi } from '../../api/authApi';
@@ -56,9 +57,11 @@ const ResetPasswordScreen = ({ navigation, route }) => {
         } catch (err) {
             // err is an Error or an axios error — Alert needs a string, and the
             // previous `Alert.alert('Error', err)` rendered nothing useful.
-            const msg = err?.response?.data?.detail
-                || err?.message
-                || t('reset_failed');
+            // No response and no status: either the out-of-order Error thrown
+            // above (its message is already translated) or a network failure.
+            const msg = err?.response
+                ? (err.response.data?.detail || t('reset_failed'))
+                : (err?.isAxiosError ? t('auth_network_error') : err?.message || t('reset_failed'));
             Alert.alert(t('auth_error'), msg);
         } finally {
             setLoading(false);
@@ -71,6 +74,7 @@ const ResetPasswordScreen = ({ navigation, route }) => {
             style={styles.flex}
         >
             <Screen edges={['top', 'bottom']} contentStyle={styles.content}>
+                <View style={styles.pal}><PillPal tone="lime" pose="wave" badge="lock-reset" size={170} /></View>
                 <View style={styles.intro}>
                     <Title style={styles.title}>
                         {t('reset_title')}{'\n'}
@@ -82,6 +86,8 @@ const ResetPasswordScreen = ({ navigation, route }) => {
                 <View style={styles.form}>
                     <Field
                         placeholder={t('reset_new_password')}
+                        icon="lock-outline"
+                        tone="lavender"
                         value={password}
                         onChangeText={setPassword}
                         error={errors.password}
@@ -89,6 +95,8 @@ const ResetPasswordScreen = ({ navigation, route }) => {
                     />
                     <Field
                         placeholder={t('reset_confirm_password')}
+                        icon="verified-user"
+                        tone="lime"
                         value={confirmPassword}
                         onChangeText={setConfirmPassword}
                         error={errors.confirmPassword}
@@ -96,6 +104,7 @@ const ResetPasswordScreen = ({ navigation, route }) => {
                     />
                     <PillButton
                         title={t('reset_save')}
+                        knob="lime"
                         onPress={handleResetPassword}
                         loading={loading}
                         disabled={!password || !confirmPassword}
@@ -126,6 +135,7 @@ const styles = StyleSheet.create({
     flex: { flex: 1 },
     content: { flexGrow: 1, paddingTop: 32, paddingBottom: 24, gap: 32 },
     intro: { gap: 10 },
+    pal: { alignItems: 'center', marginBottom: -12 },
     title: { fontSize: 40, lineHeight: 44, letterSpacing: -1.5 },
     titleLight: { fontFamily: fonts.light, color: palette.muted },
     muted: { color: palette.muted },

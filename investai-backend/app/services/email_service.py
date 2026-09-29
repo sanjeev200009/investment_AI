@@ -1,6 +1,8 @@
 # app/services/email_service.py
-import requests
+import html as html_lib
 import logging
+
+import requests
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,9 @@ def _send(to_email: str, subject: str, html: str) -> bool:
 
 def send_registration_otp(to_email: str, otp: str, name: str) -> bool:
     """Send 6-digit OTP after registration."""
+    # full_name is whatever the /register caller typed, and anyone can register
+    # someone else's address: unescaped, it put attacker HTML in our email.
+    name = html_lib.escape(name)
     html = f'''
     <html><body style="font-family:Arial,sans-serif;max-width:580px;margin:auto">
     <div style="background:#2F80ED;padding:28px;text-align:center">
@@ -88,6 +93,7 @@ def send_reset_otp(to_email: str, otp: str) -> bool:
 
 def send_welcome_email(to_email: str, name: str) -> bool:
     """Send welcome email after OTP verified."""
+    name = html_lib.escape(name)
     html = f'''
     <html><body style="font-family:Arial,sans-serif;max-width:580px;margin:auto">
     <div style="background:#27AE60;padding:28px;text-align:center">

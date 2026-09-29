@@ -89,7 +89,14 @@ def add_holding(portfolio_id: int, payload: HoldingCreate, db: Session = Depends
     
     if not portfolio:
         raise HTTPException(404, 'Portfolio not found')
-    
+
+    # A holding with no quote can never be valued: it sat in the portfolio at
+    # zero forever. Reject the typo here, as watchlist and rules do.
+    from app.models.stock import MarketDataLatest
+    if db.get(MarketDataLatest, payload.symbol) is None:
+        raise HTTPException(
+            422, f'{payload.symbol} has no market data — is it a listed CSE symbol?')
+
     h = PortfolioHolding(portfolio_id=portfolio_id, **payload.model_dump())
     db.add(h)
     db.commit()

@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 
 import { Screen, Header, Field, PillButton, Title, Body } from '../../components/ui';
+import { PillPal } from '../../components/PillPals';
 import TouchableTick from '../../components/TouchableTick';
 import { palette, fonts } from '../../theme/tokens';
 import { authApi } from '../../api/authApi';
@@ -35,9 +36,9 @@ const ForgotPasswordScreen = ({ navigation }) => {
             // Linear Flow: Forgot -> OTP -> Reset -> Success
             navigation.navigate('OTPVerification', { email: email.trim(), type: 'reset' });
         } catch (err) {
-            const msg = err?.response?.data?.detail
-                || err?.message
-                || t('forgot_send_failed');
+            const msg = err?.response
+                ? (err.response.data?.detail || t('forgot_send_failed'))
+                : t('auth_network_error');
             Alert.alert(t('auth_error'), msg);
         } finally {
             setLoading(false);
@@ -51,6 +52,7 @@ const ForgotPasswordScreen = ({ navigation }) => {
         >
             <Screen edges={['top', 'bottom']} contentStyle={styles.content}>
                 <Header onBack={() => navigation.goBack()} backLabel={t('auth_back')} />
+                <View style={styles.pal}><PillPal tone="coral" mood="oops" badge="question-mark" size={170} /></View>
 
                 <View style={styles.intro}>
                     <Title style={styles.title}>
@@ -63,6 +65,8 @@ const ForgotPasswordScreen = ({ navigation }) => {
                 <View style={styles.form}>
                     <Field
                         placeholder={t('login_email')}
+                        icon="mail-outline"
+                        tone="yellow"
                         value={email}
                         onChangeText={setEmail}
                         error={error}
@@ -71,6 +75,7 @@ const ForgotPasswordScreen = ({ navigation }) => {
                     />
                     <PillButton
                         title={t('forgot_send_code')}
+                        knob="coral"
                         onPress={handleSendLink}
                         loading={loading}
                         disabled={!email}
@@ -100,6 +105,7 @@ const styles = StyleSheet.create({
     flex: { flex: 1 },
     content: { flexGrow: 1, paddingBottom: 24, gap: 32 },
     intro: { gap: 10 },
+    pal: { alignItems: 'center', marginVertical: -12 },
     title: { fontSize: 40, lineHeight: 44, letterSpacing: -1.5 },
     titleLight: { fontFamily: fonts.light, color: palette.muted },
     muted: { color: palette.muted },
