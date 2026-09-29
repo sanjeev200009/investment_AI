@@ -1,0 +1,10 @@
+# Laptop mode: the same API + Celery worker + Beat + Redis as production, without
+# Caddy or Flower. The API is published on localhost:8000 for an ngrok tunnel.
+#
+#   cd deploy
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build redis api worker beat
+#   ngrok http --url=<your-free-static-domain> 8000
+services:
+  api:
+    ports:
+      - "127.0.0.1:8000:8000"

@@ -1,0 +1,13 @@
+# Low-memory mode for a 1 GB server (Oracle E2.1.Micro, Always Free), with 2 GB
+# swap. Same services as production minus Flower; one API process and one
+# Celery process. Start with:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.micro.yml up -d --build redis api worker beat caddy
+services:
+  api:
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+             --proxy-headers --forwarded-allow-ips='*'"
+  worker:
+    command: celery -A celery_worker.celery_app worker --loglevel=info -Q default --concurrency=1 --max-tasks-per-child=50
