@@ -24,6 +24,7 @@ import AppNavigator from './src/navigation/AppNavigator';
 import { useAuthStore } from './src/store/authStore';
 import { useLanguageStore } from './src/store/languageStore';
 import { pushApi } from './src/api/api';
+import { ToastHost } from './src/components/Toast';
 
 const navigationRef = createNavigationContainerRef();
 
@@ -111,6 +112,7 @@ export default function App() {
         <NavigationContainer ref={navigationRef} onReady={openPendingAlerts} onStateChange={openPendingAlerts}>
           <AppNavigator />
         </NavigationContainer>
+        <ToastHost />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

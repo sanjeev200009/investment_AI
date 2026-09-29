@@ -36,11 +36,10 @@ weight, where 1.0 is the most risk-tolerant response. The final score is the
 weighted mean over *answered* scored questions, rescaled to 0-100, so a partial
 response is still comparable to a complete one.
 
-Questions 9, 13, 14 and 15 carry weight 0. They are collected for other
-purposes — Q13 sector interest and Q14 language preference feed recommendation
-and multilingual behaviour — but they are not risk indicators, and Q9
-(monitoring frequency) points in no clean direction: frequent checking can mean
-either anxiety or active trading.
+Ten profile questions are scored. Questions 9, 11, 13, 14 and 15 were dropped
+from the journey but are still accepted (weight 0, not served) so older app
+builds keep working. Questions 101-105 are knowledge checks: marked right or
+wrong here into ``knowledge_score`` and never part of the risk score.
 
 Option strings are matched after light normalisation — Unicode dashes folded to
 ``-``, whitespace collapsed, case ignored — so a transcoding accident to the en
@@ -78,10 +77,21 @@ class Question:
     weight: int = 0
     # option -> fraction of `weight`, only for scored 'single' questions.
     fractions: Mapping[str, float] = field(default_factory=dict)
+    # Knowledge checks only: the right option and why, in one sentence.
+    correct: str | None = None
+    explanation: str = ''
+    # False for legacy questions older clients still send but we no longer ask.
+    served: bool = True
 
     @property
     def scored(self) -> bool:
         return self.weight > 0
+
+
+def _knowledge(qid: int, text: str, options: Sequence[str], correct: int, explanation: str) -> Question:
+    opts = tuple(options)
+    return Question(id=qid, text=text, kind='single', options=opts,
+                    correct=opts[correct], explanation=explanation)
 
 
 def _single(
@@ -91,6 +101,7 @@ def _single(
     weight: int = 0,
     ladder: Sequence[float] | None = None,
     fractions: Mapping[str, float] | None = None,
+    served: bool = True,
 ) -> Question:
     """Build a single-choice question.
 
@@ -109,9 +120,14 @@ def _single(
         options=opts,
         weight=weight,
         fractions=dict(fractions or {}),
+        served=served,
     )
 
 
+# The journey the app walks a beginner through: ten profile questions (scored
+# for risk) and five knowledge checks (scored for understanding, never for
+# risk). Weights were rebalanced when the instrument went from eleven scored
+# questions to ten; they still sum to 100.
 QUESTIONS: tuple[Question, ...] = (
     # Investment objective. Not monotonic, so the fractions are explicit: a
     # dated liability (a house deposit) has the least capacity for risk, open
@@ -120,7 +136,7 @@ QUESTIONS: tuple[Question, ...] = (
         1,
         'What is your primary investment goal?',
         ('Retirement', 'Wealth Growth', 'Major Purchase (e.g., home)', 'Income Generation'),
-        weight=5,
+        weight=6,
         fractions={
             'Wealth Growth': 1.0,
             'Retirement': 0.6,
@@ -137,14 +153,14 @@ QUESTIONS: tuple[Question, ...] = (
             'Moderately comfortable',
             'Very comfortable',
         ),
-        weight=12,
+        weight=13,
         ladder=_ASC4,
     ),
     _single(
         3,
         'How long do you plan to keep your investments?',
         ('Less than 1 year', '1–3 years', '3–5 years', '5+ years'),
-        weight=12,
+        weight=13,
         ladder=_ASC4,
     ),
     _single(
@@ -170,17 +186,17 @@ QUESTIONS: tuple[Question, ...] = (
         6,
         'How much of your savings are you willing to invest?',
         ('Less than 10%', '10–25%', '25–50%', 'More than 50%'),
-        weight=10,
+        weight=11,
         ladder=_ASC4,
     ),
-    # Knowledge check. Options run best-understanding first, so the ladder
-    # descends — the bug this module replaces got exactly this kind of
+    # Knowledge self-rating. Options run best-understanding first, so the
+    # ladder descends — the bug this module replaces got exactly this kind of
     # direction wrong and no one could see it.
     _single(
         7,
         'Do you understand what a P/E ratio is?',
         ('Yes, completely', 'Somewhat', "I've heard of it", 'No'),
-        weight=4,
+        weight=5,
         ladder=_DESC4,
     ),
     # Behavioural reaction to a drawdown: the strongest single predictor of
@@ -189,15 +205,8 @@ QUESTIONS: tuple[Question, ...] = (
         8,
         'How would you react if your portfolio dropped 20% in one month?',
         ('Sell everything', 'Sell some', 'Hold', 'Buy more'),
-        weight=15,
+        weight=17,
         ladder=_ASC4,
-    ),
-    # Monitoring frequency is collected but not scored: checking hourly can
-    # signal either anxiety (low tolerance) or active trading (high).
-    _single(
-        9,
-        'How often do you want to check your investments?',
-        ('Multiple times a day', 'Daily', 'Weekly', 'Monthly'),
     ),
     _single(
         10,
@@ -208,22 +217,28 @@ QUESTIONS: tuple[Question, ...] = (
             'Growth-focused',
             'High risk / High reward',
         ),
-        weight=12,
+        weight=13,
         ladder=_ASC4,
-    ),
-    Question(
-        id=11,
-        text='What is your risk tolerance?',
-        kind='slider',
-        weight=10,
     ),
     _single(
         12,
         'Do you follow financial news regularly?',
         ('Yes, daily', 'Few times a week', 'Rarely', 'Never'),
-        weight=4,
+        weight=6,
         ladder=_DESC4,
     ),
+    # ── Legacy: no longer asked, still accepted ──────────────────────────────
+    # Older app builds still send these. They are validated and stored but
+    # carry no weight and are not served by question_bank(). Q14's language is
+    # still honoured by the router; the splash screen sets it for new clients.
+    # Q9 (monitoring frequency) never pointed in a clean risk direction anyway.
+    _single(
+        9,
+        'How often do you want to check your investments?',
+        ('Multiple times a day', 'Daily', 'Weekly', 'Monthly'),
+        served=False,
+    ),
+    Question(id=11, text='What is your risk tolerance?', kind='slider', served=False),
     Question(
         id=13,
         text='Which sectors interest you most?',
@@ -235,20 +250,92 @@ QUESTIONS: tuple[Question, ...] = (
             'Energy',
             'Consumer Goods',
         ),
+        served=False,
     ),
-    Question(
-        id=14,
-        text='What is your preferred language for investment guidance?',
-        kind='single',
-        options=('English', 'Sinhala', 'Tamil'),
+    _single(
+        14,
+        'What is your preferred language for investment guidance?',
+        ('English', 'Sinhala', 'Tamil'),
+        served=False,
     ),
-    Question(
-        id=15,
-        text='How did you hear about InvestAI?',
-        kind='single',
-        options=('Social Media', 'Friend/Family', 'University', 'Other'),
+    _single(
+        15,
+        'How did you hear about InvestAI?',
+        ('Social Media', 'Friend/Family', 'University', 'Other'),
+        served=False,
+    ),
+    # ── Knowledge checks for CSE beginners ───────────────────────────────────
+    # Marked right/wrong here on the server; the app's own verdict only drives
+    # its animation. They never touch the risk score.
+    _knowledge(
+        101,
+        'When you buy a share of a company, what do you get?',
+        (
+            'A small part of the company',
+            'A loan you gave the company',
+            'A fixed-return savings deposit',
+            'A guarantee of future profits',
+        ),
+        correct=0,
+        explanation='A share is a small slice of ownership in a company, so its value '
+                    'rises and falls with how the business does.',
+    ),
+    _knowledge(
+        102,
+        'What does the ASPI measure?',
+        (
+            "The price of one bank's shares",
+            'The overall price movement of all shares listed on the CSE',
+            "The Central Bank's interest rate",
+            'The value of the rupee against the dollar',
+        ),
+        correct=1,
+        explanation='The All Share Price Index follows the prices of every company listed '
+                    'on the Colombo Stock Exchange, so it shows how the whole market is moving.',
+    ),
+    _knowledge(
+        103,
+        'What does diversification do?',
+        (
+            'Guarantees you make a profit',
+            'Makes all your shares rise together',
+            'Spreads your money so one bad company hurts you less',
+            'Removes all risk from investing',
+        ),
+        correct=2,
+        explanation='Spreading money across different companies and sectors cushions a '
+                    'loss in any one of them; it lowers risk but never removes it.',
+    ),
+    _knowledge(
+        104,
+        'What does a P/E ratio compare?',
+        (
+            'Trading volume to market value',
+            'Profit to the number of employees',
+            "Last year's price to today's price",
+            "A share's price to the company's earnings per share",
+        ),
+        correct=3,
+        explanation='P/E divides the share price by earnings per share, showing how many '
+                    'rupees investors pay for each rupee of yearly profit.',
+    ),
+    _knowledge(
+        105,
+        'What is a dividend?',
+        (
+            'A fee you pay your stockbroker',
+            'A part of company profit paid to shareholders',
+            'A tax on selling shares',
+            'The gap between buying and selling prices',
+        ),
+        correct=1,
+        explanation="A dividend is part of a company's profit paid out to its shareholders, "
+                    'usually as cash per share; not every company pays one.',
     ),
 )
+
+KNOWLEDGE: tuple[Question, ...] = tuple(q for q in QUESTIONS if q.correct)
+KNOWLEDGE_TOTAL: int = len(KNOWLEDGE)
 
 _BY_ID: dict[int, Question] = {q.id: q for q in QUESTIONS}
 
@@ -283,6 +370,10 @@ class ScoredAssessment:
     answers: dict[str, Any]
     preferred_language: str | None
     sectors: list[str]
+    # Correct knowledge answers, marked here; None when none were submitted
+    # (older clients), so "not asked" never reads as "scored zero".
+    knowledge_score: int | None = None
+    knowledge_total: int = 5
 
 
 def category_for(score: int) -> str:
@@ -300,7 +391,7 @@ def _parse_qid(raw: Any) -> int:
         raise AssessmentError(f'Question key {raw!r} is not a question number.')
     if qid not in _BY_ID:
         raise AssessmentError(
-            f'Unknown question id {qid}. Valid ids are 1-{max(_BY_ID)}.'
+            f'Unknown question id {qid}.'
         )
     return qid
 
@@ -344,7 +435,7 @@ def _validate_unscored(q: Question, answer: Any) -> Any:
         return [_canonical_option(q, a) for a in answer]
     if q.kind == 'single':
         return _canonical_option(q, answer)
-    return answer
+    return _fraction_for(q, answer)[1]  # legacy slider: range-checked, stored as sent
 
 
 def score_assessment(raw_answers: Mapping[Any, Any]) -> ScoredAssessment:
@@ -360,13 +451,19 @@ def score_assessment(raw_answers: Mapping[Any, Any]) -> ScoredAssessment:
     normalised: dict[str, Any] = {}
     earned = 0.0
     answered_weight = 0
+    knowledge_answered = knowledge_right = 0
 
     for raw_key, answer in raw_answers.items():
         qid = _parse_qid(raw_key)
         q = _BY_ID[qid]
         if answer is None or (isinstance(answer, (str, list)) and len(answer) == 0):
             continue  # left blank; ignore rather than reject
-        if q.scored:
+        if q.correct:
+            canonical = _canonical_option(q, answer)
+            knowledge_answered += 1
+            knowledge_right += canonical == q.correct
+            normalised[str(qid)] = canonical
+        elif q.scored:
             fraction, canonical = _fraction_for(q, answer)
             earned += fraction * q.weight
             answered_weight += q.weight
@@ -393,18 +490,29 @@ def score_assessment(raw_answers: Mapping[Any, Any]) -> ScoredAssessment:
         answers=normalised,
         preferred_language=normalised.get('14'),
         sectors=list(sectors),
+        knowledge_score=knowledge_right if knowledge_answered else None,
+        knowledge_total=KNOWLEDGE_TOTAL,
     )
 
 
 def question_bank() -> list[dict[str, Any]]:
-    """The instrument as plain data, for ``GET /me/assessment/questions``."""
-    return [
-        {
+    """The served instrument as plain data, for ``GET /me/assessment/questions``.
+
+    Profile questions first, then the knowledge checks, which also carry their
+    correct option and explanation. Legacy questions are not served.
+    """
+    out = []
+    for q in sorted((q for q in QUESTIONS if q.served), key=lambda q: (bool(q.correct), q.id)):
+        item = {
             'id': q.id,
+            'kind': 'knowledge' if q.correct else 'profile',
             'text': q.text,
             'type': q.kind,
             'options': list(q.options),
             'weight': q.weight,
         }
-        for q in QUESTIONS
-    ]
+        if q.correct:
+            item['correct'] = q.correct
+            item['explanation'] = q.explanation
+        out.append(item)
+    return out

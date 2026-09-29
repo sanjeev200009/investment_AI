@@ -10,7 +10,9 @@ import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TouchableTick from '../components/TouchableTick';
 import { Screen, Header, PillButton, Loading } from '../components/ui';
-import { MiniPills } from '../components/PillPals';
+import { MiniPills, PillPal } from '../components/PillPals';
+import Markdown from '../components/Markdown';
+import { planApi } from '../api/api';
 import api, { refreshSession } from '../api/axiosConfig';
 import { streamSSE } from '../api/sse';
 import { useT } from '../store/languageStore';
@@ -21,6 +23,60 @@ const INITIAL_MESSAGES = [];
 // Translation keys; t() at render and on send, so the assistant receives the
 // question in the user's language.
 const ALL_QUICK_ACTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => `chat_qa_${i}`);
+
+// Friendly names for the agent's tools (backend app/services/agent/tools.py).
+const TOOL_META = {
+  get_stock_data: { key: 'chat_src_market', icon: 'show-chart' },
+  get_stock_news: { key: 'chat_src_news', icon: 'article' },
+  get_user_portfolio: { key: 'chat_src_portfolio', icon: 'pie-chart-outline' },
+  get_price_prediction: { key: 'chat_src_prediction', icon: 'insights' },
+  search_financial_knowledge: { key: 'chat_src_knowledge', icon: 'menu-book' },
+  get_market_overview: { key: 'chat_src_overview', icon: 'public' },
+};
+const toolLabel = (name, t) => (TOOL_META[name] ? t(TOOL_META[name].key) : name);
+
+// The symbol a tool call was about, from its streamed args.
+const symbolOf = (tool) => {
+  const a = tool.args || {};
+  const raw = a.symbol || (Array.isArray(a.symbols) ? a.symbols[0] : null);
+  if (!raw) return null;
+  const s = String(raw).trim();
+  return /\s/.test(s) ? s : s.split('.')[0].toUpperCase();
+};
+
+// A related beginner concept for knowledge answers, matched on the question.
+const RELATED = [
+  [/dividend/, 'chat_fu_rel_dividend'],
+  [/p\/?e\b|price.to.earnings|earnings/, 'chat_fu_rel_pe'],
+  [/diversif|sector/, 'chat_fu_rel_diversify'],
+  [/risk|volatil/, 'chat_fu_rel_risk'],
+  [/aspi|index|sl20/, 'chat_fu_rel_index'],
+  [/bull|bear|correction|crash/, 'chat_fu_rel_cycle'],
+];
+
+// Two or three next questions from what the agent looked up. Never trade calls.
+function followUps(tools, question, t) {
+  const names = new Set(tools.map(x => x.name));
+  const sym = tools.map(symbolOf).find(Boolean);
+  const out = [];
+  if (sym && names.has('get_stock_data') && !names.has('get_stock_news')) out.push(t('chat_fu_news').replace('{symbol}', sym));
+  if (sym && (names.has('get_stock_data') || names.has('get_stock_news'))) out.push(t('chat_fu_drivers').replace('{symbol}', sym));
+  if (sym && names.has('get_stock_news') && !names.has('get_stock_data')) out.push(t('chat_fu_price').replace('{symbol}', sym));
+  if (names.has('get_price_prediction')) out.push(t('chat_fu_prediction'));
+  if (names.has('get_user_portfolio')) out.push(t('chat_fu_portfolio'));
+  if (names.has('get_market_overview')) out.push(t('chat_fu_sectors'));
+  if (names.has('search_financial_knowledge') || !names.size) {
+    const hay = `${question || ''} ${tools.map(x => x.args?.query || '').join(' ')}`.toLowerCase();
+    const rel = RELATED.find(([re]) => re.test(hay));
+    if (rel) out.push(t(rel[1]));
+    out.push(t('chat_fu_example'));
+  }
+  if (out.length < 2) out.push(t('chat_fu_simpler'));
+  return [...new Set(out)].slice(0, 3);
+}
+
+// The answer already carries its own "not financial advice" line.
+const HAS_DISCLAIMER = /not (financial|investment) advice|educational (purposes|information)|මූල්‍ය උපදෙස්|நிதி ஆலோசனை/i;
 
 export default function ChatScreen({ navigation, route }) {
   const { t } = useT();
@@ -77,10 +133,18 @@ export default function ChatScreen({ navigation, route }) {
     setMessages([]);
   }, [sessionId]);
   const [quickActions, setQuickActions] = useState([]);
+  // Starters for an empty chat: the personal plan's prompts when there is a
+  // plan, otherwise the shuffled general questions.
+  const [starters, setStarters] = useState([]);
 
   React.useEffect(() => {
     const shuffled = [...ALL_QUICK_ACTIONS].sort(() => 0.5 - Math.random());
     setQuickActions(shuffled.slice(0, 4));
+    let cancelled = false;
+    planApi.get().then(plan => {
+      if (!cancelled) setStarters((plan?.prompts || []).filter(k => typeof k === 'string').slice(0, 4));
+    });
+    return () => { cancelled = true; };
   }, []);
 
   // Streaming chat (I-14). The backend's ReAct loop emits SSE events; this
@@ -107,7 +171,7 @@ export default function ChatScreen({ navigation, route }) {
 
     setMessages(prev => [...prev,
       { id: `${now}`, type: 'user', text: userText },
-      { id: aiId, type: 'ai', isTyping: true, text: '', tools: [] },
+      { id: aiId, type: 'ai', isTyping: true, streaming: true, text: '', tools: [] },
     ]);
     setIsStreaming(true);
 
@@ -117,9 +181,9 @@ export default function ChatScreen({ navigation, route }) {
     const appendToken = (content) => setMessages(prev => prev.map(m =>
       m.id === aiId ? { ...m, isTyping: false, text: (m.text || '') + content } : m));
 
-    const addTool = (tool) => setMessages(prev => prev.map(m =>
+    const addTool = (tool, args) => setMessages(prev => prev.map(m =>
       m.id === aiId
-        ? { ...m, isTyping: false, tools: [...(m.tools || []), { name: tool, done: false }] }
+        ? { ...m, isTyping: false, tools: [...(m.tools || []), { name: tool, args, done: false }] }
         : m));
 
     const finishTool = (tool) => setMessages(prev => prev.map(m => {
@@ -132,13 +196,14 @@ export default function ChatScreen({ navigation, route }) {
     }));
 
     const finish = () => {
+      patchAi({ streaming: false });
       setIsStreaming(false);
       abortRef.current = null;
     };
 
     const failWith = (text) => {
       setMessages(prev => prev.map(m =>
-        m.id === aiId ? { ...m, isTyping: false, text: m.text || text } : m));
+        m.id === aiId ? { ...m, isTyping: false, failed: !m.text, text: m.text || text } : m));
       finish();
     };
 
@@ -157,7 +222,7 @@ export default function ChatScreen({ navigation, route }) {
               if (event.content) appendToken(event.content);
               break;
             case 'tool_start':
-              if (event.tool) addTool(event.tool);
+              if (event.tool) addTool(event.tool, event.args);
               break;
             case 'tool_result':
               if (event.tool) finishTool(event.tool);
@@ -175,6 +240,7 @@ export default function ChatScreen({ navigation, route }) {
             case 'error':
               patchAi({
                 isTyping: false,
+                failed: true,
                 text: event.detail || t('chat_error_no_answer'),
               });
               break;
@@ -219,7 +285,7 @@ export default function ChatScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const barSpace = 96 + insets.bottom;
 
-  const renderMessage = ({ item }) => {
+  const renderMessage = ({ item, index }) => {
     if (item.type !== 'ai') {
       return (
         <View
@@ -233,11 +299,15 @@ export default function ChatScreen({ navigation, route }) {
     }
 
     const tools = item.tools || [];
+    const finished = !item.streaming && !item.isTyping && !!item.text;
+    const used = finished ? [...new Set(tools.map(x => x.name))] : [];
+    const isLast = index === messages.length - 1;
+    const question = messages[index - 1]?.type === 'user' ? messages[index - 1].text : '';
     return (
       <View style={styles.aiGroup}>
         {/* ReAct activity: one chip per tool the agent called, in order,
             turning lime when its result lands. The agent loop made visible. */}
-        {tools.length > 0 && (
+        {!finished && tools.length > 0 && (
           <View style={styles.toolRow}>
             {tools.map((tool, i) => (
               <View
@@ -250,7 +320,7 @@ export default function ChatScreen({ navigation, route }) {
                   color={tool.done ? palette.limeInk : palette.ink}
                 />
                 <Text style={[styles.toolText, { color: tool.done ? palette.limeInk : palette.ink }]}>
-                  {t(tool.done ? 'chat_tool_used' : 'chat_tool_checking').replace('{tool}', tool.name)}
+                  {t(tool.done ? 'chat_tool_used' : 'chat_tool_checking').replace('{tool}', toolLabel(tool.name, t))}
                 </Text>
               </View>
             ))}
@@ -268,13 +338,71 @@ export default function ChatScreen({ navigation, route }) {
                 <MiniPills colors={[palette.lime, palette.yellow, palette.lavender]} size={18} />
               </View>
             ) : (
-              <Text style={styles.messageText}>{item.text}</Text>
+              <Markdown text={item.text} />
             )}
           </View>
         ) : null}
+
+        {finished && !item.failed && (
+          <View style={styles.after}>
+            {used.length > 0 && (
+              <View style={styles.toolRow} accessible accessibilityLabel={`${t('chat_used_live_data')}: ${used.map(n => toolLabel(n, t)).join(', ')}`}>
+                <Text style={styles.afterLabel}>{t('chat_used_live_data')}</Text>
+                {used.map(name => (
+                  <View key={name} style={[styles.toolChip, { backgroundColor: palette.lime }]}>
+                    <MaterialIcons name={TOOL_META[name]?.icon || 'check'} size={14} color={palette.limeInk} />
+                    <Text style={[styles.toolText, { color: palette.limeInk }]}>{toolLabel(name, t)}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            {!HAS_DISCLAIMER.test(item.text) && (
+              <Text style={styles.answerNote}>{t('chat_answer_disclaimer')}</Text>
+            )}
+            {isLast && !isStreaming && (
+              <View style={styles.followRow}>
+                {followUps(tools, question, t).map(q => (
+                  <TouchableTick
+                    key={q}
+                    style={styles.followChip}
+                    onPress={() => handleSend(q)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${t('chat_follow_up_a11y')}: ${q}`}
+                  >
+                    <MaterialIcons name="subdirectory-arrow-right" size={16} color={palette.lavenderInk} />
+                    <Text style={styles.followText}>{q}</Text>
+                  </TouchableTick>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
       </View>
     );
   };
+
+  const starterKeys = starters.length ? starters : quickActions;
+  const emptyChat = (
+    <View style={styles.empty}>
+      <PillPal tone="lavender" pose="wave" size={120} />
+      <Text style={styles.emptyTitle} accessibilityRole="header">{t('chat_empty_title')}</Text>
+      <Text style={styles.emptyBody}>{t(starters.length ? 'chat_empty_plan' : 'chat_empty_body')}</Text>
+      <View style={styles.starterList}>
+        {starterKeys.map(key => (
+          <TouchableTick
+            key={key}
+            style={styles.starter}
+            onPress={() => handleSend(t(key))}
+            disabled={isStreaming}
+            accessibilityRole="button"
+          >
+            <MaterialIcons name="auto-awesome" size={16} color={palette.lavenderInk} />
+            <Text style={styles.starterText}>{t(key)}</Text>
+          </TouchableTick>
+        ))}
+      </View>
+    </View>
+  );
 
   const newChatOff = isStreaming || messages.length === 0;
 
@@ -309,7 +437,7 @@ export default function ChatScreen({ navigation, route }) {
           data={messages}
           renderItem={renderMessage}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
-          ListEmptyComponent={historyLoading ? <Loading /> : null}
+          ListEmptyComponent={historyLoading ? <Loading /> : emptyChat}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.messageList}
           keyboardShouldPersistTaps="handled"
@@ -317,7 +445,7 @@ export default function ChatScreen({ navigation, route }) {
         />
 
         <View style={[styles.footer, { paddingBottom: barSpace }]}>
-          <FlatList
+          {messages.length > 0 && <FlatList
             horizontal
             showsHorizontalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -334,7 +462,7 @@ export default function ChatScreen({ navigation, route }) {
             )}
             keyExtractor={item => item}
             contentContainerStyle={styles.suggestionList}
-          />
+          />}
 
           <View style={styles.composer}>
             <TextInput
@@ -389,6 +517,24 @@ const styles = StyleSheet.create({
   },
   toolText: { fontFamily: fonts.medium, fontSize: 12 },
   typing: { flexDirection: 'row', gap: 5, paddingVertical: 6 },
+  after: { gap: 10, alignSelf: 'stretch' },
+  afterLabel: { ...text, fontSize: 12, color: palette.muted, alignSelf: 'center', marginRight: 2 },
+  answerNote: { ...text, fontSize: 11, color: palette.faint, paddingHorizontal: 4 },
+  followRow: { gap: 8, alignItems: 'flex-start' },
+  followChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, maxWidth: '100%',
+    borderRadius: radii.full, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: palette.lavender,
+  },
+  followText: { ...text, flexShrink: 1, fontFamily: fonts.medium, fontSize: 14, color: palette.lavenderInk },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 12 },
+  emptyTitle: { ...text, fontSize: 22, textAlign: 'center' },
+  emptyBody: { ...text, fontSize: 15, color: palette.muted, textAlign: 'center', paddingHorizontal: 12 },
+  starterList: { alignSelf: 'stretch', gap: 8, marginTop: 8 },
+  starter: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 52,
+    borderRadius: radii.full, paddingHorizontal: 18, paddingVertical: 12, backgroundColor: 'rgba(255,255,255,0.85)',
+  },
+  starterText: { ...text, flex: 1, fontSize: 15 },
   footer: { paddingTop: 8, gap: 12 },
   suggestionList: { paddingHorizontal: 20, gap: 8 },
   suggestion: {

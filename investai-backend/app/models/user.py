@@ -66,6 +66,9 @@ class RiskProfile(Base):
 	# interest and Q14 preferred language. Nullable — profiles created before
 	# this column existed have none.
 	answers = Column(JSONB, nullable=True)
+	# Correct answers to the five knowledge checks (0-5). Null when the user
+	# took an older version of the quiz that had none.
+	knowledge_score = Column(Integer, nullable=True)
 	updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 	user = relationship("User", back_populates="risk_profile")

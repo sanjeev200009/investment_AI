@@ -27,8 +27,25 @@ def test_scored_weights_sum_to_100():
     assert TOTAL_WEIGHT == 100
 
 
-def test_question_ids_are_contiguous_from_one():
-    assert [q.id for q in QUESTIONS] == list(range(1, len(QUESTIONS) + 1))
+def test_journey_is_ten_profile_and_five_knowledge_questions():
+    bank = question_bank()
+    profile = [q['id'] for q in bank if q['kind'] == 'profile']
+    knowledge = [q['id'] for q in bank if q['kind'] == 'knowledge']
+    assert profile == [1, 2, 3, 4, 5, 6, 7, 8, 10, 12]
+    assert knowledge == [101, 102, 103, 104, 105]
+    # Every served profile question is scored; the language question is gone.
+    assert all(q['weight'] > 0 for q in bank if q['kind'] == 'profile')
+    assert 14 not in profile
+
+
+def test_knowledge_items_carry_a_valid_answer_and_explanation():
+    for q in question_bank():
+        if q['kind'] == 'knowledge':
+            assert q['correct'] in q['options']
+            assert q['explanation'].endswith('.')
+            assert q['weight'] == 0
+        else:
+            assert 'correct' not in q
 
 
 def test_every_scored_single_question_prices_all_its_options():
@@ -54,12 +71,11 @@ def test_every_question_has_options_unless_slider():
 
 def test_question_bank_is_serialisable_and_complete():
     bank = question_bank()
-    assert len(bank) == len(QUESTIONS)
+    assert len(bank) == 15
     assert bank[0]['id'] == 1
     assert bank[0]['type'] == 'single'
     assert 'Retirement' in bank[0]['options']
-    slider = next(q for q in bank if q['type'] == 'slider')
-    assert slider['options'] == []
+    assert all(q['type'] == 'single' for q in bank)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -87,7 +103,6 @@ MOST_TOLERANT = {
     '7': 'Yes, completely',   # descending ladder: best knowledge, top fraction
     '8': 'Buy more',
     '10': 'High risk / High reward',
-    '11': 100,
     '12': 'Yes, daily',
 }
 
@@ -101,7 +116,6 @@ LEAST_TOLERANT = {
     '7': 'No',
     '8': 'Sell everything',
     '10': 'Very safe (bonds/FDs)',
-    '11': 0,
     '12': 'Never',
 }
 
@@ -141,20 +155,20 @@ def test_knowledge_questions_score_in_reverse():
     assert score_assessment(knows).score > score_assessment(does_not).score
 
 
-def test_slider_contributes_proportionally():
-    low = score_assessment(dict(MOST_TOLERANT, **{'11': 0}))
-    high = score_assessment(dict(MOST_TOLERANT, **{'11': 100}))
-    assert high.score > low.score
-    # Q11 carries weight 10 of 100, so the full swing is 10 points.
-    assert high.score - low.score == 10
+def test_legacy_answers_from_older_clients_are_accepted_but_unscored():
+    base = score_assessment(MOST_TOLERANT).score
+    old = score_assessment(dict(MOST_TOLERANT, **{'11': 0, '14': 'Sinhala'}))
+    assert old.score == base
+    assert old.answers['11'] == 0
+    assert old.knowledge_score is None
 
 
 def test_unscored_answers_do_not_move_the_score():
     base = score_assessment(MOST_TOLERANT).score
     with_extras = score_assessment(dict(
         MOST_TOLERANT,
-        **{'9': 'Daily', '13': ['Technology', 'Healthcare'], '14': 'Sinhala',
-           '15': 'University'},
+        **{'9': 'Daily', '11': 0, '13': ['Technology', 'Healthcare'], '14': 'Sinhala',
+           '15': 'University', '101': 'A loan you gave the company'},
     ))
     assert with_extras.score == base
 
@@ -220,8 +234,8 @@ def test_slider_rejects_out_of_range_and_wrong_types(value):
     payload = dict(MOST_TOLERANT)
     payload['11'] = value
     if value is None:
-        # None means "left blank"; that drops Q11's weight but stays valid.
-        assert score_assessment(payload).answered_weight == TOTAL_WEIGHT - 10
+        # None means "left blank"; the legacy slider carries no weight.
+        assert score_assessment(payload).answered_weight == TOTAL_WEIGHT
         return
     with pytest.raises(AssessmentError):
         score_assessment(payload)
@@ -264,7 +278,7 @@ def test_blank_answers_are_skipped_not_rejected():
     payload['13'] = []      # empty multi-select
     result = score_assessment(payload)
     assert '12' not in result.answers
-    assert result.answered_weight == TOTAL_WEIGHT - 4  # Q12's weight
+    assert result.answered_weight == TOTAL_WEIGHT - 6  # Q12's weight
 
 
 def test_integer_question_keys_are_accepted():
@@ -300,11 +314,44 @@ def test_score_never_leaves_zero_to_one_hundred():
 def test_min_coverage_boundary_is_enforced_not_approximated():
     """Exactly at the threshold must pass; one point under must not."""
     threshold = TOTAL_WEIGHT * rs.MIN_ANSWERED_WEIGHT_RATIO
-    # Q2(12) + Q3(12) + Q8(15) + Q10(12) + Q11(10) = 61 >= 60
+    # Q2(13) + Q3(13) + Q8(17) + Q10(13) + Q12(6) = 62 >= 60
     ok = {'2': 'Very comfortable', '3': '5+ years', '8': 'Buy more',
-          '10': 'High risk / High reward', '11': 100}
+          '10': 'High risk / High reward', '12': 'Yes, daily'}
     assert score_assessment(ok).answered_weight >= threshold
-    # Drop Q11 (10 points) -> 51, under the floor.
-    del ok['11']
+    # Drop Q12 (6 points) -> 56, under the floor.
+    del ok['12']
     with pytest.raises(AssessmentError):
         score_assessment(ok)
+
+
+# ── Knowledge checks ────────────────────────────────────────────────────────
+
+RIGHT = {str(q.id): q.correct for q in rs.KNOWLEDGE}
+WRONG = {str(q.id): next(o for o in q.options if o != q.correct) for q in rs.KNOWLEDGE}
+
+
+def test_knowledge_score_is_marked_server_side():
+    assert rs.KNOWLEDGE_TOTAL == 5
+    assert score_assessment(dict(MOST_TOLERANT, **RIGHT)).knowledge_score == 5
+    assert score_assessment(dict(MOST_TOLERANT, **WRONG)).knowledge_score == 0
+    mixed = {**MOST_TOLERANT, **RIGHT, '104': WRONG['104'], '105': WRONG['105']}
+    result = score_assessment(mixed)
+    assert (result.knowledge_score, result.knowledge_total) == (3, 5)
+    assert result.answers['104'] == WRONG['104']
+
+
+def test_knowledge_answers_never_move_the_risk_score():
+    base = score_assessment(MOST_TOLERANT).score
+    assert score_assessment(dict(MOST_TOLERANT, **RIGHT)).score == base
+    assert score_assessment(dict(LEAST_TOLERANT, **WRONG)).score == score_assessment(LEAST_TOLERANT).score
+
+
+def test_knowledge_answer_must_be_one_of_its_options():
+    with pytest.raises(AssessmentError) as exc:
+        score_assessment(dict(MOST_TOLERANT, **{'102': 'correct'}))
+    assert 'Q102' in str(exc.value)
+
+
+def test_knowledge_only_submission_is_too_thin_for_a_risk_score():
+    with pytest.raises(AssessmentError):
+        score_assessment(RIGHT)

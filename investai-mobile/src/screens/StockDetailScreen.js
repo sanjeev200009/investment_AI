@@ -8,7 +8,7 @@ import { View, Text, StyleSheet, Dimensions, ActivityIndicator, Linking } from '
 import { MaterialIcons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
 import TouchableTick from '../components/TouchableTick';
-import ActionFeedbackModal from '../components/ActionFeedbackModal';
+import { toast } from '../components/Toast';
 import {
     Screen, Header, CircleButton, PillButton, Chip, Card, BigNumber, ChangePill,
     Label, Body, EmptyState,
@@ -87,8 +87,6 @@ export default function StockDetailScreen({ route, navigation }) {
     // Always opened with a stock; there is no invented fallback quote.
     const stock = route.params?.stock || { symbol: '' };
     const [watchState, setWatchState] = useState('idle'); // idle | saving | added
-    const [showFeedback, setShowFeedback] = useState(false);
-    const [feedbackConfig, setFeedbackConfig] = useState({});
 
     // The real daily-close series from GET /stocks/history/{symbol}.
     const [range, setRange] = useState('1M');
@@ -198,14 +196,10 @@ export default function StockDetailScreen({ route, navigation }) {
             try {
                 await watchlistApi.remove(stock.symbol);
                 setWatchState('idle');
+                toast(t('toast_watch_removed').replace('{symbol}', stock.symbol), 'info');
             } catch (err) {
                 setWatchState('added');
-                setFeedbackConfig({
-                    title: t('profile_error_title'),
-                    message: t('detail_check_connection'),
-                    type: 'error',
-                });
-                setShowFeedback(true);
+                toast(t('detail_check_connection'), 'error');
             }
             return;
         }
@@ -213,21 +207,12 @@ export default function StockDetailScreen({ route, navigation }) {
         try {
             await watchlistApi.add(stock.symbol);
             setWatchState('added');
-            setFeedbackConfig({
-                title: t('detail_added_title'),
-                message: t('detail_added_message').replace('{symbol}', stock.symbol),
-                type: 'success',
-            });
+            toast(t('toast_watch_added').replace('{symbol}', stock.symbol));
         } catch (err) {
             setWatchState('idle');
             const detail = err?.response?.data?.detail;
-            setFeedbackConfig({
-                title: t('detail_add_failed_title'),
-                message: typeof detail === 'string' ? detail : t('detail_check_connection'),
-                type: 'error',
-            });
+            toast(typeof detail === 'string' ? detail : t('detail_check_connection'), 'error');
         }
-        setShowFeedback(true);
     };
 
     const chartConfig = {
@@ -492,13 +477,6 @@ export default function StockDetailScreen({ route, navigation }) {
                 onPress={askAssistant}
             />
 
-            <ActionFeedbackModal
-                visible={showFeedback}
-                onClose={() => setShowFeedback(false)}
-                title={feedbackConfig.title}
-                message={feedbackConfig.message}
-                type={feedbackConfig.type}
-            />
         </Screen>
     );
 }

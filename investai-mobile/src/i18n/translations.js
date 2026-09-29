@@ -15,6 +15,9 @@ import marketsStrings from './screens/markets';
 import accountStrings from './screens/account';
 import siStrings from './screens/si';
 import taStrings from './screens/ta';
+import onboardingStrings from './features/onboarding';
+import chatStrings from './features/chat';
+import tourStrings from './features/tour';
 
 export const LANGUAGES = [
   { code: 'en', label: 'English' },
@@ -206,9 +209,10 @@ const ta = {
 
 // Per-screen strings. The si/ta tables above win over screens/si.js and
 // screens/ta.js; any key still missing falls back to English.
-Object.assign(en, authStrings, marketsStrings, accountStrings);
-const siAll = { ...siStrings, ...si };
-const taAll = { ...taStrings, ...ta };
+const FEATURES = [onboardingStrings, chatStrings, tourStrings];
+Object.assign(en, authStrings, marketsStrings, accountStrings, ...FEATURES.map(f => f.en));
+const siAll = { ...siStrings, ...Object.assign({}, ...FEATURES.map(f => f.si)), ...si };
+const taAll = { ...taStrings, ...Object.assign({}, ...FEATURES.map(f => f.ta)), ...ta };
 
 const TRANSLATIONS = { en, si: siAll, ta: taAll };
 

@@ -11,6 +11,7 @@ import {
   Screen, CircleButton, IconCircle, Chip, Card, StackCard, Title, Label, Body, EmptyState, Loading, accent,
 } from '../components/ui';
 import { notificationsApi } from '../api/api';
+import { toast } from '../components/Toast';
 import { useT } from '../store/languageStore';
 import { palette, fonts, radii, sizes } from '../theme/tokens';
 
@@ -80,10 +81,11 @@ export default function NotificationsScreen({ navigation }) {
     setAlerts(alerts.filter(a => a.notif_id !== notifId));
     try {
       await notificationsApi.remove(notifId);
+      toast(t('toast_notif_deleted'), 'info');
     } catch (err) {
       console.warn('[Notifications] delete failed:', err?.message || err);
       setAlerts(snapshot);
-      Alert.alert(t('profile_error_title'), t('error_generic'));
+      toast(t('error_generic'), 'error');
     }
   };
 
@@ -91,10 +93,11 @@ export default function NotificationsScreen({ navigation }) {
     setAlerts(alerts.map(a => ({ ...a, is_read: true })));
     try {
       await notificationsApi.markAllRead();
+      toast(t('toast_notif_all_read'), 'success');
     } catch (err) {
       console.warn('[Notifications] mark-all failed:', err?.message || err);
       fetchAlerts();
-      Alert.alert(t('profile_error_title'), t('error_generic'));
+      toast(t('error_generic'), 'error');
     }
   };
 
