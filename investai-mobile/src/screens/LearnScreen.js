@@ -4,12 +4,13 @@
 // text the AI assistant teaches from, so the two never disagree.
 // v2 "Soft pastel": lessons as a stack of pastel cards, each with a large
 // light lesson number; the last card is white.
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import {
-  Screen, Header, StackCard, Title, Label, EmptyState, Loading, accent, ACCENT_CYCLE,
+  Screen, Header, StackCard, Title, Label, EmptyState, Loading, Chip, accent, ACCENT_CYCLE,
 } from '../components/ui';
-import { learnApi } from '../api/api';
+import { learnApi, planApi } from '../api/api';
 import { useT } from '../store/languageStore';
 import { palette, fonts } from '../theme/tokens';
 
@@ -31,6 +32,27 @@ export default function LearnScreen({ navigation }) {
 
   useEffect(() => { load(); }, [load]);
 
+  // The personal plan orders the lessons and knows which ones were opened
+  // (its learn_* steps are done once the lesson is viewed). No plan: API order.
+  const [plan, setPlan] = useState(null);
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    planApi.get().then(p => { if (!cancelled) setPlan(p); });
+    return () => { cancelled = true; };
+  }, []));
+
+  const { ordered, recommendedId } = useMemo(() => {
+    const list = lessons || [];
+    const order = (plan?.lesson_ids || []).filter(id => list.some(l => l.id === id));
+    if (!order.length) return { ordered: list, recommendedId: null };
+    const rank = id => { const i = order.indexOf(id); return i === -1 ? order.length : i; };
+    const opened = new Set((plan.steps || []).filter(st => st.done && st.lesson_id).map(st => st.lesson_id));
+    return {
+      ordered: [...list].sort((a, b) => rank(a.id) - rank(b.id)),
+      recommendedId: order.find(id => !opened.has(id)) || null,
+    };
+  }, [lessons, plan]);
+
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
   return (
@@ -48,8 +70,9 @@ export default function LearnScreen({ navigation }) {
         <EmptyState icon="error-outline" tone="coral" message={error} />
       ) : (
         <View style={{ marginHorizontal: -8 }}>
-          {lessons.map((lesson, i) => {
-            const last = i === lessons.length - 1;
+          {ordered.map((lesson, i) => {
+            const last = i === ordered.length - 1;
+            const recommended = lesson.id === recommendedId;
             const tone = last && i > 0 ? 'white' : ACCENT_CYCLE[i % ACCENT_CYCLE.length];
             const ink = accent(tone).ink;
             return (
@@ -60,10 +83,11 @@ export default function LearnScreen({ navigation }) {
                 last={last}
                 style={styles.card}
                 onPress={() => navigation.navigate('Lesson', { id: lesson.id, title: lesson.title })}
-                label={t('learn_row_a11y').replace('{title}', lesson.title).replace('{minutes}', lesson.minutes)}
+                label={`${recommended ? `${t('learn_recommended')}. ` : ''}${t('learn_row_a11y').replace('{title}', lesson.title).replace('{minutes}', lesson.minutes)}`}
               >
                 <Text style={[styles.number, { color: last ? palette.muted : ink }]}>{i + 1}</Text>
                 <View style={{ flex: 1, gap: 2 }}>
+                  {recommended ? <Chip tone="white" icon="auto-awesome" label={t('learn_recommended')} /> : null}
                   <Text style={[styles.rowTitle, { color: ink }]}>{lesson.title}</Text>
                   <Text style={[styles.meta, { color: last ? palette.muted : ink }]}>
                     {t('learn_minutes').replace('{minutes}', lesson.minutes)} · {lesson.theme}

@@ -1,135 +1,53 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, PanResponder, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, Alert } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Screen, Header, PillButton, Title, Label } from '../../components/ui';
+import * as Haptics from 'expo-haptics';
+import { Screen, Header, PillButton, Title, Label, Chip } from '../../components/ui';
 import { PillPal } from '../../components/PillPals';
 import TouchableTick from '../../components/TouchableTick';
+import JourneyRoad from '../../components/JourneyRoad';
+import Celebrate from '../../components/Celebrate';
+import VictoryScreen from './VictoryScreen';
 import { palette, fonts, radii } from '../../theme/tokens';
 import { useAuthStore } from '../../store/authStore';
 import { useT } from '../../store/languageStore';
+import { authApi } from '../../api/authApi';
 
-const KNOB_HIT = 44; // touch target around the slider knob
-const KNOB = 28;
+// The investor journey: 10 profile questions and 5 knowledge checks, in the
+// order they are walked. Option strings must stay identical to the canonical
+// bank in investai-backend/app/services/risk_scoring.py (also served by
+// GET /me/assessment/questions); the server rejects an unknown option with a
+// 422 naming the question. Only the display is translated: profile questions
+// show t(`assess_q${id}`) / t(`assess_q${id}_o${n}`) (src/i18n/screens/auth.js),
+// knowledge checks t(`assess_k${id}`) / _o${n} / _x (src/i18n/features/onboarding.js).
+// `correct` here only drives the celebration; the server marks the answers.
+const P = (id, options) => ({ id, kind: 'profile', options });
+const K = (id, options, correct) => ({ id, kind: 'knowledge', options, correct });
 
-// Must stay identical to the canonical bank in
-// investai-backend/app/services/risk_scoring.py, which is what scores these
-// answers. It is also served by GET /me/assessment/questions. A mismatched
-// option string is no longer scored as zero — the backend rejects it with a 422
-// naming the question, which surfaces in handleNext's Alert below.
-// Only the display is translated: `text` shows as t(`assess_q${id}`) and each
-// option as t(`assess_q${id}_o${index + 1}`), while the English option string
-// is what gets stored in `answers` and sent. Reordering options means
-// renumbering those keys in src/i18n/screens/auth.js.
 const QUESTIONS = [
-  { id: 1, text: "What is your primary investment goal?", type: "single", options: ["Retirement", "Wealth Growth", "Major Purchase (e.g., home)", "Income Generation"] },
-  { id: 2, text: "How comfortable are you with potential short-term fluctuations in your investment value?", type: "single", options: ["Not comfortable at all", "Slightly comfortable", "Moderately comfortable", "Very comfortable"] },
-  { id: 3, text: "How long do you plan to keep your investments?", type: "single", options: ["Less than 1 year", "1–3 years", "3–5 years", "5+ years"] },
-  { id: 4, text: "Have you invested in stocks before?", type: "single", options: ["Never", "Once or twice", "Occasionally", "Regularly"] },
-  { id: 5, text: "What is your monthly income range (LKR)?", type: "single", options: ["Below 50,000", "50,000–100,000", "100,000–250,000", "Above 250,000"] },
-  { id: 6, text: "How much of your savings are you willing to invest?", type: "single", options: ["Less than 10%", "10–25%", "25–50%", "More than 50%"] },
-  { id: 7, text: "Do you understand what a P/E ratio is?", type: "single", options: ["Yes, completely", "Somewhat", "I've heard of it", "No"] },
-  { id: 8, text: "How would you react if your portfolio dropped 20% in one month?", type: "single", options: ["Sell everything", "Sell some", "Hold", "Buy more"] },
-  { id: 9, text: "How often do you want to check your investments?", type: "single", options: ["Multiple times a day", "Daily", "Weekly", "Monthly"] },
-  { id: 10, text: "What is your preferred investment style?", type: "single", options: ["Very safe (bonds/FDs)", "Balanced", "Growth-focused", "High risk / High reward"] },
-  { id: 11, text: "What is your risk tolerance?", type: "slider" },
-  { id: 12, text: "Do you follow financial news regularly?", type: "single", options: ["Yes, daily", "Few times a week", "Rarely", "Never"] },
-  { id: 13, text: "Which sectors interest you most?", type: "multi", options: ["Banking & Finance", "Technology", "Healthcare", "Energy", "Consumer Goods"] },
-  { id: 14, text: "What is your preferred language for investment guidance?", type: "single", options: ["English", "Sinhala", "Tamil"] },
-  { id: 15, text: "How did you hear about InvestAI?", type: "single", options: ["Social Media", "Friend/Family", "University", "Other"] }
+  P(1, ['Retirement', 'Wealth Growth', 'Major Purchase (e.g., home)', 'Income Generation']),
+  P(4, ['Never', 'Once or twice', 'Occasionally', 'Regularly']),
+  K(101, ['A small part of the company', 'A loan you gave the company', 'A fixed-return savings deposit', 'A guarantee of future profits'], 0),
+  P(3, ['Less than 1 year', '1–3 years', '3–5 years', '5+ years']),
+  P(8, ['Sell everything', 'Sell some', 'Hold', 'Buy more']),
+  K(102, ["The price of one bank's shares", 'The overall price movement of all shares listed on the CSE', "The Central Bank's interest rate", 'The value of the rupee against the dollar'], 1),
+  P(2, ['Not comfortable at all', 'Slightly comfortable', 'Moderately comfortable', 'Very comfortable']),
+  P(6, ['Less than 10%', '10–25%', '25–50%', 'More than 50%']),
+  K(103, ['Guarantees you make a profit', 'Makes all your shares rise together', 'Spreads your money so one bad company hurts you less', 'Removes all risk from investing'], 2),
+  P(10, ['Very safe (bonds/FDs)', 'Balanced', 'Growth-focused', 'High risk / High reward']),
+  P(7, ['Yes, completely', 'Somewhat', "I've heard of it", 'No']),
+  K(104, ['Trading volume to market value', 'Profit to the number of employees', "Last year's price to today's price", "A share's price to the company's earnings per share"], 3),
+  P(5, ['Below 50,000', '50,000–100,000', '100,000–250,000', 'Above 250,000']),
+  P(12, ['Yes, daily', 'Few times a week', 'Rarely', 'Never']),
+  K(105, ['A fee you pay your stockbroker', 'A part of company profit paid to shareholders', 'A tax on selling shares', 'The gap between buying and selling prices'], 1),
 ];
-
-const RiskSlider = ({ value = 50, onChange }) => {
-  const [trackWidth, setTrackWidthState] = useState(0);
-  // The PanResponder below is created once, so it closed over the first
-  // render's trackWidth (0) and every drag was ignored: each user submitted 50.
-  // It reads this ref instead.
-  const trackWidthRef = useRef(0);
-  const setTrackWidth = (w) => { trackWidthRef.current = w; setTrackWidthState(w); };
-  const position = useRef(new Animated.Value(value)).current;
-  const valRef = useRef(value);
-  const { t } = useT();
-
-  useEffect(() => {
-    position.setValue(value);
-    valRef.current = value;
-  }, []);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        position.setOffset(position._value);
-        position.setValue(0);
-      },
-      onPanResponderMove: (e, gestureState) => {
-        const width = trackWidthRef.current;
-        if (width > 0) {
-          const deltaVal = (gestureState.dx / width) * 100;
-          position.setValue(deltaVal);
-          let raw = position._offset + deltaVal;
-          raw = Math.max(0, Math.min(100, Math.round(raw)));
-          if (raw !== valRef.current) {
-            valRef.current = raw;
-            onChange(raw);
-          }
-        }
-      },
-      onPanResponderRelease: () => {
-        position.flattenOffset();
-        let raw = position._value;
-        raw = Math.max(0, Math.min(100, Math.round(raw)));
-        position.setValue(raw);
-        onChange(raw);
-      }
-    })
-  ).current;
-
-  const pct = position.interpolate({
-    inputRange: [0, 100],
-    outputRange: ['0%', '100%'],
-    extrapolate: 'clamp'
-  });
-
-  return (
-    <View
-      style={styles.sliderContainer}
-      accessible
-      accessibilityLabel={t('assess_q11')}
-      accessibilityValue={{ min: 0, max: 100, now: valRef.current }}
-    >
-      <View style={styles.sliderBadge}>
-        <Text style={styles.sliderBadgeText}>{valRef.current}%</Text>
-      </View>
-      <View
-        style={styles.trackWrapper}
-        onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
-      >
-        <View style={styles.track}>
-          <Animated.View style={[styles.trackFill, { width: pct }]} />
-        </View>
-        <Animated.View
-          style={[styles.thumbHit, { left: pct, transform: [{ translateX: -KNOB_HIT / 2 }] }]}
-          {...panResponder.panHandlers}
-        >
-          <View style={styles.thumb} />
-        </Animated.View>
-      </View>
-      <View style={styles.sliderLabels}>
-        <Text style={styles.sliderLabel}>{t('assess_low')}</Text>
-        <Text style={styles.sliderLabel}>{t('assess_medium')}</Text>
-        <Text style={styles.sliderLabel}>{t('assess_high')}</Text>
-      </View>
-    </View>
-  );
-};
+const KINDS = QUESTIONS.map(q => q.kind);
+const textKey = (q) => (q.kind === 'knowledge' ? `assess_k${q.id}` : `assess_q${q.id}`);
 
 export default function AssessmentScreen({ navigation, route }) {
   // Also opened from Profile to retake it; that copy returns to Profile when
   // done instead of entering the app, and has nothing to skip.
   const isRetake = route?.name === 'RetakeAssessment';
-  // Identity comes from the backend user row, not Clerk. `user.user_id` is the
-  // same UUID the API authorises against, so the per-user
-  // `profile_setup_done_<id>` flag now keys on the real account.
   const user = useAuthStore(state => state.user);
   const setProfileSetupDone = useAuthStore(state => state.setProfileSetupDone);
   const setAssessmentResults = useAuthStore(state => state.setAssessmentResults);
@@ -138,80 +56,63 @@ export default function AssessmentScreen({ navigation, route }) {
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState({});
   const [submitting, setSubmitting] = useState(false);
-  const progressAnim = useRef(new Animated.Value(0)).current;
+  const [burst, setBurst] = useState(0);
+  const [done, setDone] = useState(null); // { profile, plan } once submitted
 
-  const currentQuestion = QUESTIONS[currentQ];
+  const q = QUESTIONS[currentQ];
+  const answer = answers[q.id];
+  const isLast = currentQ === QUESTIONS.length - 1;
+  const rightFor = (item) => answers[item.id] === item.options[item.correct];
 
-  useEffect(() => {
-    Animated.timing(progressAnim, {
-      toValue: ((currentQ + 1) / QUESTIONS.length) * 100,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
-  }, [currentQ]);
+  // Per stop, whether its knowledge check was answered right (for the road).
+  const results = {};
+  QUESTIONS.forEach((item, i) => {
+    if (item.kind === 'knowledge' && answers[item.id] !== undefined) results[i] = rightFor(item);
+  });
 
   const handleSelect = (option) => {
-    if (currentQuestion.type === 'single') {
-      setAnswers({ ...answers, [currentQuestion.id]: option });
-    } else if (currentQuestion.type === 'multi') {
-      const currentSelections = answers[currentQuestion.id] || [];
-      if (currentSelections.includes(option)) {
-        setAnswers({ ...answers, [currentQuestion.id]: currentSelections.filter(i => i !== option) });
-      } else {
-        setAnswers({ ...answers, [currentQuestion.id]: [...currentSelections, option] });
+    if (q.kind === 'knowledge') {
+      if (answer !== undefined) return; // locked once revealed
+      if (option === q.options[q.correct]) {
+        setBurst(b => b + 1);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       }
     }
+    setAnswers({ ...answers, [q.id]: option });
   };
 
-  // The slider always has a value, so only the choice questions can be blank.
-  const isAnswered = () => {
-    const a = answers[currentQuestion.id];
-    if (currentQuestion.type === 'slider') return true;
-    if (currentQuestion.type === 'multi') return Array.isArray(a) && a.length > 0;
-    return a !== undefined && a !== null && a !== '';
+  const finish = async () => {
+    if (isRetake) {
+      navigation.goBack();
+      return;
+    }
+    await setProfileSetupDone(user?.user_id);
+    navigation.reset({ index: 0, routes: [{ name: 'MainTab' }] });
   };
 
   const handleNext = async () => {
-    if (!isAnswered()) {
-      // The backend needs at least 60% of the scored weight to return a
-      // reliable score, so gaps are refused here rather than at submit time
-      // where the user has lost the context of which question they skipped.
+    if (answer === undefined) {
+      // The backend needs most of the scored weight for a reliable score, so
+      // gaps are refused here, while the user still has the question in view.
       Alert.alert(t('assess_please_answer'), t('assess_please_answer_msg'));
       return;
     }
-
-    if (currentQ < QUESTIONS.length - 1) {
+    if (!isLast) {
       setCurrentQ(currentQ + 1);
       return;
     }
-
     if (submitting) return;
     setSubmitting(true);
     try {
-      // Sliders default to 50 in the UI but are only in `answers` once dragged;
-      // send the displayed value so the score reflects what the user saw.
-      const payload = { ...answers };
-      QUESTIONS.forEach(q => {
-        if (q.type === 'slider' && payload[q.id] === undefined) payload[q.id] = 50;
-      });
-
-      await setAssessmentResults(payload);
-      if (isRetake) {
-        navigation.goBack();
-        return;
-      }
-      await setProfileSetupDone(user?.user_id);
-      navigation.reset({ index: 0, routes: [{ name: 'MainTab' }] });
+      const profile = await setAssessmentResults({ ...answers });
+      // The plan is a bonus on the victory screen; Home fetches it again.
+      const plan = await authApi.getPlan().catch(() => null);
+      setDone({ profile, plan });
     } catch (err) {
-      // Never mark the wizard done on failure — that was the old behaviour and
-      // it left users with no risk profile and no way to notice.
+      // Never mark the wizard done on failure: that left users with no risk
+      // profile and no way to notice.
       const detail = err?.response?.data?.detail;
-      Alert.alert(
-        t('assess_save_failed'),
-        typeof detail === 'string'
-          ? detail
-          : t('assess_check_connection')
-      );
+      Alert.alert(t('assess_save_failed'), typeof detail === 'string' ? detail : t('assess_check_connection'));
     } finally {
       setSubmitting(false);
     }
@@ -222,76 +123,74 @@ export default function AssessmentScreen({ navigation, route }) {
     navigation.reset({ index: 0, routes: [{ name: 'MainTab' }] });
   };
 
-  const handlePrev = () => {
-    if (currentQ > 0) {
-      setCurrentQ(currentQ - 1);
-    }
+  if (done) {
+    return <VictoryScreen profile={done.profile} plan={done.plan} isRetake={isRetake} onContinue={finish} />;
+  }
+
+  const knowledge = q.kind === 'knowledge';
+  const revealed = knowledge && answer !== undefined;
+  const right = revealed && rightFor(q);
+  let pal = { tone: 'lavender', mood: 'calm', pose: 'rest' };
+  if (revealed) pal = right ? { tone: 'lime', mood: 'joy', pose: 'cheer', confetti: true } : { tone: 'coral', mood: 'oops', pose: 'rest' };
+  else if (answer !== undefined) pal = { tone: 'lavender', mood: 'happy', pose: 'wave' };
+  else if (knowledge) pal = { tone: 'yellow', mood: 'calm', pose: 'rest', badge: 'lightbulb' };
+
+  const stopLabel = t('journey_stop').replace('{current}', currentQ + 1).replace('{total}', QUESTIONS.length);
+
+  const renderOption = (option, index) => {
+    const selected = answer === option;
+    const isCorrect = revealed && index === q.correct;
+    const isWrongPick = revealed && selected && !isCorrect;
+    let icon = null;
+    if (isCorrect) icon = 'check';
+    else if (isWrongPick) icon = 'close';
+    else if (selected) icon = 'check';
+    return (
+      <TouchableTick
+        key={index}
+        style={[
+          styles.option,
+          selected && !revealed && styles.optionSelected,
+          isCorrect && { backgroundColor: palette.lime },
+          isWrongPick && { backgroundColor: palette.coral },
+          revealed && !isCorrect && !isWrongPick && { opacity: 0.55 },
+        ]}
+        onPress={() => handleSelect(option)}
+        disabled={revealed}
+        accessibilityRole="radio"
+        accessibilityState={{ selected, disabled: revealed }}
+      >
+        <Text style={[styles.optionText, selected && !revealed && styles.optionTextSelected]}>
+          {t(`${textKey(q)}_o${index + 1}`)}
+        </Text>
+        {icon
+          ? <MaterialIcons name={icon} size={20} color={selected && !revealed ? '#FFFFFF' : palette.ink} />
+          : <View style={styles.ringEmpty} />}
+      </TouchableTick>
+    );
   };
-
-  const renderOptions = () => {
-    if (currentQuestion.type === 'slider') {
-      return (
-        <RiskSlider 
-          value={answers[currentQuestion.id] !== undefined ? answers[currentQuestion.id] : 50} 
-          onChange={(val) => setAnswers({ ...answers, [currentQuestion.id]: val })} 
-        />
-      );
-    }
-
-    return currentQuestion.options.map((option, index) => {
-      let isSelected = false;
-      if (currentQuestion.type === 'single') {
-        isSelected = answers[currentQuestion.id] === option;
-      } else if (currentQuestion.type === 'multi') {
-        isSelected = (answers[currentQuestion.id] || []).includes(option);
-      }
-
-      const multi = currentQuestion.type === 'multi';
-      return (
-        <TouchableTick
-          key={index}
-          style={[styles.option, isSelected && styles.optionSelected]}
-          onPress={() => handleSelect(option)}
-          accessibilityRole={multi ? 'checkbox' : 'radio'}
-          accessibilityState={multi ? { checked: isSelected } : { selected: isSelected }}
-        >
-          <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>{t(`assess_q${currentQuestion.id}_o${index + 1}`)}</Text>
-          {isSelected
-            ? <MaterialIcons name="check" size={20} color="#FFFFFF" />
-            : <View style={multi ? styles.boxEmpty : styles.ringEmpty} />}
-        </TouchableTick>
-      );
-    });
-  };
-
-  const progress = progressAnim.interpolate({
-    inputRange: [0, 100],
-    outputRange: ['0%', '100%']
-  });
 
   return (
     <Screen
       edges={['top', 'bottom']}
       contentStyle={styles.content}
       footer={
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <View style={styles.navRow}>
-            <PillButton
-              variant="secondary"
-              title={t('assess_previous')}
-              onPress={handlePrev}
-              disabled={currentQ === 0}
-              style={styles.navBtn}
-            />
-            <PillButton
-              title={currentQ === QUESTIONS.length - 1 ? t('assess_complete') : t('assess_next')}
-              icon={currentQ === QUESTIONS.length - 1 ? 'check' : undefined}
-              onPress={handleNext}
-              loading={submitting}
-              style={styles.navBtn}
-            />
-          </View>
-        </KeyboardAvoidingView>
+        <View style={styles.navRow}>
+          <PillButton
+            variant="secondary"
+            title={t('assess_previous')}
+            onPress={() => currentQ > 0 && setCurrentQ(currentQ - 1)}
+            disabled={currentQ === 0}
+            style={styles.navBtn}
+          />
+          <PillButton
+            title={isLast ? t('journey_finish') : t('assess_next')}
+            icon={isLast ? 'flag' : undefined}
+            onPress={handleNext}
+            loading={submitting}
+            style={styles.navBtn}
+          />
+        </View>
       }
     >
       <Header
@@ -304,26 +203,48 @@ export default function AssessmentScreen({ navigation, route }) {
         )}
       />
 
-      <View style={styles.introRow}>
-        <View style={[styles.intro, { flex: 1 }]}>
-          <Label>{t('assess_header')}</Label>
-          <Title style={styles.title}>{t('assess_subtitle')}</Title>
-        </View>
-        <PillPal tone="lavender" mood="calm" badge="quiz" size={120} />
+      <View style={styles.intro}>
+        <Label>{t('journey_label')}</Label>
+        <Title style={styles.title}>{t('journey_title')}</Title>
       </View>
 
-      {/* Progress */}
-      <View style={styles.progress}>
-        <Text style={styles.progressText}>{t('assess_progress').replace('{current}', currentQ + 1).replace('{total}', QUESTIONS.length)}</Text>
-        <View style={styles.progressTrack}>
-          <Animated.View style={[styles.progressFill, { width: progress }]} />
-        </View>
+      <View style={styles.roadCard}>
+        <JourneyRoad
+          total={QUESTIONS.length}
+          current={currentQ}
+          kinds={KINDS}
+          results={results}
+          pal={pal}
+          label={stopLabel}
+        />
       </View>
 
-      <Text style={styles.questionText} accessibilityRole="header">{t(`assess_q${currentQuestion.id}`)}</Text>
-      <View style={styles.options}>
-        {renderOptions()}
+      <View style={styles.qHead}>
+        <Chip label={knowledge ? t('journey_quick_check') : t('journey_about_you')} tone={knowledge ? 'yellow' : 'lavender'} icon={knowledge ? 'lightbulb' : 'person'} />
+        <Text style={styles.stopText}>{stopLabel}</Text>
       </View>
+      <Text style={styles.questionText} accessibilityRole="header">{t(textKey(q))}</Text>
+      <View style={styles.options}>{q.options.map(renderOption)}</View>
+
+      {revealed ? (
+        <View style={[styles.feedback, { backgroundColor: right ? palette.lime : '#FFFFFF' }]} accessibilityLiveRegion="polite">
+          <View>
+            <PillPal size={92} tone={right ? 'lime' : 'coral'} mood={right ? 'joy' : 'oops'} pose={right ? 'cheer' : 'rest'} />
+            {right ? <Celebrate fire={burst} spread={120} /> : null}
+          </View>
+          <View style={{ flex: 1, gap: 6 }}>
+            <Text style={styles.feedbackTitle}>{right ? t('journey_correct') : t('journey_wrong')}</Text>
+            <Text style={styles.feedbackBody}>{t(`assess_k${q.id}_x`)}</Text>
+          </View>
+        </View>
+      ) : null}
+
+      {!knowledge && answer !== undefined ? (
+        <View style={styles.react} accessibilityLiveRegion="polite">
+          <MaterialIcons name="favorite" size={16} color={palette.coralInk} />
+          <Text style={styles.reactText}>{t(`journey_react_${(currentQ % 4) + 1}`)}</Text>
+        </View>
+      ) : null}
     </Screen>
   );
 }
@@ -332,19 +253,17 @@ const text = { color: palette.ink, fontFamily: fonts.regular };
 const WHITE = 'rgba(255,255,255,0.92)';
 
 const styles = StyleSheet.create({
-  content: { paddingBottom: 24, gap: 24 },
+  content: { paddingBottom: 24, gap: 18 },
   intro: { gap: 6 },
-  introRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  title: { fontSize: 40, lineHeight: 44, letterSpacing: -1.5 },
+  title: { fontSize: 32, lineHeight: 36, letterSpacing: -1 },
   skip: {
     minHeight: 44, paddingHorizontal: 20, borderRadius: radii.full,
     backgroundColor: palette.glass, alignItems: 'center', justifyContent: 'center',
   },
   skipText: { ...text, fontFamily: fonts.medium, fontSize: 15 },
-  progress: { gap: 10 },
-  progressText: { ...text, fontSize: 13, color: palette.muted },
-  progressTrack: { height: 12, borderRadius: radii.full, backgroundColor: WHITE, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: radii.full, backgroundColor: palette.ink },
+  roadCard: { borderRadius: radii.xl, backgroundColor: palette.glassSoft, paddingHorizontal: 4 },
+  qHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  stopText: { ...text, fontSize: 13, color: palette.muted },
   questionText: { ...text, fontSize: 24, lineHeight: 30, letterSpacing: -0.5 },
   options: { gap: 10 },
   option: {
@@ -356,23 +275,11 @@ const styles = StyleSheet.create({
   optionText: { ...text, fontSize: 16, flex: 1 },
   optionTextSelected: { color: '#FFFFFF', fontFamily: fonts.medium },
   ringEmpty: { width: 20, height: 20, borderRadius: radii.full, borderWidth: 1.5, borderColor: palette.outline },
-  boxEmpty: { width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, borderColor: palette.outline },
+  feedback: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: radii.xl, padding: 16 },
+  feedbackTitle: { ...text, fontFamily: fonts.medium, fontSize: 18 },
+  feedbackBody: { ...text, fontSize: 15, lineHeight: 21, color: palette.ink },
+  react: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', backgroundColor: WHITE, borderRadius: radii.full, paddingHorizontal: 14, paddingVertical: 8 },
+  reactText: { ...text, fontFamily: fonts.medium, fontSize: 14 },
   navRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
   navBtn: { flex: 1 },
-  sliderContainer: { marginTop: 16, gap: 16 },
-  sliderBadge: {
-    alignSelf: 'center', backgroundColor: palette.ink, borderRadius: radii.full,
-    paddingHorizontal: 18, paddingVertical: 8,
-  },
-  sliderBadgeText: { color: '#FFFFFF', fontFamily: fonts.medium, fontSize: 18, fontVariant: ['tabular-nums'] },
-  trackWrapper: { height: KNOB_HIT, justifyContent: 'center' },
-  track: { height: 12, borderRadius: radii.full, backgroundColor: WHITE, overflow: 'hidden' },
-  trackFill: { height: '100%', borderRadius: radii.full, backgroundColor: palette.outline },
-  thumbHit: {
-    position: 'absolute', top: 0, width: KNOB_HIT, height: KNOB_HIT,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  thumb: { width: KNOB, height: KNOB, borderRadius: radii.full, backgroundColor: palette.ink },
-  sliderLabels: { flexDirection: 'row', justifyContent: 'space-between' },
-  sliderLabel: { ...text, fontFamily: fonts.medium, fontSize: 13, color: palette.muted },
 });

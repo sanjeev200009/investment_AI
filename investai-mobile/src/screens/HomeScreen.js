@@ -7,7 +7,8 @@
 // market list and the portfolio's recorded valuations. Where a value does not
 // exist the screen says so instead of substituting one.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Animated, FlatList } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HomeSkeleton } from '../components/Motion';
@@ -20,7 +21,8 @@ import TouchableTick from '../components/TouchableTick';
 import InitialsAvatar from '../components/InitialsAvatar';
 import { useAuthStore } from '../store/authStore';
 import { useT } from '../store/languageStore';
-import { recommendationsApi } from '../api/api';
+import { recommendationsApi, planApi } from '../api/api';
+import { EASE_OUT, isReduceMotion } from '../theme/motion';
 import api from '../api/axiosConfig';
 import { palette, fonts, radii, changeTone } from '../theme/tokens';
 
@@ -49,6 +51,130 @@ const dayLabel = (iso) => {
     : parsed.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 };
 
+// ── Personal plan (GET /me/plan) ─────────────────────────────────────────────
+const STEP_ICONS = {
+  learn_basics: 'menu-book', learn_indices: 'show-chart', learn_risk: 'shield',
+  learn_diversification: 'donut-large', learn_fundamentals: 'fact-check',
+  watch_first_stock: 'star-border', set_first_alert: 'notifications-none',
+  add_first_holding: 'pie-chart-outline', ask_ai_first: 'auto-awesome',
+};
+const STEP_ROUTES = {
+  watch_first_stock: 'Markets', set_first_alert: 'Rules', add_first_holding: 'Portfolio', ask_ai_first: 'AIChat',
+};
+
+function PlanCard({ plan, t, onStep }) {
+  const steps = plan.steps;
+  const done = steps.filter(s => s.done).length;
+  const next = steps.filter(s => !s.done).slice(0, 3);
+  const progress = t('home_plan_progress').replace('{done}', done).replace('{total}', steps.length);
+  // The done pills fill left to right, one after another.
+  const p = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (isReduceMotion()) { p.setValue(1); return; }
+    p.setValue(0);
+    Animated.timing(p, { toValue: 1, duration: 700, easing: EASE_OUT, useNativeDriver: true }).start();
+  }, [done, p]);
+
+  return (
+    <Card style={{ gap: 14 }}>
+      <View style={styles.rowBetween}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Label>{t('home_plan_title')}</Label>
+          <Text style={styles.planTitle} accessibilityRole="header">{t(`persona_${plan.persona}_title`)}</Text>
+        </View>
+        <Chip tone="lime" label={progress} />
+      </View>
+      <Label numberOfLines={3}>{t(`persona_${plan.persona}_summary`)}</Label>
+      <View
+        style={styles.planBar}
+        accessible
+        accessibilityRole="progressbar"
+        accessibilityLabel={progress}
+        accessibilityValue={{ min: 0, max: steps.length, now: done }}
+      >
+        {steps.map((s, i) => (
+          <View key={s.id} style={styles.planSeg}>
+            {s.done ? (
+              <Animated.View style={[styles.planFill, {
+                transformOrigin: 'left',
+                transform: [{
+                  scaleX: p.interpolate({
+                    inputRange: [i / steps.length, (i + 1) / steps.length], outputRange: [0, 1], extrapolate: 'clamp',
+                  }),
+                }],
+              }]} />
+            ) : null}
+          </View>
+        ))}
+      </View>
+      {next.length === 0 ? (
+        <Body style={{ color: palette.muted }}>{t('home_plan_all_done')}</Body>
+      ) : (
+        <View>
+          <Label style={{ marginBottom: 4 }}>{t('home_plan_next')}</Label>
+          {next.map((s, i) => (
+            <View key={s.id}>
+              {i > 0 && <View style={styles.divider} />}
+              <TouchableTick style={styles.stepRow} onPress={() => onStep(s)} accessibilityRole="button"
+                accessibilityLabel={`${t(`plan_step_${s.id}_title`)}. ${t(`plan_step_${s.id}_body`)}`}>
+                <View style={[styles.stepIcon, { backgroundColor: palette.lavender }]}>
+                  <MaterialIcons name={STEP_ICONS[s.id] || 'flag'} size={20} color={palette.lavenderInk} />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={styles.rowTitle}>{t(`plan_step_${s.id}_title`)}</Text>
+                  <Label numberOfLines={2}>{t(`plan_step_${s.id}_body`)}</Label>
+                </View>
+                <MaterialIcons name="arrow-forward" size={20} color={palette.ink} />
+              </TouchableTick>
+            </View>
+          ))}
+        </View>
+      )}
+    </Card>
+  );
+}
+
+// ── "Did you know?" deck: static beginner facts about the CSE ────────────────
+const TIP_KEYS = [1, 2, 3, 4, 5, 6].map(i => `home_tip_${i}`);
+const TIP_TONES = ['lavender', 'lime', 'yellow', 'coral', 'lavender', 'lime'];
+
+function TipDeck({ t }) {
+  const [w, setW] = useState(0);
+  const [page, setPage] = useState(0);
+  return (
+    <View style={{ gap: 12 }} onLayout={e => setW(e.nativeEvent.layout.width)}>
+      <Heading>{t('home_tips_title')}</Heading>
+      {w > 0 ? (
+        <FlatList
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          data={TIP_KEYS}
+          keyExtractor={k => k}
+          getItemLayout={(_, i) => ({ length: w, offset: w * i, index: i })}
+          onMomentumScrollEnd={e => setPage(Math.round(e.nativeEvent.contentOffset.x / w))}
+          renderItem={({ item, index }) => {
+            const tone = TIP_TONES[index];
+            const ink = accent(tone).ink;
+            return (
+              <View style={{ width: w }} accessible
+                accessibilityLabel={`${t('home_tips_page_a11y').replace('{n}', index + 1).replace('{total}', TIP_KEYS.length)}. ${t(item)}`}>
+                <Card tone={tone} style={styles.tipCard}>
+                  <MaterialIcons name="lightbulb-outline" size={24} color={ink} />
+                  <Body style={{ color: ink }}>{t(item)}</Body>
+                </Card>
+              </View>
+            );
+          }}
+        />
+      ) : null}
+      <View style={styles.dots} importantForAccessibility="no-hide-descendants">
+        {TIP_KEYS.map((k, i) => <View key={k} style={[styles.dot, i === page && styles.dotOn]} />)}
+      </View>
+    </View>
+  );
+}
+
 export default function HomeScreen({ navigation }) {
   const user = useAuthStore(state => state.user);
   const { t } = useT();
@@ -74,6 +200,21 @@ export default function HomeScreen({ navigation }) {
   const [activeChip, setActiveChip] = useState(ALL_MARKETS);
   const [stocks, setStocks] = useState([]);
   const [stocksError, setStocksError] = useState(null);
+  // Hidden until GET /me/plan answers; refreshed on focus so finished steps tick off.
+  const [plan, setPlan] = useState(null);
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    planApi.get().then(p => { if (!cancelled) setPlan(p); });
+    return () => { cancelled = true; };
+  }, []));
+
+  const openStep = (s) => {
+    if (s.id.startsWith('learn_')) {
+      navigation.navigate(s.lesson_id ? 'Lesson' : 'Learn', s.lesson_id ? { id: s.lesson_id } : undefined);
+      return;
+    }
+    if (STEP_ROUTES[s.id]) navigation.navigate(STEP_ROUTES[s.id]);
+  };
 
   const loadDashboard = useCallback(async () => {
     const [dash, recs, sectors, indices] = await Promise.allSettled([
@@ -254,6 +395,8 @@ export default function HomeScreen({ navigation }) {
         </View>
       </View>
 
+      {plan && plan.steps.length > 0 ? <PlanCard plan={plan} t={t} onStep={openStep} /> : null}
+
       {/* Pastel pill row: Portfolio · Watchlist · Stocks to study */}
       <Animated.View style={[styles.pillRow, pillStyle]}>
         <TouchableTick style={[styles.tallPill, { backgroundColor: palette.lime }]} onPress={() => navigation.navigate('Portfolio')} accessibilityLabel={t('home_open_portfolio')}>
@@ -323,6 +466,8 @@ export default function HomeScreen({ navigation }) {
           <Body style={{ color: palette.muted }}>{t('home_no_holdings')}</Body>
         )}
       </Card>
+
+      <TipDeck t={t} />
 
       {/* Turnover by sector */}
       {sectors.length > 0 && (
@@ -536,4 +681,14 @@ const styles = StyleSheet.create({
   factorPill: { borderRadius: radii.full, paddingHorizontal: 10, paddingVertical: 4 },
   factorText: { fontFamily: fonts.medium, fontSize: 13 },
   link: { ...text, fontFamily: fonts.medium, fontSize: 15, textDecorationLine: 'underline' },
+  planTitle: { ...text, fontFamily: fonts.medium, fontSize: 20, letterSpacing: -0.3 },
+  planBar: { flexDirection: 'row', gap: 4, height: 12 },
+  planSeg: { flex: 1, borderRadius: radii.full, backgroundColor: '#E3E6EE', overflow: 'hidden' },
+  planFill: { ...StyleSheet.absoluteFillObject, backgroundColor: palette.lime, borderRadius: radii.full },
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12, minHeight: 64 },
+  stepIcon: { width: 44, height: 44, borderRadius: radii.full, alignItems: 'center', justifyContent: 'center' },
+  tipCard: { gap: 10, minHeight: 150 },
+  dots: { flexDirection: 'row', justifyContent: 'center', gap: 6 },
+  dot: { width: 8, height: 8, borderRadius: radii.full, backgroundColor: 'rgba(15,17,21,0.18)' },
+  dotOn: { width: 22, backgroundColor: palette.ink },
 });

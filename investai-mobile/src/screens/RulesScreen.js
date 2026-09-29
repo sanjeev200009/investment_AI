@@ -16,6 +16,7 @@ import {
   Field, EmptyState, Loading, accent, ACCENT_CYCLE,
 } from '../components/ui';
 import { rulesApi } from '../api/api';
+import { toast } from '../components/Toast';
 import { useT } from '../store/languageStore';
 import { palette, fonts, radii, sizes } from '../theme/tokens';
 
@@ -78,6 +79,7 @@ export default function RulesScreen({ route, navigation }) {
       setSymbol('');
       setThreshold('');
       setCreateVisible(false);
+      toast(t('toast_rule_created').replace('{symbol}', sym));
       fetchRules();
     } catch (err) {
       const detail = err?.response?.data?.detail;
@@ -96,10 +98,11 @@ export default function RulesScreen({ route, navigation }) {
     setRules(rules.filter(r => r.rule_id !== ruleId));
     try {
       await rulesApi.remove(ruleId);
+      toast(t('toast_rule_deleted'), 'info');
     } catch (err) {
       console.warn('[Rules] delete failed:', err?.message || err);
       setRules(snapshot);
-      Alert.alert(t('profile_error_title'), t('error_generic'));
+      toast(t('error_generic'), 'error');
     }
   };
 

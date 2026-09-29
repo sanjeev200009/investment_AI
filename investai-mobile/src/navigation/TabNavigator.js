@@ -14,6 +14,7 @@ import { palette, radii } from '../theme/tokens';
 import { tabMotion, isReduceMotion } from '../theme/motion';
 import { useT } from '../store/languageStore';
 import { notificationsApi } from '../api/api';
+import Tour, { useTourStore } from '../components/Tour';
 
 import { HomeStack, MarketsStack, PortfolioStack, AlertsStack } from './TabStacks';
 import ChatScreen from '../screens/ChatScreen';
@@ -50,6 +51,19 @@ function PillTabBar({ state, navigation }) {
     const insets = useSafeAreaInsets();
     const { t } = useT();
     const [unread, setUnread] = useState(0);
+    // The first-run tour spotlights each button, so report where they are.
+    const setRect = useTourStore(s => s.setRect);
+    const itemRefs = useRef({});
+    const measure = (name) => itemRefs.current[name]?.measureInWindow((x, y, w, h) => {
+        if (w) setRect(name, { x, y, w, h });
+    });
+    // A button's own onLayout misses its siblings resizing (the focused one
+    // grows), so re-measure every button once the tour opens or the tab changes.
+    const touring = useTourStore(s => s.visible);
+    useEffect(() => {
+        const id = setTimeout(() => state.routes.forEach(r => measure(r.name)), 350);
+        return () => clearTimeout(id);
+    }, [touring, state.index]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Refresh the unread count whenever the tab changes; cheap, and keeps the
     // badge honest without a background poll.
@@ -80,6 +94,7 @@ function PillTabBar({ state, navigation }) {
                     const badge = route.name === 'Alerts' && unread > 0 ? unread : 0;
                     return (
                         <Pop key={route.key} focused={focused}>
+                        <View collapsable={false} ref={el => { itemRefs.current[route.name] = el; }} onLayout={() => measure(route.name)}>
                         <TouchableTick
                             onPress={onPress}
                             accessibilityRole="tab"
@@ -97,6 +112,7 @@ function PillTabBar({ state, navigation }) {
                                 </View>
                             ) : null}
                         </TouchableTick>
+                        </View>
                         </Pop>
                     );
                 })}
@@ -106,17 +122,24 @@ function PillTabBar({ state, navigation }) {
 }
 
 export default function TabNavigator() {
+    const touring = useTourStore(s => s.visible);
     return (
-        <Tab.Navigator
-            tabBar={(props) => <PillTabBar {...props} />}
-            screenOptions={tabMotion}
-        >
-            <Tab.Screen name='Home' component={HomeStack} />
-            <Tab.Screen name='Markets' component={MarketsStack} />
-            <Tab.Screen name='AIChat' component={ChatScreen} />
-            <Tab.Screen name='Portfolio' component={PortfolioStack} />
-            <Tab.Screen name='Alerts' component={AlertsStack} />
-        </Tab.Navigator>
+        <View style={{ flex: 1 }}>
+            {/* While the tour is up, screen readers stay inside its card. */}
+            <View style={{ flex: 1 }} importantForAccessibility={touring ? 'no-hide-descendants' : 'auto'}>
+                <Tab.Navigator
+                    tabBar={(props) => <PillTabBar {...props} />}
+                    screenOptions={tabMotion}
+                >
+                    <Tab.Screen name='Home' component={HomeStack} />
+                    <Tab.Screen name='Markets' component={MarketsStack} />
+                    <Tab.Screen name='AIChat' component={ChatScreen} />
+                    <Tab.Screen name='Portfolio' component={PortfolioStack} />
+                    <Tab.Screen name='Alerts' component={AlertsStack} />
+                </Tab.Navigator>
+            </View>
+            <Tour />
+        </View>
     );
 }
 

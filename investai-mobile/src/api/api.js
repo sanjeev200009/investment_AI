@@ -32,6 +32,20 @@ export const learnApi = {
   },
 };
 
+// ── Personal plan ────────────────────────────────────────────────────────────
+// GET /me/plan: persona, next steps, lesson order and chat starters. Resolves
+// to null when the endpoint is unavailable, so callers simply hide plan UI.
+export const planApi = {
+  get: async () => {
+    try {
+      const { data } = await api.get('/me/plan');
+      return data && Array.isArray(data.steps) ? data : null;
+    } catch (_) {
+      return null;
+    }
+  },
+};
+
 // ── Investment rules (I-10) ──────────────────────────────────────────────────
 export const rulesApi = {
   list: async () => {

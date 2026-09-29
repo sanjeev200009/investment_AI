@@ -6,6 +6,7 @@ import TouchableTick from '../components/TouchableTick';
 import React, { useState, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, Modal, Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { toast } from '../components/Toast';
 import {
   Screen, CircleButton, PillButton, Card, BigNumber, ChangePill, Title, Heading, Label, Body,
   Field, EmptyState, Loading,
@@ -98,6 +99,7 @@ export default function PortfolioScreen({ navigation }) {
       await api.post(`/portfolio/${pId}/holdings`, { symbol, quantity, avg_buy_price: price });
 
       closeAddModal();
+      toast(t('toast_holding_added').replace('{symbol}', symbol));
       setAddSymbol('');
       setAddQuantity('');
       setAddPrice('');
@@ -121,9 +123,10 @@ export default function PortfolioScreen({ navigation }) {
           onPress: async () => {
             try {
               await api.delete(`/portfolio/${item.portfolio_id}/holdings/${item.holding_id}`);
+              toast(t('toast_holding_removed').replace('{symbol}', item.symbol), 'info');
               fetchData();
             } catch (err) {
-              Alert.alert(t('portfolio_remove_error'), errorText(err, t('portfolio_try_again_msg')));
+              toast(errorText(err, t('portfolio_try_again_msg')), 'error');
             }
           },
         },

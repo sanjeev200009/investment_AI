@@ -10,6 +10,7 @@ import {
   Title, Heading, Label, Field, EmptyState, Loading,
 } from '../components/ui';
 import { watchlistApi } from '../api/api';
+import { toast } from '../components/Toast';
 import { useT } from '../store/languageStore';
 import { palette, fonts, radii } from '../theme/tokens';
 import { SkeletonRows } from '../components/Motion';
@@ -48,6 +49,7 @@ export default function WatchlistScreen({ navigation }) {
       await watchlistApi.add(symbol);
       setSymbolInput('');
       setAddModalVisible(false);
+      toast(t('toast_watch_added').replace('{symbol}', symbol));
       fetchWatchlist();
     } catch (err) {
       Alert.alert(
@@ -65,10 +67,11 @@ export default function WatchlistScreen({ navigation }) {
     setWatchlist(watchlist.filter(w => w.symbol !== symbol));
     try {
       await watchlistApi.remove(symbol);
+      toast(t('toast_watch_removed').replace('{symbol}', symbol), 'info');
     } catch (err) {
       console.warn('[Watchlist] remove failed:', err?.message || err);
       setWatchlist(snapshot);
-      Alert.alert(t('profile_error_title'), t('error_generic'));
+      toast(t('error_generic'), 'error');
     }
   };
 

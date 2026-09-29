@@ -58,4 +58,9 @@ export const authApi = {
     const { data } = await api.get('/me/assessment/questions');
     return data;
   },
+  // { persona, risk_category, knowledge_score, knowledge_total, steps, lesson_ids, prompts }
+  getPlan: async () => {
+    const { data } = await api.get('/me/plan');
+    return data;
+  },
 };

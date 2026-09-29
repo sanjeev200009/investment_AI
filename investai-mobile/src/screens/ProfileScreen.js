@@ -15,6 +15,7 @@ import { useAuthStore } from '../store/authStore';
 import { useLanguageStore, useT } from '../store/languageStore';
 import { LANGUAGES } from '../i18n/translations';
 import { authApi } from '../api/authApi';
+import { replayTour } from '../components/Tour';
 import { palette, fonts, radii, sizes } from '../theme/tokens';
 
 export default function ProfileScreen({ navigation }) {
@@ -195,6 +196,13 @@ export default function ProfileScreen({ navigation }) {
             <View style={styles.section}>
                 <Label style={styles.sectionTitle}>{t('profile_section_support')}</Label>
                 <Card style={styles.group}>
+                    <Row
+                        icon="tour"
+                        label={t('profile_show_tour')}
+                        sub={t('profile_show_tour_sub')}
+                        onPress={() => { replayTour(); if (navigation.canGoBack()) navigation.popToTop(); }}
+                    />
+                    <Divider />
                     <Row icon="description" label={t('legal_privacy_title')} onPress={() => navigation.navigate('Legal', { doc: 'privacy' })} />
                     <Divider />
                     <Row icon="gavel" label={t('legal_terms_title')} onPress={() => navigation.navigate('Legal', { doc: 'terms' })} />
