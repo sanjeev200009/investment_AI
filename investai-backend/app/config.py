@@ -72,12 +72,12 @@ class Settings(BaseSettings):
     # AGENT needs reliable multi-tool calling + streaming deltas; UTILITY only
     # needs short prose, but must not be a reasoning model that starves its own
     # output budget.
-    NVIDIA_AGENT_MODEL: str = 'openai/gpt-oss-20b'
-    # nemotron-3-nano reached end of life on 2026-09-01 (HTTP 410); gpt-oss-20b
-    # already serves the agent and summarises correctly with reasoning set low.
-    NVIDIA_UTILITY_MODEL: str = 'openai/gpt-oss-20b'
-    OPENROUTER_AGENT_MODEL: str = 'minimax/minimax-m3:free'
-    OPENROUTER_UTILITY_MODEL: str = 'minimax/minimax-m3:free'
+    NVIDIA_AGENT_MODEL: str = 'nvidia/nemotron-3-super-120b-a12b'
+    NVIDIA_UTILITY_MODEL: str = 'nvidia/nemotron-3-super-120b-a12b'
+    OPENROUTER_AGENT_MODEL: str = 'qwen/qwen3.8-27b:free'
+    OPENROUTER_UTILITY_MODEL: str = 'qwen/qwen3.8-27b:free'
+    # Last resort, on NVIDIA again: slower under load but fully tool-capable.
+    NVIDIA_BACKUP_MODEL: str = 'openai/gpt-oss-20b'
 
     # Short enough that a hung primary fails over inside the NFR-4 budget
     # (<5s perceived response), long enough not to abandon a healthy slow reply.

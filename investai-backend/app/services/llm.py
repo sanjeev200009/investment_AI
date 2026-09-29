@@ -76,6 +76,7 @@ class LLMUnavailable(RuntimeError):
 _REASONING_OFF: tuple[tuple[str, dict[str, Any]], ...] = (
     ("openai/gpt-oss", {"reasoning_effort": "low"}),
     ("nvidia/nemotron", {"chat_template_kwargs": {"thinking": False}}),
+    ("qwen/", {"reasoning": {"enabled": False}}),   # OpenRouter's unified knob
 )
 
 
@@ -137,6 +138,13 @@ def _chain() -> tuple[_Provider, ...]:
             utility_model=s.OPENROUTER_UTILITY_MODEL,
             # OpenRouter uses these for request attribution on its dashboard.
             extra_headers={"HTTP-Referer": s.FRONTEND_URL, "X-Title": "InvestAI"},
+        ),
+        _Provider(
+            name="nvidia-backup",
+            base_url=s.NVIDIA_BASE_URL,
+            api_key=s.NVIDIA_API_KEY,
+            agent_model=s.NVIDIA_BACKUP_MODEL,
+            utility_model=s.NVIDIA_BACKUP_MODEL,
         ),
     ]
     live = tuple(p for p in candidates if p.api_key)
