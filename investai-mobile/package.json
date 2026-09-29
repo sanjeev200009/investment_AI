@@ -12,8 +12,6 @@
     "@expo-google-fonts/roboto": "^0.4.3",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "^2.2.0",
-    "@react-native-firebase/app": "^23.8.6",
-    "@react-native-firebase/messaging": "^23.8.6",
     "@react-navigation/bottom-tabs": "^7.14.0",
     "@react-navigation/native": "^7.1.28",
     "@react-navigation/stack": "^7.7.2",
@@ -46,7 +44,6 @@
     "react-native-svg": "15.12.1",
     "react-native-web": "^0.21.0",
     "react-native-worklets": "0.5.1",
-    "victory-native": "^41.20.2",
     "zustand": "^5.0.11"
   },
   "expo": {

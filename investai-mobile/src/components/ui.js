@@ -16,9 +16,9 @@
 //   <Title>, <Label>   type styles
 //   <Field>            full-round text input with a hidden-but-read label
 //   <EmptyState>       icon + message (+ action) for empty / error states
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, StatusBar,
+  View, Text, TextInput, StyleSheet, ScrollView, RefreshControl, StatusBar, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -26,7 +26,8 @@ import { MaterialIcons } from '@expo/vector-icons';
 import TouchableTick from './TouchableTick';
 import { palette, fonts, radii, sizes, changeTone } from '../theme/tokens';
 import { useT } from '../store/languageStore';
-import { PillPal, PillLoader } from './PillPals';
+import { EASE_OUT, isReduceMotion } from '../theme/motion';
+import { PillPal, PillLoader, PillScreenLoader, MiniPills } from './PillPals';
 
 const ACCENTS = {
   lime: { bg: palette.lime, ink: palette.limeInk },
@@ -40,20 +41,28 @@ export const ACCENT_CYCLE = ['lime', 'yellow', 'lavender', 'coral'];
 
 // ── Layout ───────────────────────────────────────────────────────────────────
 
+// scrollY (an Animated.Value) drives scroll effects on the native thread;
+// overlay sits above the content (e.g. a bar that fades in on scroll).
 export function Screen({
-  children, scroll = true, refreshing, onRefresh, contentStyle, footer, edges = ['top'],
+  children, scroll = true, refreshing, onRefresh, contentStyle, footer, edges = ['top'], scrollY, overlay,
 }) {
+  const Scroller = scrollY ? Animated.ScrollView : ScrollView;
   const body = scroll ? (
-    <ScrollView
+    <Scroller
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={[styles.content, contentStyle]}
+      scrollEventThrottle={16}
+      onScroll={scrollY
+        ? Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })
+        : undefined}
       refreshControl={onRefresh
-        ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={palette.ink} />
+        ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={palette.ink}
+            colors={[palette.limeInk, palette.lavenderInk, palette.coralInk]} progressBackgroundColor={palette.yellow} />
         : undefined}
     >
       {children}
-    </ScrollView>
+    </Scroller>
   ) : <View style={[styles.content, { flex: 1 }, contentStyle]}>{children}</View>;
 
   return (
@@ -69,6 +78,7 @@ export function Screen({
         {body}
         {footer}
       </SafeAreaView>
+      {overlay}
     </LinearGradient>
   );
 }
@@ -129,7 +139,7 @@ export function PillButton({ title, onPress, icon, variant = 'primary', loading,
       style={[styles.pill, primary ? styles.pillPrimary : styles.pillSecondary, knob && styles.pillKnob, off && { opacity: 0.5 }, style]}
     >
       {loading ? (
-        <ActivityIndicator color={primary ? '#FFFFFF' : palette.ink} />
+        <MiniPills color={primary ? '#FFFFFF' : palette.ink} size={18} />
       ) : (
         <>
           {icon ? <MaterialIcons name={icon} size={20} color={primary ? '#FFFFFF' : palette.ink} /> : null}
@@ -196,7 +206,27 @@ export function StackCard({ tone = 'lime', first, last, children, onPress, label
 // ── Type ─────────────────────────────────────────────────────────────────────
 
 /** 21,307.90 → "21,307" large + ".90" smaller and lighter. */
+// When the value changes, the number rolls up into place and a lime (up) or
+// coral (down) wash fades behind it.
 export function BigNumber({ value, digits = 2, prefix, size = 64, color = palette.ink }) {
+  const roll = useRef(new Animated.Value(1)).current;
+  const flash = useRef(new Animated.Value(0)).current;
+  const prev = useRef(value);
+  const [up, setUp] = useState(true);
+  useEffect(() => {
+    const before = prev.current;
+    prev.current = value;
+    if (!Number.isFinite(Number(before)) || !Number.isFinite(Number(value))
+        || Number(before) === Number(value) || isReduceMotion()) return;
+    setUp(Number(value) > Number(before));
+    roll.setValue(0);
+    flash.setValue(1);
+    Animated.parallel([
+      Animated.timing(roll, { toValue: 1, duration: 420, easing: EASE_OUT, useNativeDriver: true }),
+      Animated.timing(flash, { toValue: 0, duration: 900, useNativeDriver: true }),
+    ]).start();
+  }, [value, roll, flash]);
+
   if (value === null || value === undefined || !Number.isFinite(Number(value))) {
     return <Text style={[styles.big, { fontSize: size, color }]}>—</Text>;
   }
@@ -204,11 +234,23 @@ export function BigNumber({ value, digits = 2, prefix, size = 64, color = palett
     .toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
     .split('.');
   return (
-    <Text style={[styles.big, { fontSize: size, color }]} accessibilityLabel={`${prefix || ''} ${int}${dec ? '.' + dec : ''}`}>
-      {prefix ? <Text style={[styles.bigSmall, { fontSize: size * 0.38 }]}>{prefix} </Text> : null}
-      {int}
-      {dec ? <Text style={[styles.bigSmall, { fontSize: size * 0.5 }]}>.{dec}</Text> : null}
-    </Text>
+    <View style={{ alignSelf: 'flex-start' }}>
+      <Animated.View pointerEvents="none" style={{
+        ...StyleSheet.absoluteFillObject, left: -6, right: -6, borderRadius: 14,
+        backgroundColor: up ? palette.lime : palette.coral, opacity: Animated.multiply(flash, 0.6),
+      }} />
+      <Animated.Text
+        style={[styles.big, { fontSize: size, color }, {
+          opacity: roll.interpolate({ inputRange: [0, 1], outputRange: [0.25, 1] }),
+          transform: [{ translateY: roll.interpolate({ inputRange: [0, 1], outputRange: [size * 0.3, 0] }) }],
+        }]}
+        accessibilityLabel={`${prefix || ''} ${int}${dec ? '.' + dec : ''}`}
+      >
+        {prefix ? <Text style={[styles.bigSmall, { fontSize: size * 0.38 }]}>{prefix} </Text> : null}
+        {int}
+        {dec ? <Text style={[styles.bigSmall, { fontSize: size * 0.5 }]}>.{dec}</Text> : null}
+      </Animated.Text>
+    </View>
   );
 }
 
@@ -314,6 +356,16 @@ export function EmptyState({ icon = 'inbox', title, message, action, onAction, t
 export function Loading() {
   const { t } = useT();
   return <PillLoader label={t('loading')} />;
+}
+
+// Whole-screen wait (app start, a screen's first load): the pills rise into place.
+export function ScreenLoader() {
+  const { t } = useT();
+  return (
+    <Screen scroll={false} contentStyle={{ flexGrow: 1 }}>
+      <PillScreenLoader label={t('loading')} caption={t('loading_app')} />
+    </Screen>
+  );
 }
 
 const text = { color: palette.ink, fontFamily: fonts.regular };

@@ -3,13 +3,15 @@
 // v2 tab bar: a floating glass pill of round icon buttons over the gradient,
 // as in the design canvas. The focused tab is a larger white circle; the AI
 // tab is always the black circle. Alerts shows the unread count.
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Animated } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import TouchableTick from '../components/TouchableTick';
 import { palette, radii } from '../theme/tokens';
+import { tabMotion, isReduceMotion } from '../theme/motion';
 import { useT } from '../store/languageStore';
 import { notificationsApi } from '../api/api';
 
@@ -33,6 +35,17 @@ const LABEL_KEYS = {
     Alerts: 'tab_alerts',
 };
 
+// The tab that just became active springs up from a slightly smaller size.
+function Pop({ focused, children }) {
+    const scale = useRef(new Animated.Value(1)).current;
+    useEffect(() => {
+        if (!focused || isReduceMotion()) return;
+        scale.setValue(0.8);
+        Animated.spring(scale, { toValue: 1, useNativeDriver: true, damping: 9, stiffness: 220, mass: 0.6 }).start();
+    }, [focused, scale]);
+    return <Animated.View style={{ transform: [{ scale }] }}>{children}</Animated.View>;
+}
+
 function PillTabBar({ state, navigation }) {
     const insets = useSafeAreaInsets();
     const { t } = useT();
@@ -47,6 +60,9 @@ function PillTabBar({ state, navigation }) {
             .catch(() => {});
         return () => { cancelled = true; };
     }, [state.index]);
+
+    // The retaken assessment has its own Previous/Next footer where the bar sits.
+    if (getFocusedRouteNameFromRoute(state.routes[state.index]) === 'RetakeAssessment') return null;
 
     return (
         <View pointerEvents="box-none" style={[styles.wrap, { bottom: Math.max(insets.bottom, 12) }]}>
@@ -63,8 +79,8 @@ function PillTabBar({ state, navigation }) {
                     const color = isAI ? '#FFFFFF' : focused ? palette.ink : palette.faint;
                     const badge = route.name === 'Alerts' && unread > 0 ? unread : 0;
                     return (
+                        <Pop key={route.key} focused={focused}>
                         <TouchableTick
-                            key={route.key}
                             onPress={onPress}
                             accessibilityRole="tab"
                             accessibilityState={{ selected: focused }}
@@ -81,6 +97,7 @@ function PillTabBar({ state, navigation }) {
                                 </View>
                             ) : null}
                         </TouchableTick>
+                        </Pop>
                     );
                 })}
             </View>
@@ -92,7 +109,7 @@ export default function TabNavigator() {
     return (
         <Tab.Navigator
             tabBar={(props) => <PillTabBar {...props} />}
-            screenOptions={{ headerShown: false }}
+            screenOptions={tabMotion}
         >
             <Tab.Screen name='Home' component={HomeStack} />
             <Tab.Screen name='Markets' component={MarketsStack} />

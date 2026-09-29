@@ -192,4 +192,5 @@ export default {
   register_hero_alt: 'A lavender cartoon character waters a coin pot whose plant grows into a rising chart, while a coral character cheers.',
   field_show_password: 'Show password',
   field_hide_password: 'Hide password',
+  loading_app: 'Getting your markets ready…',
 };

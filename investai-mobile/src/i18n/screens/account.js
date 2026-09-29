@@ -127,6 +127,10 @@ export default {
   profile_full_name: 'Full Name',
   profile_full_name_placeholder: 'Enter your full name',
   profile_save_changes: 'Save Changes',
+  profile_retake_assessment: 'Retake risk assessment',
+  profile_delete_account: 'Delete account',
+  profile_delete_body: 'This permanently deletes your account, portfolio, watchlist, alert rules and chat history. It cannot be undone.',
+  profile_delete_error: 'Could not delete your account. Please try again.',
 
   // Learn
   learn_heading: 'Learn the basics',

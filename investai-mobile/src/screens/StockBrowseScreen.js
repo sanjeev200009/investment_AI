@@ -12,6 +12,7 @@ import {
 import { useT } from '../store/languageStore';
 import api from '../api/axiosConfig';
 import { palette, fonts, radii, changeTone } from '../theme/tokens';
+import { Rise, SkeletonRows } from '../components/Motion';
 
 const ALL_SECTORS = 'All Sectors'; // state value; displayed via t('browse_all_sectors')
 
@@ -235,7 +236,7 @@ export default function StockBrowseScreen({ navigation }) {
         </View>
 
         {loading ? (
-          <Loading />
+          <SkeletonRows count={7} label={t('loading')} />
         ) : error !== null ? (
           <EmptyState
             icon="cloud-off"
@@ -255,7 +256,7 @@ export default function StockBrowseScreen({ navigation }) {
           <Card style={{ padding: 8 }}>
             {filteredStocks.slice(0, visible).map((stock, i) => (
               // Keyed on the symbol: sorting and filtering reorder this list.
-              <View key={stock.symbol}>
+              <Rise key={stock.symbol} index={i}>
                 {i > 0 && <View style={styles.divider} />}
                 <MarketRow
                   stock={stock}
@@ -264,7 +265,7 @@ export default function StockBrowseScreen({ navigation }) {
                   a11yLabel={t('home_open_symbol').replace('{symbol}', stock.symbol)}
                   onPress={() => navigation.navigate('StockDetail', detailParams(stock))}
                 />
-              </View>
+              </Rise>
             ))}
           </Card>
         )}

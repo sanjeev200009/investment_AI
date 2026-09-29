@@ -10,6 +10,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TouchableTick from '../components/TouchableTick';
 import { Screen, Header, PillButton, Loading } from '../components/ui';
+import { MiniPills } from '../components/PillPals';
 import api, { refreshSession } from '../api/axiosConfig';
 import { streamSSE } from '../api/sse';
 import { useT } from '../store/languageStore';
@@ -264,9 +265,7 @@ export default function ChatScreen({ navigation, route }) {
           >
             {item.isTyping ? (
               <View style={styles.typing}>
-                <View style={styles.typingDot} />
-                <View style={[styles.typingDot, { opacity: 0.6 }]} />
-                <View style={[styles.typingDot, { opacity: 0.3 }]} />
+                <MiniPills colors={[palette.lime, palette.yellow, palette.lavender]} size={18} />
               </View>
             ) : (
               <Text style={styles.messageText}>{item.text}</Text>
@@ -390,7 +389,6 @@ const styles = StyleSheet.create({
   },
   toolText: { fontFamily: fonts.medium, fontSize: 12 },
   typing: { flexDirection: 'row', gap: 5, paddingVertical: 6 },
-  typingDot: { width: 8, height: 8, borderRadius: radii.full, backgroundColor: palette.ink },
   footer: { paddingTop: 8, gap: 12 },
   suggestionList: { paddingHorizontal: 20, gap: 8 },
   suggestion: {

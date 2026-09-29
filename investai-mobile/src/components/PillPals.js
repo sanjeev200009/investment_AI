@@ -341,26 +341,118 @@ export function PillPal({ tone = 'lavender', mood = 'happy', pose = 'rest', badg
   );
 }
 
-// ── Loader: three pastel pills bobbing in turn ──
-export function PillLoader({ label }) {
-  const vals = useRef([0, 1, 2].map(() => new Animated.Value(0))).current;
+// ── Loaders: the Pills as a "market pulse" ────────────────────────────────
+// One looping wave drives every loader: each pill stretches up from its base
+// like a rising bar, one after another. Reduced motion: a soft opacity pulse.
+const PULSE = [LIME, YELLOW, LAVENDER, CORAL];
+
+function useWave(count, { period = 520, stagger = 110 } = {}) {
+  const vals = useRef(Array.from({ length: count }, () => new Animated.Value(0))).current;
+  const [reduce, setReduce] = React.useState(false);
   useEffect(() => {
-    const ease = Easing.inOut(Easing.sin);
-    const loop = Animated.loop(Animated.stagger(140, vals.map((v) => Animated.sequence([
-      Animated.timing(v, { toValue: 1, duration: 320, easing: ease, useNativeDriver: true }),
-      Animated.timing(v, { toValue: 0, duration: 320, easing: ease, useNativeDriver: true }),
-    ]))));
-    loop.start();
-    return () => loop.stop();
-  }, [vals]);
+    let loop;
+    let cancelled = false;
+    AccessibilityInfo.isReduceMotionEnabled().then((r) => {
+      if (cancelled) return;
+      setReduce(!!r);
+      const ease = Easing.inOut(Easing.sin);
+      loop = Animated.loop(Animated.stagger(stagger, vals.map((v) => Animated.sequence([
+        Animated.timing(v, { toValue: 1, duration: period, easing: ease, useNativeDriver: true }),
+        Animated.timing(v, { toValue: 0, duration: period, easing: ease, useNativeDriver: true }),
+      ]))));
+      loop.start();
+    });
+    return () => { cancelled = true; loop?.stop(); };
+  }, [vals, period, stagger]);
+  return [vals, reduce];
+}
+
+// A pill that grows from its base: scaleY plus a matching translate keeps the
+// bottom edge planted.
+const riseStyle = (v, h, reduce, low = 0.55) => (reduce
+  ? { opacity: v.interpolate({ inputRange: [0, 1], outputRange: [0.45, 1] }) }
+  : { transform: [
+      { translateY: v.interpolate({ inputRange: [0, 1], outputRange: [(h * (1 - low)) / 2, 0] }) },
+      { scaleY: v.interpolate({ inputRange: [0, 1], outputRange: [low, 1] }) },
+    ] });
+
+// In-page loader: four brand pills with little faces, pulsing like a chart.
+export function PillLoader({ label, caption }) {
+  const [vals, reduce] = useWave(4);
+  const H = 44;
   return (
     <View accessible accessibilityRole="progressbar" accessibilityLabel={label}
-      style={{ flexDirection: 'row', gap: 8, alignSelf: 'center', marginVertical: 32, height: 44, alignItems: 'flex-end' }}>
-      {[LIME, YELLOW, LAVENDER].map((c, i) => (
-        <Animated.View key={c} style={{
-          width: 14, height: 30, borderRadius: 7, backgroundColor: c, borderWidth: 2, borderColor: INK,
-          transform: [{ translateY: vals[i].interpolate({ inputRange: [0, 1], outputRange: [0, -12] }) }],
-        }} />
+      style={{ alignSelf: 'center', alignItems: 'center', gap: 12, marginVertical: 32 }}>
+      <View style={{ flexDirection: 'row', gap: 8, height: H, alignItems: 'flex-end' }}>
+        {PULSE.map((c, i) => (
+          <Animated.View key={c} style={[{
+            width: 20, height: H, borderRadius: 10, backgroundColor: c, borderWidth: 2, borderColor: INK,
+            alignItems: 'center', paddingTop: 7,
+          }, riseStyle(vals[i], H, reduce)]}>
+            <View style={{ flexDirection: 'row', gap: 4 }}>
+              <View style={{ width: 3, height: 4, borderRadius: 2, backgroundColor: INK }} />
+              <View style={{ width: 3, height: 4, borderRadius: 2, backgroundColor: INK }} />
+            </View>
+          </Animated.View>
+        ))}
+      </View>
+      {caption ? <Animated.Text style={{ fontFamily: fonts.regular, fontSize: 14, color: palette.muted }}>{caption}</Animated.Text> : null}
+    </View>
+  );
+}
+
+// Full-screen loader (app start, first data load): the four Splash pills rise
+// into place one by one, then keep breathing in a slow wave.
+export function PillScreenLoader({ label, caption }) {
+  const enter = useRef(PULSE.map(() => new Animated.Value(0))).current;
+  const [vals, reduce] = useWave(4, { period: 900, stagger: 180 });
+  useEffect(() => {
+    Animated.stagger(110, enter.map((v) => Animated.spring(v, {
+      toValue: 1, useNativeDriver: true, damping: 12, stiffness: 140, mass: 0.8,
+    }))).start();
+  }, [enter]);
+  const H = 132;
+  return (
+    <View accessible accessibilityRole="progressbar" accessibilityLabel={label}
+      style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 28 }}>
+      <View style={{ flexDirection: 'row', gap: 12, height: H + 40, alignItems: 'flex-end' }}>
+        {PULSE.map((c, i) => (
+          <Animated.View key={c} style={{
+            opacity: enter[i],
+            transform: [
+              { translateY: enter[i].interpolate({ inputRange: [0, 1], outputRange: [70, 0] }) },
+              { translateY: reduce ? 0 : vals[i].interpolate({ inputRange: [0, 1], outputRange: [0, -12] }) },
+            ],
+          }}>
+            <View style={{
+              width: 48, height: H, borderRadius: 24, backgroundColor: c, borderWidth: 2.5, borderColor: INK,
+              alignItems: 'center', paddingTop: 22,
+            }}>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ width: 6, height: 8, borderRadius: 3, backgroundColor: INK }} />
+                <View style={{ width: 6, height: 8, borderRadius: 3, backgroundColor: INK }} />
+              </View>
+              <View style={{ width: 12, height: 6, marginTop: 6, borderBottomLeftRadius: 6, borderBottomRightRadius: 6, backgroundColor: INK }} />
+            </View>
+          </Animated.View>
+        ))}
+      </View>
+      {caption ? <Animated.Text style={{ fontFamily: fonts.regular, fontSize: 16, color: palette.muted }}>{caption}</Animated.Text> : null}
+    </View>
+  );
+}
+
+// Tiny inline pills: inside buttons while they load, and the AI "typing" dots.
+export function MiniPills({ color, colors, size = 16 }) {
+  const n = colors ? colors.length : 3;
+  const [vals, reduce] = useWave(n, { period: 380, stagger: 120 });
+  return (
+    <View style={{ flexDirection: 'row', gap: size * 0.3, height: size, alignItems: 'flex-end' }}>
+      {vals.map((v, i) => (
+        <Animated.View key={i} style={[{
+          width: size * 0.45, height: size, borderRadius: size, backgroundColor: colors ? colors[i] : color,
+          borderWidth: colors ? 1.5 : 0, borderColor: INK,
+        }, riseStyle(v, size, reduce, 0.5)]} />
       ))}
     </View>
   );

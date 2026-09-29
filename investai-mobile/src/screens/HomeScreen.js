@@ -6,12 +6,15 @@
 // sector turnover split, AI insights, ranked picks with their factors, the
 // market list and the portfolio's recorded valuations. Where a value does not
 // exist the screen says so instead of substituting one.
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Animated } from 'react-native';
+import { BlurView } from 'expo-blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { HomeSkeleton } from '../components/Motion';
 import { MaterialIcons } from '@expo/vector-icons';
 import {
   Screen, CircleButton, IconCircle, PillButton, Chip, Card, StackCard, BigNumber, ChangePill,
-  Heading, Label, Body, Loading, accent, ACCENT_CYCLE,
+  Heading, Label, Body, Loading, accent, ACCENT_CYCLE, ScreenLoader,
 } from '../components/ui';
 import TouchableTick from '../components/TouchableTick';
 import InitialsAvatar from '../components/InitialsAvatar';
@@ -49,6 +52,8 @@ const dayLabel = (iso) => {
 export default function HomeScreen({ navigation }) {
   const user = useAuthStore(state => state.user);
   const { t } = useT();
+  const insets = useSafeAreaInsets();
+  const scrollY = useRef(new Animated.Value(0)).current;
   const firstName = (user?.full_name || '').trim().split(/\s+/)[0] || t('home_investor');
 
   const [dashboard, setDashboard] = useState(null);
@@ -92,12 +97,10 @@ export default function HomeScreen({ navigation }) {
 
   const loadStocks = useCallback(async (chip) => {
     setStocksError(null);
-    const params = { limit: 50 };
-    if (chip !== ALL_MARKETS && chip !== TOP_MOVERS) {
-      // The whole sector, so the preview shows its real leaders.
-      params.sector = chip;
-      params.limit = 400;
-    }
+    // The whole market (or sector): /stocks/market is ordered by symbol, so a
+    // 50-row cut ranked only the alphabetically first companies.
+    const params = { limit: 400 };
+    if (chip !== ALL_MARKETS && chip !== TOP_MOVERS) params.sector = chip;
     try {
       const { data } = await api.get('/stocks/market', { params });
       setStocks(data || []);
@@ -172,17 +175,38 @@ export default function HomeScreen({ navigation }) {
   });
 
   if (loading) {
-    return <Screen scroll={false}><Loading /></Screen>;
+    return <Screen><HomeSkeleton label={t('loading')} /></Screen>;
   }
 
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
   const topPick = picks[0] || null;
   const topSector = sectors[0] || null;
 
+  // Scroll depth: the greeting shrinks away into a frosted bar, the ASPI hero
+  // tilts back in 3D as it leaves, and the pill row drifts (parallax).
+  const fade = (from, to, a = 1, b = 0) => scrollY.interpolate({ inputRange: [from, to], outputRange: [a, b], extrapolate: 'clamp' });
+  const headerStyle = {
+    opacity: fade(0, 110),
+    transform: [{ translateY: fade(0, 110, 0, -16) }, { scale: fade(0, 110, 1, 0.92) }],
+  };
+  const heroStyle = {
+    opacity: fade(60, 380, 1, 0.35),
+    transformOrigin: 'center top',
+    transform: [{ perspective: 900 }, { rotateX: scrollY.interpolate({ inputRange: [60, 380], outputRange: ['0deg', '18deg'], extrapolate: 'clamp' }) }, { scale: fade(60, 380, 1, 0.94) }],
+  };
+  const pillStyle = { transform: [{ translateX: fade(0, 520, 0, -28) }] };
+  const bar = (
+    <Animated.View pointerEvents="none" style={[styles.miniBar, { paddingTop: insets.top, height: insets.top + 56, opacity: fade(90, 150, 0, 1) }]}>
+      <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
+      <Text style={styles.miniTitle} numberOfLines={1}>{t('home_greeting')}, {firstName}</Text>
+      {aspi ? <Text style={styles.miniValue}>ASPI {fmt(aspi.value)}</Text> : null}
+    </Animated.View>
+  );
+
   return (
-    <Screen refreshing={refreshing} onRefresh={onRefresh}>
+    <Screen refreshing={refreshing} onRefresh={onRefresh} scrollY={scrollY} overlay={bar}>
       {/* Header */}
-      <View style={styles.header}>
+      <Animated.View style={[styles.header, headerStyle]}>
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={styles.caption}>{today}</Text>
           <Text style={styles.greeting} numberOfLines={1}>{t('home_greeting')}, {firstName}</Text>
@@ -191,10 +215,10 @@ export default function HomeScreen({ navigation }) {
           <InitialsAvatar name={user?.full_name} size={56} background={palette.coral} />
         </TouchableTick>
         <CircleButton icon="notifications-none" label={t('tab_alerts')} onPress={() => navigation.navigate('Alerts')} />
-      </View>
+      </Animated.View>
 
       {/* ASPI hero */}
-      <View style={{ gap: 10 }}>
+      <Animated.View style={[{ gap: 10 }, heroStyle]}>
         <Label>{t('home_aspi')}{aspiAsOf ? ` · ${aspiAsOf}` : ''}</Label>
         {aspi ? (
           <>
@@ -206,7 +230,7 @@ export default function HomeScreen({ navigation }) {
             {dashboardError ? t('home_market_unavailable_retry') : t('home_no_index')}
           </Body>
         )}
-      </View>
+      </Animated.View>
 
       {/* Three headline stats */}
       <View style={styles.stats}>
@@ -231,7 +255,7 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       {/* Pastel pill row: Portfolio · Watchlist · Stocks to study */}
-      <View style={styles.pillRow}>
+      <Animated.View style={[styles.pillRow, pillStyle]}>
         <TouchableTick style={[styles.tallPill, { backgroundColor: palette.lime }]} onPress={() => navigation.navigate('Portfolio')} accessibilityLabel={t('home_open_portfolio')}>
           <IconCircle icon="pie-chart-outline" color={palette.limeInk} borderColor="rgba(0,0,0,0.15)" size={52} />
           <Text style={[styles.pillLabel, { color: palette.limeInk }]}>{t('home_your_portfolio')}</Text>
@@ -257,7 +281,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <PillButton title={t('home_ask_investai')} onPress={() => navigation.navigate('AIChat')} />
         </View>
-      </View>
+      </Animated.View>
 
       {/* Portfolio value + recorded history */}
       <Card onPress={() => navigation.navigate('Portfolio')} label={t('home_open_portfolio')} style={{ gap: 12 }}>
@@ -461,6 +485,13 @@ export default function HomeScreen({ navigation }) {
 const text = { color: palette.ink, fontFamily: fonts.regular };
 
 const styles = StyleSheet.create({
+  miniBar: {
+    position: 'absolute', top: 0, left: 0, right: 0, overflow: 'hidden',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20,
+    backgroundColor: 'rgba(243,243,250,0.72)', borderBottomWidth: 1, borderBottomColor: 'rgba(15,17,21,0.06)',
+  },
+  miniTitle: { flex: 1, color: palette.ink, fontFamily: fonts.medium, fontSize: 17 },
+  miniValue: { color: palette.muted, fontFamily: fonts.regular, fontSize: 15, fontVariant: ['tabular-nums'] },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   greeting: { ...text, fontSize: 22, letterSpacing: -0.4 },
   caption: { ...text, fontSize: 13, color: palette.muted },

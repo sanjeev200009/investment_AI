@@ -36,9 +36,9 @@ const ForgotPasswordScreen = ({ navigation }) => {
             // Linear Flow: Forgot -> OTP -> Reset -> Success
             navigation.navigate('OTPVerification', { email: email.trim(), type: 'reset' });
         } catch (err) {
-            const msg = err?.response?.data?.detail
-                || err?.message
-                || t('forgot_send_failed');
+            const msg = err?.response
+                ? (err.response.data?.detail || t('forgot_send_failed'))
+                : t('auth_network_error');
             Alert.alert(t('auth_error'), msg);
         } finally {
             setLoading(false);

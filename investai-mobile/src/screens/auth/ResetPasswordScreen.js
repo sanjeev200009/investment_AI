@@ -57,9 +57,11 @@ const ResetPasswordScreen = ({ navigation, route }) => {
         } catch (err) {
             // err is an Error or an axios error — Alert needs a string, and the
             // previous `Alert.alert('Error', err)` rendered nothing useful.
-            const msg = err?.response?.data?.detail
-                || err?.message
-                || t('reset_failed');
+            // No response and no status: either the out-of-order Error thrown
+            // above (its message is already translated) or a network failure.
+            const msg = err?.response
+                ? (err.response.data?.detail || t('reset_failed'))
+                : (err?.isAxiosError ? t('auth_network_error') : err?.message || t('reset_failed'));
             Alert.alert(t('auth_error'), msg);
         } finally {
             setLoading(false);

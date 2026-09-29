@@ -43,6 +43,10 @@ export const authApi = {
     const { data } = await api.patch('/me', { full_name });
     return data;
   },
+  // Permanent: the backend removes the account and everything it owns (204).
+  deleteAccount: async () => {
+    await api.delete('/me');
+  },
   // `answers` is keyed by question id, e.g. { "1": "Retirement", "11": 60 }.
   // The backend scores it against app/services/risk_scoring.py and rejects any
   // option it does not recognise with a 422 naming the question.

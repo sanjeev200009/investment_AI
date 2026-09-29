@@ -17,6 +17,7 @@ import api from '../api/axiosConfig';
 import { watchlistApi } from '../api/api';
 import { palette, fonts, radii } from '../theme/tokens';
 import { useT } from '../store/languageStore';
+import { CoinStar } from '../components/Motion';
 
 const { width } = Dimensions.get('window');
 
@@ -178,8 +179,36 @@ export default function StockDetailScreen({ route, navigation }) {
     // The bell opens the real rule form for this symbol.
     const openAlertForm = () => navigation.navigate('Rules', { symbol: stock.symbol });
 
+    // Start from the real watchlist, so a starred stock opens starred.
+    useEffect(() => {
+        let cancelled = false;
+        watchlistApi.list()
+            .then(items => {
+                if (!cancelled && (items || []).some(i => i.symbol === stock.symbol)) setWatchState('added');
+            })
+            .catch(() => {});
+        return () => { cancelled = true; };
+    }, [stock.symbol]);
+
     const addToWatchlist = async () => {
-        if (watchState !== 'idle') return;
+        if (watchState === 'saving') return;
+        if (watchState === 'added') {
+            // The star is a toggle: tapping it again un-stars the symbol.
+            setWatchState('saving');
+            try {
+                await watchlistApi.remove(stock.symbol);
+                setWatchState('idle');
+            } catch (err) {
+                setWatchState('added');
+                setFeedbackConfig({
+                    title: t('profile_error_title'),
+                    message: t('detail_check_connection'),
+                    type: 'error',
+                });
+                setShowFeedback(true);
+            }
+            return;
+        }
         setWatchState('saving');
         try {
             await watchlistApi.add(stock.symbol);
@@ -233,12 +262,11 @@ export default function StockDetailScreen({ route, navigation }) {
                 backLabel={t('movers_back')}
                 right={(
                     <>
-                        <CircleButton
-                            icon={watchState === 'added' ? 'star' : watchState === 'saving' ? 'hourglass-empty' : 'star-border'}
-                            tone={watchState === 'added' ? 'yellow' : 'white'}
+                        <CoinStar
+                            on={watchState === 'added'}
                             onPress={addToWatchlist}
                             disabled={watchState === 'saving'}
-                            label={t(watchState === 'added' ? 'detail_on_watchlist' : 'detail_add_to_watchlist').replace('{symbol}', stock.symbol)}
+                            label={t(watchState === 'added' ? 'watchlist_remove' : 'detail_add_to_watchlist').replace('{symbol}', stock.symbol)}
                         />
                         <CircleButton
                             icon="notifications-none"

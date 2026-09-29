@@ -12,6 +12,7 @@ import {
 import { watchlistApi } from '../api/api';
 import { useT } from '../store/languageStore';
 import { palette, fonts, radii } from '../theme/tokens';
+import { SkeletonRows } from '../components/Motion';
 
 export default function WatchlistScreen({ navigation }) {
   const { t } = useT();
@@ -67,6 +68,7 @@ export default function WatchlistScreen({ navigation }) {
     } catch (err) {
       console.warn('[Watchlist] remove failed:', err?.message || err);
       setWatchlist(snapshot);
+      Alert.alert(t('profile_error_title'), t('error_generic'));
     }
   };
 
@@ -82,7 +84,7 @@ export default function WatchlistScreen({ navigation }) {
       </View>
 
       {loading ? (
-        <Loading />
+        <SkeletonRows count={5} label={t('loading')} />
       ) : loadError ? (
         <EmptyState icon="cloud-off" tone="coral" message={loadError === 'LOAD_ERROR' ? t('watchlist_load_error') : loadError} />
       ) : watchlist.length === 0 ? (
