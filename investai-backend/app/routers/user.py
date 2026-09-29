@@ -12,6 +12,7 @@ from app.dependencies import get_db, get_current_user
 from app.rate_limit import limit
 from app.models.user import User, RiskProfile
 from app.schemas.auth import UserOut
+from app.services.plan import build_plan
 from app.services.risk_scoring import (
     AssessmentError,
     question_bank,
@@ -41,14 +42,37 @@ class RiskProfileResponse(BaseModel):
     total_weight: int
     preferred_language: str | None = None
     sectors: list[str] = []
+    # Correct knowledge checks, marked server-side; None if none were sent.
+    knowledge_score: int | None = None
+    knowledge_total: int = 5
 
 
 class QuestionOut(BaseModel):
     id: int
+    kind: str  # 'profile' | 'knowledge'
     text: str
     type: str
     options: list[str]
     weight: int
+    correct: str | None = None
+    explanation: str | None = None
+
+
+class PlanStep(BaseModel):
+    id: str
+    lesson_id: str | None
+    done: bool
+
+
+class PlanOut(BaseModel):
+    """GET /me/plan. A contract with the Home screen: keep it stable."""
+    persona: str  # cautious_starter | steady_builder | growth_explorer
+    risk_category: str | None
+    knowledge_score: int | None
+    knowledge_total: int
+    steps: list[PlanStep]
+    lesson_ids: list[str]
+    prompts: list[str]
 
 
 class UpdateProfileRequest(BaseModel):
@@ -127,6 +151,9 @@ def update_risk_profile(
     rp.score = result.score
     rp.category = result.category
     rp.answers = result.answers
+    # An older client sends no knowledge checks; keep the last real result.
+    if result.knowledge_score is not None:
+        rp.knowledge_score = result.knowledge_score
 
     # Q14 asks for the preferred language; chat reads user_profiles.language.
     # This was never written, so a Sinhala or Tamil choice never reached chat.
@@ -152,6 +179,25 @@ def update_risk_profile(
         total_weight=result.total_weight,
         preferred_language=result.preferred_language,
         sectors=result.sectors,
+        knowledge_score=rp.knowledge_score,
+        knowledge_total=result.knowledge_total,
+    )
+
+
+@router.get('/plan', response_model=PlanOut)
+def get_plan(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The user's first-steps plan, from fixed rules (app/services/plan.py)."""
+    rp = db.query(RiskProfile).filter(
+        RiskProfile.user_id == current_user.user_id).first()
+    return build_plan(
+        db,
+        current_user.user_id,
+        rp.category if rp else None,
+        rp.knowledge_score if rp else None,
+        rp.answers if rp else None,
     )
 
 
