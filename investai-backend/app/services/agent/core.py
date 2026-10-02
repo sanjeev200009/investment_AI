@@ -4,13 +4,17 @@ from typing import AsyncGenerator
 from sqlalchemy.orm import Session
 
 from app.services import llm
-from app.services.agent.memory import ConversationMemory
+from app.services.agent.memory import ConversationMemory, ScriptCleaner, clean_script, reply_language
 from app.services.agent.tools import ToolExecutor, TOOL_SCHEMAS
 
 logger = logging.getLogger(__name__)
 
 MAX_LOOPS = 5
 AGENT_TEMPERATURE = 0.3   # factual finance answers; 0.7 invited embellishment
+# Reasoning models spend hidden tokens before any answer; at 2000 the Qwen
+# fallback used all of them thinking about a Sinhala question and returned
+# nothing (finish_reason=length). Length is held down by the prompt instead.
+AGENT_MAX_TOKENS = 6000
 
 # Only reachable if the model returns nothing even on the forced final round.
 EMPTY_ANSWER = (
@@ -44,6 +48,7 @@ async def stream_agent(
     memory = ConversationMemory(session_id, db, user)
     tool_executor = ToolExecutor(db, str(user.user_id))
     messages = _start(memory, user_message)
+    lang = reply_language(user, user_message)
 
     final_response = ""
     # Which provider/model actually answered, for ai_model_used. Set per loop
@@ -57,12 +62,13 @@ async def stream_agent(
             stream=True,
             role=llm.Role.AGENT,
             temperature=AGENT_TEMPERATURE,
-            max_tokens=2000,
+            max_tokens=AGENT_MAX_TOKENS,
         )
         served_label = served.label
 
         tool_calls = {}
         turn_text = ""
+        cleaner = ScriptCleaner(lang)
 
         async for chunk in response_stream:
             delta = chunk.choices[0].delta if chunk.choices else None
@@ -73,10 +79,11 @@ async def stream_agent(
             # models often say "let me check that" alongside the call, and it
             # belongs on screen, in the saved message, and in the assistant turn
             # the next round sees. (I-20, bug 2.)
-            if delta.content:
-                turn_text += delta.content
-                final_response += delta.content
-                yield f"data: {json.dumps({'type': 'token', 'content': delta.content})}\n\n"
+            content = cleaner.feed(delta.content or "")
+            if content:
+                turn_text += content
+                final_response += content
+                yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
 
             for tc in delta.tool_calls or []:
                 slot = tool_calls.setdefault(
@@ -89,6 +96,12 @@ async def stream_agent(
                         slot["function"]["name"] += tc.function.name
                     if tc.function.arguments:
                         slot["function"]["arguments"] += tc.function.arguments
+
+        tail = cleaner.flush()
+        if tail:
+            turn_text += tail
+            final_response += tail
+            yield f"data: {json.dumps({'type': 'token', 'content': tail})}\n\n"
 
         if not tool_calls:
             break
@@ -141,6 +154,7 @@ async def run_agent(
     memory = ConversationMemory(session_id, db, user)
     tool_executor = ToolExecutor(db, str(user.user_id))
     messages = _start(memory, user_message)
+    lang = reply_language(user, user_message)
 
     parts: list[str] = []
     tools_used = []
@@ -152,7 +166,7 @@ async def run_agent(
             tools=_tools_for(loop_count),
             role=llm.Role.AGENT,
             temperature=AGENT_TEMPERATURE,
-            max_tokens=2000,
+            max_tokens=AGENT_MAX_TOKENS,
         )
         served_label = served.label
         message = response.choices[0].message
@@ -160,7 +174,7 @@ async def run_agent(
         # Prose sent alongside tool calls is real output and belongs to the
         # answer, in order, same as the streaming path.
         if message.content:
-            parts.append(message.content.strip())
+            parts.append(clean_script(message.content, lang).strip())
 
         if not message.tool_calls:
             break

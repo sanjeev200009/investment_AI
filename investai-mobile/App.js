@@ -69,9 +69,11 @@ export default function App() {
         Notifications.clearLastNotificationResponseAsync().catch(() => {});
       })
       .catch(() => {});
-    // FCM rotates tokens; send the new one while signed in.
-    const tokenSub = Notifications.addPushTokenListener(() => {
-      if (useAuthStore.getState().isAuthenticated) pushApi.register();
+    // FCM rotates tokens; send the new one while signed in. Use the token the
+    // event carries: calling register() here re-fetched the token, which fired
+    // this listener again, in an endless loop.
+    const tokenSub = Notifications.addPushTokenListener(({ data }) => {
+      if (useAuthStore.getState().isAuthenticated) pushApi.sendToken(data).catch(() => {});
     });
     return () => { responseSub.remove(); tokenSub.remove(); };
   }, [openPendingAlerts]);

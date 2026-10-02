@@ -11,6 +11,7 @@
 //
 // The backend call is best-effort: offline it degrades to a UI-only switch and
 // reconciles on the next successful call.
+import { tokenStore } from './tokenStore';
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { deviceApi } from '../api/api';
@@ -52,7 +53,7 @@ export const useLanguageStore = create((set) => ({
         try {
             // Signed out (splash picker): nothing to save to yet; init(true)
             // sends it after sign-in.
-            if (await AsyncStorage.getItem('token')) await deviceApi.setLanguage(code);
+            if (await tokenStore.get('token')) await deviceApi.setLanguage(code);
         } catch (err) {
             console.warn('[i18n] Could not persist language to server:', err?.message || err);
         }

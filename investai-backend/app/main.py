@@ -4,6 +4,8 @@ import os
 import time
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 
@@ -41,6 +43,15 @@ app = FastAPI(
     # The schema maps every endpoint; keep it off the public production API.
     openapi_url=None if IS_PRODUCTION else '/openapi.json',
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError):
+    # FastAPI's default 422 echoes the rejected input; an Infinity or NaN cannot
+    # be JSON-encoded, so the rejection itself crashed into a 500 (QA, Oct 2026).
+    # loc/msg/type are what clients read; input and ctx are dropped.
+    errors = [{k: v for k, v in e.items() if k not in ('input', 'ctx', 'url')} for e in exc.errors()]
+    return JSONResponse(status_code=422, content={'detail': errors})
 
 app.add_middleware(
     CORSMiddleware,

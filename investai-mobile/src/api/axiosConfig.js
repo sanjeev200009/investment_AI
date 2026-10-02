@@ -1,6 +1,6 @@
 // src/api/axiosConfig.js
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { tokenStore } from '../store/tokenStore';
 
 // The API address is baked in at build time. A development build may fall back
 // to localhost; a release build must not, because a phone cannot reach
@@ -62,7 +62,7 @@ const isPublic = (url = '') => PUBLIC_PATHS.some(p => url.includes(p));
 
 api.interceptors.request.use(
     async (config) => {
-        const token = await AsyncStorage.getItem('token');
+        const token = await tokenStore.get('token');
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
@@ -94,7 +94,7 @@ export const refreshSession = () => {
 };
 
 const refreshAccessToken = async () => {
-    const refreshToken = await AsyncStorage.getItem('refresh_token');
+    const refreshToken = await tokenStore.get('refresh_token');
     if (!refreshToken) return null;
 
     // A bare axios call, not `api`: going through this instance would attach the
@@ -104,9 +104,9 @@ const refreshAccessToken = async () => {
         { refresh_token: refreshToken },
         { headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' } }
     );
-    await AsyncStorage.setItem('token', data.access_token);
+    await tokenStore.set('token', data.access_token);
     if (data.refresh_token) {
-        await AsyncStorage.setItem('refresh_token', data.refresh_token);
+        await tokenStore.set('refresh_token', data.refresh_token);
     }
     return data.access_token;
 };
@@ -155,7 +155,7 @@ api.interceptors.response.use(
         // Clear it so the navigator drops back to the auth flow instead of
         // looping on 401s.
         if (status === 401 && !isPublic(url)) {
-            await AsyncStorage.multiRemove(['token', 'refresh_token']);
+            await tokenStore.clear();
             if (onUnauthorized) {
                 onUnauthorized();
             }
