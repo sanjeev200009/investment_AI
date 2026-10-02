@@ -9,13 +9,19 @@
       "android": {
         "buildType": "apk"
       },
-      "environment": "preview"
+      "environment": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://138-2-105-105.sslip.io/api/v1"
+      }
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
       },
-      "environment": "production"
+      "environment": "production",
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://138-2-105-105.sslip.io/api/v1"
+      }
     }
   },
   "submit": {

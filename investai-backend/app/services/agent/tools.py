@@ -11,6 +11,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -53,6 +54,39 @@ async def _relevant_lessons(query: str, limit: int = 2) -> list[dict]:
     ]
 
 PREDICTION_MAX_AGE_DAYS = 3
+
+COLOMBO = ZoneInfo("Asia/Colombo")
+
+
+def _local(ts) -> str | None:
+    """A timestamp as Sri Lanka time. Tools used to hand the model raw UTC, and
+    it called 13:15 in Colombo "the morning session"."""
+    if ts is None:
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(COLOMBO).strftime("%Y-%m-%d %H:%M Sri Lanka time")
+
+
+def _int_arg(value, default: int, cap: int) -> int:
+    """Models send integer arguments as strings ("5"); min("5", 10) raised a
+    TypeError and the whole tool call failed."""
+    try:
+        return max(1, min(int(value), cap))
+    except (TypeError, ValueError):
+        return default
+
+
+def _names(db, symbols) -> dict[str, tuple[str | None, str | None]]:
+    """symbol -> (company name, sector). Without the name in the tool result the
+    model guessed it from the ticker and called DIAL "Sri Lanka Telecom"."""
+    from app.models.stock import CompanyInfo
+    symbols = list(symbols)
+    if not symbols:
+        return {}
+    return {r.symbol: (r.name, r.sector_group) for r in
+            db.query(CompanyInfo.symbol, CompanyInfo.name, CompanyInfo.sector_group)
+            .filter(CompanyInfo.symbol.in_(symbols)).all()}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Tool schemas (OpenAI-compatible function-calling format)
@@ -173,6 +207,25 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "explain_recommendation",
+            "description": (
+                "Explain why a CSE stock ranks where it does in InvestAI's recommendations for "
+                "this user's risk level: its rank, score, and each factor's value, weight and "
+                "points. Use this whenever the user asks why a stock is recommended or ranked "
+                "high or low. Only describe the factors this tool returns."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string", "description": "CSE ticker or company name"},
+                },
+                "required": ["symbol"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_market_overview",
             "description": (
                 "Get today's CSE snapshot: the ASPI and S&P SL20 index levels with their "
@@ -248,6 +301,7 @@ class ToolExecutor:
             "get_price_prediction": self._get_price_prediction,
             "search_financial_knowledge": self._search_financial_knowledge,
             "get_market_overview": self._get_market_overview,
+            "explain_recommendation": self._explain_recommendation,
         }
         handler = dispatch.get(tool_name)
         if not handler:
@@ -278,26 +332,31 @@ class ToolExecutor:
 
         results = {term: {"error": f"No listed CSE company matches '{term}'"}
                    for term, sym in resolved.items() if not sym}
+        names = _names(self.db, wanted)
         for sym in wanted:
             row = rows.get(sym)
             if row:
+                name, sector = names.get(sym, (None, None))
                 results[sym] = {
                     "symbol": row.symbol,
+                    "company_name": name,
+                    "sector": sector,
                     "price": row.price,
                     "change": row.change,
                     "change_pct": row.change_pct,
                     "volume": row.volume,
                     "market_cap": row.market_cap,
-                    "recorded_at": str(row.recorded_at),
+                    "recorded_at": _local(row.recorded_at),
                 }
             else:
                 results[sym] = {"error": f"No data found for {sym}"}
-        return {"stocks": results, "retrieved_at": datetime.now(timezone.utc).isoformat()}
+        return {"stocks": results, "retrieved_at": _local(datetime.now(timezone.utc)),
+                "source": "Colombo Stock Exchange (cse.lk)"}
 
     async def _get_stock_news(self, symbol: str, limit: int = 5) -> dict:
         from app.models.stock import NewsSentiment
 
-        limit = min(limit, 10)
+        limit = _int_arg(limit, 5, 10)
         symbol = resolve_symbols(self.db, [symbol])[symbol] or symbol.upper().strip()
         rows = (
             self.db.query(NewsSentiment)
@@ -320,6 +379,7 @@ class ToolExecutor:
         ]
         return {
             "symbol": symbol,
+            "company_name": _names(self.db, [symbol]).get(symbol, (None, None))[0],
             "article_count": len(articles),
             "articles": articles,
         }
@@ -444,7 +504,7 @@ class ToolExecutor:
         from app.services.agent.embeddings import get_embedding
         from app.models.stock import NewsSentiment
 
-        limit = min(limit, 10)
+        limit = _int_arg(limit, 5, 10)
 
         try:
             # "query" side of the asymmetric embedding model; the indexed rows
@@ -527,9 +587,11 @@ class ToolExecutor:
         if not rows:
             return {"error": "No market data available"}
 
+        names = _names(self.db, [r.symbol for r in rows])
         all_stocks = [
             {
                 "symbol": r.symbol,
+                "company_name": names.get(r.symbol, (None, None))[0],
                 "price": r.price,
                 "change_pct": r.change_pct,
                 "volume": r.volume,
@@ -551,9 +613,9 @@ class ToolExecutor:
         as_of = max(r.recorded_at for r in rows)
 
         from app.models.stock import MarketIndexLatest
-        result: dict = {"as_of": str(as_of), "indices": {
+        result: dict = {"as_of": _local(as_of), "source": "Colombo Stock Exchange (cse.lk)", "indices": {
             i.index_code: {"name": i.name, "value": i.value, "change_pct": i.change_pct,
-                           "as_of": str(i.updated_at)}
+                           "as_of": _local(i.updated_at)}
             for i in self.db.query(MarketIndexLatest).filter(
                 MarketIndexLatest.index_code.in_(["ASPI", "SPSL20"])).all()}}
         if category in ("gainers", "all"):
@@ -564,3 +626,36 @@ class ToolExecutor:
             result["most_active"] = sorted_by_volume[:5]
 
         return result
+
+    async def _explain_recommendation(self, symbol: str) -> dict:
+        """The factor breakdown behind a stock's rank, for this user's risk
+        category. Without it the model invented ranking reasons ("sector strength")
+        that the linear model does not use."""
+        from app.models.user import RiskProfile
+        from app.services.recommendations import build_recommendations
+
+        sym = resolve_symbols(self.db, [symbol])[symbol]
+        if not sym:
+            return {"error": f"No listed CSE company matches '{symbol}'"}
+        rp = self.db.query(RiskProfile).filter(RiskProfile.user_id == self.user_id).first()
+        ranked = build_recommendations(self.db, limit=10_000,
+                                       risk_category=rp.category if rp else None)
+        base = sym.split(".")[0]
+        for rank, item in enumerate(ranked["items"], 1):
+            # The ranking keeps one share class per company, so "VLL" (resolved to
+            # VLL.N0000) must find VLL.X0000 when that is the class that ranks.
+            if item["symbol"].split(".")[0] == base:
+                return {
+                    "symbol": item["symbol"], "company_name": item["name"],
+                    "risk_category": ranked["risk_category"],
+                    "rank": rank, "of": ranked["count"], "score": item["score"],
+                    "factors": item["factors"],
+                    "method": "Linear score: each factor is normalised to -1..1, multiplied by its "
+                              "weight for this risk level and summed (x100). Factors with no data are "
+                              "left out and their weight shared among the rest. No other factors are used.",
+                }
+        from app.services.recommendations import FACTOR_LABELS, MIN_FACTORS, MIN_PRICE
+        return {"symbol": sym, "ranked": False,
+                "reason": f"Not ranked: fewer than {MIN_FACTORS} of the four factors could be "
+                          f"measured, or the price is below Rs {MIN_PRICE:g}.",
+                "the_only_factors_used": list(FACTOR_LABELS.values())}

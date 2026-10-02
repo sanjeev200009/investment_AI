@@ -147,7 +147,7 @@ def close_session(
 @router.get("/sessions/{session_id}/messages", response_model=List[MessageOut])
 def get_messages(
     session_id: int,
-    limit: int = Query(50, le=200),
+    limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):

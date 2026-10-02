@@ -8,8 +8,10 @@ class HoldingCreate(BaseModel):
     # price corrupted P&L and snapshots, a lowercase symbol never matched a
     # quote, and a symbol over 20 characters was a DataError (500).
     symbol: str = Field(min_length=1, max_length=20)
-    quantity: float = Field(gt=0)
-    avg_buy_price: float = Field(gt=0)
+    # allow_inf_nan=False: quantity=Infinity was saved and every later portfolio
+    # read returned 500 (QA, Oct 2026).
+    quantity: float = Field(gt=0, allow_inf_nan=False)
+    avg_buy_price: float = Field(gt=0, allow_inf_nan=False)
 
     @field_validator('symbol')
     @classmethod
@@ -29,7 +31,7 @@ class HoldingOut(BaseModel):
         from_attributes = True
 
 class PortfolioCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=120)  # the column is 120 chars
 
 class PortfolioOut(BaseModel):
     portfolio_id: int

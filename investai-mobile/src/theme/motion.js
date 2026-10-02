@@ -97,15 +97,20 @@ export const revealMotion = {
   gestureEnabled: false,
 };
 
+// Tab switches slide a short way in the direction of travel (progress runs
+// -1 → 0 → 1 across the tab order) while cross-fading. freezeOnBlur stops
+// hidden tabs re-rendering behind the visible one, which is what made switches
+// stutter on mid-range phones.
 export const tabMotion = {
   headerShown: false,
-  animation: 'fade',
-  transitionSpec: spec(280),
+  freezeOnBlur: true,
+  animation: 'shift',
+  transitionSpec: spec(260),
   sceneStyleInterpolator: ({ current }) => ({
     sceneStyle: {
-      opacity: current.progress.interpolate({ inputRange: [-1, 0, 1], outputRange: [0, 1, 0] }),
+      opacity: current.progress.interpolate({ inputRange: [-1, -0.4, 0, 0.4, 1], outputRange: [0, 0.6, 1, 0.6, 0] }),
       transform: reduceMotion ? [] : [{
-        translateY: current.progress.interpolate({ inputRange: [-1, 0, 1], outputRange: [12, 0, 12] }),
+        translateX: current.progress.interpolate({ inputRange: [-1, 0, 1], outputRange: [-36, 0, 36] }),
       }],
     },
   }),

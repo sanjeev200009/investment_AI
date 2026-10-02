@@ -21,6 +21,7 @@ import TouchableTick from '../components/TouchableTick';
 import InitialsAvatar from '../components/InitialsAvatar';
 import { useAuthStore } from '../store/authStore';
 import { useT } from '../store/languageStore';
+import { greetingKey, colomboTodayLabel } from '../utils/colomboTime';
 import { recommendationsApi, planApi } from '../api/api';
 import { EASE_OUT, isReduceMotion } from '../theme/motion';
 import api from '../api/axiosConfig';
@@ -319,7 +320,7 @@ export default function HomeScreen({ navigation }) {
     return <Screen><HomeSkeleton label={t('loading')} /></Screen>;
   }
 
-  const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  const today = colomboTodayLabel();
   const topPick = picks[0] || null;
   const topSector = sectors[0] || null;
 
@@ -339,7 +340,7 @@ export default function HomeScreen({ navigation }) {
   const bar = (
     <Animated.View pointerEvents="none" style={[styles.miniBar, { paddingTop: insets.top, height: insets.top + 56, opacity: fade(90, 150, 0, 1) }]}>
       <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
-      <Text style={styles.miniTitle} numberOfLines={1}>{t('home_greeting')}, {firstName}</Text>
+      <Text style={styles.miniTitle} numberOfLines={1}>{t(greetingKey())}, {firstName}</Text>
       {aspi ? <Text style={styles.miniValue}>ASPI {fmt(aspi.value)}</Text> : null}
     </Animated.View>
   );
@@ -350,7 +351,7 @@ export default function HomeScreen({ navigation }) {
       <Animated.View style={[styles.header, headerStyle]}>
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={styles.caption}>{today}</Text>
-          <Text style={styles.greeting} numberOfLines={1}>{t('home_greeting')}, {firstName}</Text>
+          <Text style={styles.greeting} numberOfLines={1}>{t(greetingKey())}, {firstName}</Text>
         </View>
         <TouchableTick onPress={() => navigation.navigate('ProfileMain')} accessibilityLabel={t('home_profile_settings')}>
           <InitialsAvatar name={user?.full_name} size={56} background={palette.coral} />

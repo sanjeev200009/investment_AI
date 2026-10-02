@@ -3,6 +3,7 @@
 // Assistant, v2 "Soft pastel": black user bubbles, white glass answers, lime
 // chips for each tool the agent called, and a white round composer that sits
 // above the floating tab bar.
+import { tokenStore } from '../store/tokenStore';
 import React, { useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TextInput, KeyboardAvoidingView, Platform, StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -211,7 +212,7 @@ export default function ChatScreen({ navigation, route }) {
     // hour), so refresh through the same shared path axios uses and retry once.
     // The stream reads the token itself and bypasses axios's interceptor.
     const start = async (retried) => {
-      const token = await AsyncStorage.getItem('token');
+      const token = await tokenStore.get('token');
       abortRef.current = streamSSE({
         url: '/chat/stream',
         body: sessionId ? { message: userText, session_id: sessionId } : { message: userText },
