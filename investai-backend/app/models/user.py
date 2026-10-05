@@ -32,10 +32,6 @@ class UserProfile(Base):
 	profile_id = Column(Integer, primary_key=True, index=True)
 	user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, unique=True)
 	full_name = Column(String(150), nullable=False)
-	age = Column(Integer)
-	occupation = Column(String(120))
-	income_level = Column(String(80))
-	investment_experience = Column(String(80))
 	# FCM registration token for this user's current device. Existed in the
 	# database since migration a1b2c3d4e5f6 but not on this model, so every
 	# push lookup returned None forever (I-12). String(512): FCM v1 tokens run

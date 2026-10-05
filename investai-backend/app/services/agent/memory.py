@@ -360,7 +360,6 @@ class ConversationMemory:
         self,
         content: str,
         model_used: str,
-        context_snapshot: str | None = None,
     ) -> int:
         """Persist the AI response and return its message_id."""
         from app.models.chat import ChatMessage
@@ -370,7 +369,6 @@ class ConversationMemory:
             sender_type="assistant",
             content=content,
             ai_model_used=model_used,
-            context=context_snapshot,
             timestamp=datetime.now(timezone.utc),
         )
         self.db.add(msg)

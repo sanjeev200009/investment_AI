@@ -348,3 +348,25 @@ async def _async_embed(news_ids: list[int]) -> int:
         return await embed_and_store_news(news_ids, db)
     finally:
         db.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Housekeeping
+# ─────────────────────────────────────────────────────────────────────────────
+
+@celery_app.task(name="tasks.scrape_tasks.purge_expired_credentials")
+def purge_expired_credentials():
+    """Delete login codes and reset tokens that expired over a day ago.
+
+    Nothing else ever removed them, so otp_codes kept every code since April.
+    """
+    from app.database import SessionLocal
+    from app.services.otp import purge_expired_otps
+    from app.utils.security import purge_expired_reset_tokens
+
+    db = SessionLocal()
+    try:
+        otps, tokens = purge_expired_otps(db), purge_expired_reset_tokens(db)
+        logger.info("Purged %d expired OTP codes and %d reset tokens", otps, tokens)
+    finally:
+        db.close()

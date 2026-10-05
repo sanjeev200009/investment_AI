@@ -25,7 +25,6 @@ class ChatMessage(Base):
 	session_id = Column(Integer, ForeignKey("chat_sessions.session_id", ondelete="CASCADE"), nullable=False, index=True)
 	sender_type = Column(String(30), nullable=False)
 	content = Column(Text, nullable=False)
-	context = Column(Text)
 	ai_model_used = Column(String(80))
 	timestamp = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

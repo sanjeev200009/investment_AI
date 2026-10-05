@@ -141,4 +141,10 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute="0", hour="16"),
         "options": {"queue": "default"},
     },
+    # Expired login codes and reset tokens: daily at 03:00, outside market hours.
+    "purge-expired-credentials": {
+        "task": "tasks.scrape_tasks.purge_expired_credentials",
+        "schedule": crontab(minute="0", hour="3"),
+        "options": {"queue": "default"},
+    },
 }

@@ -157,3 +157,17 @@ def verify_otp(db: Session, email: str, otp_code: str, purpose: str,
         db.commit()
 
     return True
+
+
+
+# Expired codes are kept a day, not deleted on expiry: create_otp's cooldown and
+# hourly cap count recent issues, and a day is far past the longest window they read.
+PURGE_AFTER = timedelta(days=1)
+
+
+def purge_expired_otps(db: Session) -> int:
+    """Delete OTP codes that expired over a day ago. Returns how many."""
+    cutoff = datetime.now(timezone.utc) - PURGE_AFTER
+    deleted = db.query(OTPCode).filter(OTPCode.expires_at < cutoff).delete(synchronize_session=False)
+    db.commit()
+    return deleted
