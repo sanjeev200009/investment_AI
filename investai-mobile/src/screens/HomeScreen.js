@@ -15,8 +15,9 @@ import { HomeSkeleton } from '../components/Motion';
 import { MaterialIcons } from '@expo/vector-icons';
 import {
   Screen, CircleButton, IconCircle, PillButton, Chip, Card, StackCard, BigNumber, ChangePill,
-  Heading, Label, Body, Loading, accent, ACCENT_CYCLE, ScreenLoader,
+  Heading, Label, Body, Loading, accent, ACCENT_CYCLE, ScreenLoader, Field,
 } from '../components/ui';
+import { splitAmount } from '../utils/investPlan';
 import TouchableTick from '../components/TouchableTick';
 import InitialsAvatar from '../components/InitialsAvatar';
 import { useAuthStore } from '../store/authStore';
@@ -196,6 +197,9 @@ export default function HomeScreen({ navigation }) {
   const [picksWeights, setPicksWeights] = useState({});
   const [riskCategory, setRiskCategory] = useState(null);
   const [expandedPick, setExpandedPick] = useState(null);
+  // "I have LKR X": whole shares of each pick that amount buys, fees included.
+  const [amount, setAmount] = useState('');
+  const split = useMemo(() => splitAmount(Number(amount.replace(/[^0-9.]/g, '')), picks), [amount, picks]);
 
   const [sectorChips, setSectorChips] = useState([]);
   const [activeChip, setActiveChip] = useState(ALL_MARKETS);
@@ -518,9 +522,20 @@ export default function HomeScreen({ navigation }) {
               {riskCategory ? t('home_weighted_for_risk').replace('{risk}', riskCategory.toLowerCase()) : t('home_balanced_weighting')}
             </Label>
           </View>
+          <Field
+            icon="payments"
+            tone="lime"
+            label={t('home_amount_label')}
+            placeholder={t('home_amount_placeholder')}
+            keyboardType="numeric"
+            value={amount}
+            onChangeText={setAmount}
+            maxLength={12}
+          />
           <Card style={{ padding: 8 }}>
             {picks.map((pick, i) => {
               const open = expandedPick === pick.symbol;
+              const buy = split?.rows.find(r => r.symbol === pick.symbol);
               return (
                 <View key={pick.symbol}>
                   {i > 0 && <View style={styles.divider} />}
@@ -535,6 +550,13 @@ export default function HomeScreen({ navigation }) {
                     <View style={{ flex: 1, gap: 2 }}>
                       <Text style={styles.rowTitle}>{pick.symbol.split('.')[0]}</Text>
                       <Label numberOfLines={1}>{pick.name || pick.sector || ''}</Label>
+                      {buy && (
+                        <Label style={{ color: buy.shares ? palette.ink : palette.faint }}>
+                          {buy.shares
+                            ? t('home_amount_shares').replace('{n}', buy.shares.toLocaleString('en-US')).replace('{cost}', fmt(buy.cost + buy.fee))
+                            : t('home_amount_too_expensive').replace('{price}', fmt(pick.price))}
+                        </Label>
+                      )}
                     </View>
                     <MaterialIcons name={open ? 'expand-less' : 'expand-more'} size={24} color={palette.muted} />
                   </TouchableTick>
@@ -563,6 +585,12 @@ export default function HomeScreen({ navigation }) {
               );
             })}
           </Card>
+          {split && (
+            <Label>
+              {t('home_amount_summary').replace('{spent}', fmt(split.spent)).replace('{fees}', fmt(split.fees)).replace('{left}', fmt(split.left))}
+              {' '}{t('home_amount_note')}
+            </Label>
+          )}
         </View>
       )}
 
