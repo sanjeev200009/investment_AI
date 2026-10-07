@@ -15,6 +15,7 @@ import {
 import { learnApi, planApi } from '../api/api';
 import { useT } from '../store/languageStore';
 import { palette, fonts } from '../theme/tokens';
+import { afterTransition } from '../theme/motion';
 
 export default function LearnScreen({ navigation }) {
   const { t } = useT();
@@ -40,8 +41,8 @@ export default function LearnScreen({ navigation }) {
   const [plan, setPlan] = useState(null);
   useFocusEffect(useCallback(() => {
     let cancelled = false;
-    planApi.get().then(p => { if (!cancelled) setPlan(p); });
-    return () => { cancelled = true; };
+    const cancel = afterTransition(() => planApi.get().then(p => { if (!cancelled) setPlan(p); }));
+    return () => { cancelled = true; cancel(); };
   }, []));
 
   const { ordered, recommendedId } = useMemo(() => {

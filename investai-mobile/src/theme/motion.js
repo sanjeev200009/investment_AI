@@ -11,7 +11,7 @@
 //
 // Every interpolator falls back to a plain fade when the OS asks for reduced
 // motion.
-import { Animated, Easing, AccessibilityInfo } from 'react-native';
+import { Animated, Easing, AccessibilityInfo, InteractionManager } from 'react-native';
 
 let reduceMotion = false;
 AccessibilityInfo.isReduceMotionEnabled().then((v) => { reduceMotion = !!v; }).catch(() => {});
@@ -115,3 +115,13 @@ export const tabMotion = {
     },
   }),
 };
+
+// Run `fn` once the screen has finished arriving: after the tab switch (260 ms,
+// which registers no interaction) and after any stack transition (which does).
+// Heavy re-renders and charts started mid-transition are what made switches
+// stutter. Returns a cancel function, so it fits useEffect / useFocusEffect.
+export function afterTransition(fn) {
+  let task;
+  const timer = setTimeout(() => { task = InteractionManager.runAfterInteractions(fn); }, 280);
+  return () => { clearTimeout(timer); task?.cancel(); };
+}

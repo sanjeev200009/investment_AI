@@ -25,7 +25,7 @@ import { useAuthStore } from '../store/authStore';
 import { useT } from '../store/languageStore';
 import { greetingKey, colomboTodayLabel } from '../utils/colomboTime';
 import { recommendationsApi, planApi } from '../api/api';
-import { EASE_OUT, isReduceMotion } from '../theme/motion';
+import { EASE_OUT, isReduceMotion, afterTransition } from '../theme/motion';
 import api from '../api/axiosConfig';
 import { palette, fonts, radii, changeTone } from '../theme/tokens';
 
@@ -206,8 +206,8 @@ export default function HomeScreen({ navigation }) {
   const [plan, setPlan] = useState(null);
   useFocusEffect(useCallback(() => {
     let cancelled = false;
-    planApi.get().then(p => { if (!cancelled) setPlan(p); });
-    return () => { cancelled = true; };
+    const cancel = afterTransition(() => planApi.get().then(p => { if (!cancelled) setPlan(p); }));
+    return () => { cancelled = true; cancel(); };
   }, []));
 
   const openStep = (s) => {
