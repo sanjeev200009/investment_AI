@@ -81,6 +81,7 @@ export default function LearnScreen({ navigation }) {
             return (
               <StackCard
                 key={lesson.id}
+                index={i}
                 tone={tone}
                 first={i === 0}
                 last={last}

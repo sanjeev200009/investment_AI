@@ -18,6 +18,7 @@ import {
   Heading, Label, Body, Loading, accent, ACCENT_CYCLE, ScreenLoader, Field,
 } from '../components/ui';
 import { splitAmount } from '../utils/investPlan';
+import SwipeDeck from '../components/SwipeDeck';
 import TouchableTick from '../components/TouchableTick';
 import InitialsAvatar from '../components/InitialsAvatar';
 import { useAuthStore } from '../store/authStore';
@@ -146,26 +147,20 @@ function TipDeck({ t }) {
   return (
     <View style={{ gap: 12 }} onLayout={e => setW(e.nativeEvent.layout.width)}>
       <Heading>{t('home_tips_title')}</Heading>
+      {/* A 3D card stack: swipe the top tip away and the next one lifts up. */}
       {w > 0 ? (
-        <FlatList
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          data={TIP_KEYS}
-          keyExtractor={k => k}
-          getItemLayout={(_, i) => ({ length: w, offset: w * i, index: i })}
-          onMomentumScrollEnd={e => setPage(Math.round(e.nativeEvent.contentOffset.x / w))}
-          renderItem={({ item, index }) => {
+        <SwipeDeck
+          items={TIP_KEYS}
+          onIndexChange={setPage}
+          label={i => `${t('home_tips_page_a11y').replace('{n}', i + 1).replace('{total}', TIP_KEYS.length)}. ${t(TIP_KEYS[i])}`}
+          renderCard={(item, index) => {
             const tone = TIP_TONES[index];
             const ink = accent(tone).ink;
             return (
-              <View style={{ width: w }} accessible
-                accessibilityLabel={`${t('home_tips_page_a11y').replace('{n}', index + 1).replace('{total}', TIP_KEYS.length)}. ${t(item)}`}>
-                <Card tone={tone} style={styles.tipCard}>
-                  <MaterialIcons name="lightbulb-outline" size={24} color={ink} />
-                  <Body style={{ color: ink }}>{t(item)}</Body>
-                </Card>
-              </View>
+              <Card tone={tone} style={styles.tipCard}>
+                <MaterialIcons name="lightbulb-outline" size={24} color={ink} />
+                <Body style={{ color: ink }}>{t(item)}</Body>
+              </Card>
             );
           }}
         />

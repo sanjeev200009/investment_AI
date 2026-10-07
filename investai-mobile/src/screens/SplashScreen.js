@@ -4,9 +4,11 @@
 // gradient, a light-weight headline, and a black swipe-to-start pill. Also
 // rendered by AppNavigator, without a navigator, while the saved session
 // restores; a completed swipe then does nothing until the stack swaps in.
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated, PanResponder, AccessibilityInfo, Pressable } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import Svg, { Circle, Ellipse, Path } from 'react-native-svg';
+import { isReduceMotion } from '../theme/motion';
 import { Screen, IconCircle, Chip, accent } from '../components/ui';
 import { palette, fonts, radii } from '../theme/tokens';
 import { useT, useLanguageStore } from '../store/languageStore';
@@ -19,6 +21,45 @@ const PILLS = [
     { tone: 'coral', icon: 'notifications-none', labelKey: 'splash_pill_alerts', offset: 90 },
 ];
 
+// A small face for each capsule: blinks now and then, beams when tapped.
+function PillFace({ tone, happy }) {
+    const [blink, setBlink] = useState(false);
+    useEffect(() => {
+        if (isReduceMotion()) return undefined;
+        let timer;
+        const schedule = () => {
+            timer = setTimeout(() => {
+                setBlink(true);
+                timer = setTimeout(() => { setBlink(false); schedule(); }, 140);
+            }, 2400 + Math.random() * 3200);
+        };
+        schedule();
+        return () => clearTimeout(timer);
+    }, []);
+    const ink = palette.ink;
+    const cheek = tone === 'coral' ? palette.badge : palette.coral;
+    const closed = blink || happy;
+    return (
+        <Svg width={44} height={30} viewBox="0 0 44 30">
+            {closed ? (
+                <Path d={happy ? 'M10 11Q14 6 18 11M26 11Q30 6 34 11' : 'M10 10H18M26 10H34'} stroke={ink} strokeWidth={2.2} strokeLinecap="round" fill="none" />
+            ) : (
+                <>
+                    <Ellipse cx={14} cy={10} rx={3.2} ry={4} fill={ink} />
+                    <Ellipse cx={30} cy={10} rx={3.2} ry={4} fill={ink} />
+                    <Circle cx={15.2} cy={8.4} r={1.1} fill="#FFFFFF" />
+                    <Circle cx={31.2} cy={8.4} r={1.1} fill="#FFFFFF" />
+                </>
+            )}
+            <Circle cx={7} cy={18} r={3.4} fill={cheek} fillOpacity={0.7} />
+            <Circle cx={37} cy={18} r={3.4} fill={cheek} fillOpacity={0.7} />
+            {happy
+                ? <Path d="M16 18Q22 27 28 18Z" fill={ink} />
+                : <Path d="M16 19Q22 24 28 19" stroke={ink} strokeWidth={2.2} strokeLinecap="round" fill="none" />}
+        </Svg>
+    );
+}
+
 const TRACK_PAD = 8;
 const KNOB = 56;
 
@@ -28,7 +69,26 @@ export default function SplashScreen({ navigation }) {
     const trackRef = useRef(0);
     const knobX = useRef(new Animated.Value(0)).current;
     const drift = useRef(PILLS.map(() => new Animated.Value(0))).current;
+    // Capsules rise in one after another, and give a soft bounce when tapped.
+    const enter = useRef(PILLS.map(() => new Animated.Value(isReduceMotion() ? 1 : 0))).current;
+    const bounce = useRef(PILLS.map(() => new Animated.Value(1))).current;
+    const [happy, setHappy] = useState(-1);
     const done = useRef(false);
+
+    useEffect(() => {
+        if (isReduceMotion()) return;
+        Animated.stagger(110, enter.map(v => Animated.spring(v, {
+            toValue: 1, useNativeDriver: true, speed: 6, bounciness: 6,
+        }))).start();
+    }, [enter]);
+
+    const poke = (i) => {
+        setHappy(i);
+        setTimeout(() => setHappy(h => (h === i ? -1 : h)), 900);
+        if (isReduceMotion()) return;
+        bounce[i].setValue(0.92);
+        Animated.spring(bounce[i], { toValue: 1, useNativeDriver: true, speed: 10, bounciness: 12 }).start();
+    };
 
     // Slow drift, skipped when the user has asked the OS for reduced motion.
     useEffect(() => {
@@ -92,12 +152,24 @@ export default function SplashScreen({ navigation }) {
             <View style={styles.pills} importantForAccessibility="no-hide-descendants">
                 {PILLS.map((p, i) => {
                     const a = accent(p.tone);
-                    const translateY = drift[i].interpolate({ inputRange: [0, 1], outputRange: [0, -10] });
+                    const translateY = Animated.add(
+                        drift[i].interpolate({ inputRange: [0, 1], outputRange: [0, -10] }),
+                        enter[i].interpolate({ inputRange: [0, 1], outputRange: [60, 0] }),
+                    );
+                    const sway = drift[i].interpolate({ inputRange: [0, 1], outputRange: [i % 2 ? '-2deg' : '2deg', i % 2 ? '2deg' : '-2deg'] });
                     return (
-                        <Animated.View key={p.tone} style={[styles.pill, { backgroundColor: a.bg, marginTop: p.offset, transform: [{ translateY }] }]}>
-                            <IconCircle icon={p.icon} color={a.ink} borderColor="rgba(0,0,0,0.15)" size={52} />
-                            <Text style={[styles.pillLabel, { color: a.ink }]}>{t(p.labelKey)}</Text>
-                        </Animated.View>
+                        <Pressable key={p.tone} onPress={() => poke(i)} accessible={false}>
+                            <Animated.View style={[styles.pill, {
+                                backgroundColor: a.bg, marginTop: p.offset, opacity: enter[i],
+                                transform: [{ perspective: 800 }, { translateY }, { rotateZ: sway }, { scale: bounce[i] }],
+                            }]}>
+                                <View style={{ alignItems: 'center', gap: 8 }}>
+                                    <IconCircle icon={p.icon} color={a.ink} borderColor="rgba(0,0,0,0.15)" size={52} />
+                                    <PillFace tone={p.tone} happy={happy === i} />
+                                </View>
+                                <Text style={[styles.pillLabel, { color: a.ink }]}>{t(p.labelKey)}</Text>
+                            </Animated.View>
+                        </Pressable>
                     );
                 })}
             </View>

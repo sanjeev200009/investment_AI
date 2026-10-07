@@ -191,6 +191,7 @@ export default function NotificationsScreen({ navigation }) {
               >
                 <StackCard
                   tone={tone}
+                  index={i}
                   first
                   last={i === visibleAlerts.length - 1}
                   onPress={() => markOneRead(alert.notif_id)}
