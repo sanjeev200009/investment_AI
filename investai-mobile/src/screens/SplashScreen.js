@@ -1,11 +1,11 @@
 // src/screens/SplashScreen.js — v2 "Soft pastel" splash.
 //
-// Four drifting pastel pills (Markets, Ask AI, Learn, Alerts) over the
+// Four pastel pills with faces (Markets, Ask AI, Learn, Alerts) over the
 // gradient, a light-weight headline, and a black swipe-to-start pill. Also
 // rendered by AppNavigator, without a navigator, while the saved session
 // restores; a completed swipe then does nothing until the stack swaps in.
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, PanResponder, AccessibilityInfo, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Animated, PanResponder, Pressable, Easing } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import Svg, { Circle, Ellipse, Path } from 'react-native-svg';
 import { isReduceMotion } from '../theme/motion';
@@ -68,44 +68,45 @@ export default function SplashScreen({ navigation }) {
     const setLanguage = useLanguageStore(state => state.setLanguage);
     const trackRef = useRef(0);
     const knobX = useRef(new Animated.Value(0)).current;
-    const drift = useRef(PILLS.map(() => new Animated.Value(0))).current;
-    // Capsules rise in one after another, and give a soft bounce when tapped.
-    const enter = useRef(PILLS.map(() => new Animated.Value(isReduceMotion() ? 1 : 0))).current;
-    const bounce = useRef(PILLS.map(() => new Animated.Value(1))).current;
+    // Capsules slide up from the bottom one by one; each one that lands pushes
+    // its neighbour aside a little as it squeezes into place. No looping motion.
+    // A tap lifts a capsule ("discover") and its neighbours lean away.
+    const rise = useRef(PILLS.map(() => new Animated.Value(isReduceMotion() ? 1 : 0))).current;
+    const push = useRef(PILLS.map(() => new Animated.Value(0))).current;
+    const lift = useRef(PILLS.map(() => new Animated.Value(0))).current;
     const [happy, setHappy] = useState(-1);
     const done = useRef(false);
 
-    useEffect(() => {
-        if (isReduceMotion()) return;
-        Animated.stagger(110, enter.map(v => Animated.spring(v, {
-            toValue: 1, useNativeDriver: true, speed: 6, bounciness: 6,
-        }))).start();
-    }, [enter]);
-
-    const poke = (i) => {
-        setHappy(i);
-        setTimeout(() => setHappy(h => (h === i ? -1 : h)), 900);
-        if (isReduceMotion()) return;
-        bounce[i].setValue(0.92);
-        Animated.spring(bounce[i], { toValue: 1, useNativeDriver: true, speed: 10, bounciness: 12 }).start();
+    const ease = Easing.out(Easing.cubic);
+    const nudge = (i, dir) => {
+        if (i < 0 || i >= PILLS.length) return;
+        Animated.sequence([
+            Animated.timing(push[i], { toValue: dir * 7, duration: 160, easing: ease, useNativeDriver: true }),
+            Animated.timing(push[i], { toValue: 0, duration: 340, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        ]).start();
     };
 
-    // Slow drift, skipped when the user has asked the OS for reduced motion.
     useEffect(() => {
-        let loops = [];
-        AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
-            if (reduce) return;
-            loops = drift.map((v, i) => {
-                const loop = Animated.loop(Animated.sequence([
-                    Animated.timing(v, { toValue: 1, duration: 3000 + i * 400, useNativeDriver: true }),
-                    Animated.timing(v, { toValue: 0, duration: 3000 + i * 400, useNativeDriver: true }),
-                ]));
-                loop.start();
-                return loop;
-            });
-        });
-        return () => loops.forEach(l => l.stop());
-    }, [drift]);
+        if (isReduceMotion()) return;
+        rise.forEach((v, i) => Animated.timing(v, {
+            toValue: 1, duration: 720, delay: 120 + i * 150, easing: ease, useNativeDriver: true,
+        }).start(({ finished }) => { if (finished) nudge(i - 1, -1); }));
+    }, [rise]);
+
+    const discover = (i) => {
+        setHappy(i);
+        if (!isReduceMotion()) {
+            Animated.sequence([
+                Animated.timing(lift[i], { toValue: 1, duration: 260, easing: ease, useNativeDriver: true }),
+                Animated.delay(600),
+                Animated.timing(lift[i], { toValue: 0, duration: 420, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+            ]).start(() => setHappy(h => (h === i ? -1 : h)));
+            nudge(i - 1, -1);
+            nudge(i + 1, 1);
+        } else {
+            setTimeout(() => setHappy(h => (h === i ? -1 : h)), 900);
+        }
+    };
 
     const maxX = () => Math.max(trackRef.current - KNOB - TRACK_PAD * 2, 0);
 
@@ -153,15 +154,16 @@ export default function SplashScreen({ navigation }) {
                 {PILLS.map((p, i) => {
                     const a = accent(p.tone);
                     const translateY = Animated.add(
-                        drift[i].interpolate({ inputRange: [0, 1], outputRange: [0, -10] }),
-                        enter[i].interpolate({ inputRange: [0, 1], outputRange: [60, 0] }),
+                        rise[i].interpolate({ inputRange: [0, 1], outputRange: [520, 0] }),
+                        lift[i].interpolate({ inputRange: [0, 1], outputRange: [0, -18] }),
                     );
-                    const sway = drift[i].interpolate({ inputRange: [0, 1], outputRange: [i % 2 ? '-2deg' : '2deg', i % 2 ? '2deg' : '-2deg'] });
+                    // Each capsule arrives slightly turned and straightens as it lands.
+                    const turn = rise[i].interpolate({ inputRange: [0, 1], outputRange: [i % 2 ? '7deg' : '-7deg', '0deg'] });
                     return (
-                        <Pressable key={p.tone} onPress={() => poke(i)} accessible={false}>
+                        <Pressable key={p.tone} onPress={() => discover(i)} accessible={false}>
                             <Animated.View style={[styles.pill, {
-                                backgroundColor: a.bg, marginTop: p.offset, opacity: enter[i],
-                                transform: [{ perspective: 800 }, { translateY }, { rotateZ: sway }, { scale: bounce[i] }],
+                                backgroundColor: a.bg, marginTop: p.offset,
+                                transform: [{ translateX: push[i] }, { translateY }, { rotateZ: turn }],
                             }]}>
                                 <View style={{ alignItems: 'center', gap: 8 }}>
                                     <IconCircle icon={p.icon} color={a.ink} borderColor="rgba(0,0,0,0.15)" size={52} />

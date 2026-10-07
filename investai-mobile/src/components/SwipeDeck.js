@@ -60,7 +60,7 @@ export default function SwipeDeck({ items, renderCard, onIndexChange, label }) {
       if (Math.abs(g.dx) > w * 0.3 || Math.abs(g.vx) > 0.6) advance(Math.sign(g.dx || g.vx) || 1);
       else {
         Animated.parallel([
-          Animated.spring(dx, { toValue: 0, useNativeDriver: true, speed: 14, bounciness: 4 }),
+          Animated.spring(dx, { toValue: 0, useNativeDriver: true, speed: 14, bounciness: 0 }),
           Animated.spring(lift, { toValue: 0, useNativeDriver: true, speed: 14, bounciness: 0 }),
         ]).start();
       }
