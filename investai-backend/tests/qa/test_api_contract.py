@@ -863,3 +863,29 @@ def test_isolation_plan_and_dashboard(api, a_data):
     plan = api.get(f"{API}/me/plan").json()
     assert not any(s["done"] for s in plan["steps"])
     assert api.get(f"{API}/dashboard/").json()["watchlist_preview"] == []
+
+
+def test_market_session_notices(Session_):
+    from app.services.notification_service import notify_market_session
+    from app.services.portfolio_history import exchange_today
+
+    db = Session_()
+    users = db.query(User).count()
+    db.add(UserProfile(user_id=USER_B, full_name="Bob QA", language="ta"))
+    db.commit()
+
+    # Open: only when cse.lk says the market is open, and only once a day.
+    assert notify_market_session(db, "market_open", "Market Close") == 0
+    assert notify_market_session(db, "market_open", "Regular Trading - Market Open") == users
+    assert notify_market_session(db, "market_open", "Regular Trading - Market Open") == 0
+
+    # Close: nothing on a day with no trading recorded (a holiday)...
+    assert notify_market_session(db, "market_close", None) == 0
+    db.add(DailyClose(symbol="JKH.N0000", trade_date=exchange_today(), close=20.0,
+                      last_traded_at=datetime.now(timezone.utc)))
+    db.commit()
+    # ...then once, with the ASPI, in each user's language.
+    assert notify_market_session(db, "market_close", None) == users
+    msgs = {n.user_id: n.message for n in db.query(Notification).filter(Notification.type == "market_close")}
+    assert msgs[USER_A] == "The market has closed for today. ASPI 21,000.00 (-0.30%)."
+    assert msgs[USER_B].startswith("இன்றைய சந்தை மூடப்பட்டது.")
