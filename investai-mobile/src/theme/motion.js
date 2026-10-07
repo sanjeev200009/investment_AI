@@ -76,10 +76,13 @@ function cardLift({ current, layouts }) {
   };
 }
 
+// No swipe-to-close: with a vertical gesture the whole page was a drag handle,
+// and it fought the page's own scrolling, so the company page would not scroll.
+// The back button and Android's back gesture still close it.
 export const cardLiftMotion = {
   cardStyleInterpolator: cardLift,
   transitionSpec: { open: spec(480), close: spec(340) },
-  gestureDirection: 'vertical',
+  gestureEnabled: false,
 };
 
 export const stackMotion = {
