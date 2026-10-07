@@ -18,7 +18,7 @@
 //   <EmptyState>       icon + message (+ action) for empty / error states
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, StyleSheet, ScrollView, RefreshControl, StatusBar, Animated, Easing,
+  View, Text, TextInput, StyleSheet, ScrollView, RefreshControl, StatusBar, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -193,35 +193,14 @@ export function Card({ children, style, tone, onPress, label }) {
 }
 
 /** Pastel card whose top tucks under the previous one (the reference's stack).
- *  Pass `first` on the first card of a stack. On first appearance each card is
- *  "dealt" in: it settles from a slight 3D tilt, one after another by `index`. */
-export function StackCard({ tone = 'lime', first, last, children, onPress, label, style, index = 0 }) {
+ *  Pass `first` on the first card of a stack. */
+export function StackCard({ tone = 'lime', first, last, children, onPress, label, style }) {
   const a = accent(tone);
-  const deal = useRef(new Animated.Value(isReduceMotion() ? 1 : 0)).current;
-  useEffect(() => {
-    if (isReduceMotion()) return;
-    Animated.timing(deal, {
-      toValue: 1, duration: 420, delay: Math.min(index, 8) * 70,
-      easing: Easing.out(Easing.cubic), useNativeDriver: true,
-    }).start();
-  }, [deal, index]);
-  const dealt = {
-    marginTop: first ? 0 : -22,
-    opacity: deal,
-    transform: [
-      { perspective: 900 },
-      { translateY: deal.interpolate({ inputRange: [0, 1], outputRange: [28, 0] }) },
-      { rotateX: deal.interpolate({ inputRange: [0, 1], outputRange: ['16deg', '0deg'] }) },
-    ],
-  };
-  const s = [styles.stack, { backgroundColor: a.bg, paddingBottom: last ? 24 : 44 }, style];
-  return (
-    <Animated.View style={dealt}>
-      {onPress
-        ? <TouchableTick onPress={onPress} accessibilityRole="button" accessibilityLabel={label} style={s}>{children}</TouchableTick>
-        : <View style={s}>{children}</View>}
-    </Animated.View>
-  );
+  const s = [styles.stack, { backgroundColor: a.bg, marginTop: first ? 0 : -22, paddingBottom: last ? 24 : 44 }, style];
+  if (onPress) {
+    return <TouchableTick onPress={onPress} accessibilityRole="button" accessibilityLabel={label} style={s}>{children}</TouchableTick>;
+  }
+  return <View style={s}>{children}</View>;
 }
 
 // ── Type ─────────────────────────────────────────────────────────────────────

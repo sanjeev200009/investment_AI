@@ -172,7 +172,7 @@ export default function RulesScreen({ route, navigation }) {
               const tone = ACCENT_CYCLE[i % ACCENT_CYCLE.length];
               const a = accent(tone);
               return (
-                <StackCard key={rule.rule_id} index={i} tone={tone} first={i === 0} last={i === rules.length - 1}>
+                <StackCard key={rule.rule_id} tone={tone} first={i === 0} last={i === rules.length - 1}>
                   <View style={styles.ruleRow}>
                     <View style={styles.ruleLeft}>
                       <IconCircle icon={cond?.icon || 'notifications'} color={a.ink} borderColor="rgba(0,0,0,0.18)" size={48} />

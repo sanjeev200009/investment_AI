@@ -1,14 +1,13 @@
 // src/screens/SplashScreen.js — v2 "Soft pastel" splash.
 //
-// Four pastel pills with faces (Markets, Ask AI, Learn, Alerts) over the
+// Four drifting pastel pills (Markets, Ask AI, Learn, Alerts) over the
 // gradient, a light-weight headline, and a black swipe-to-start pill. Also
 // rendered by AppNavigator, without a navigator, while the saved session
 // restores; a completed swipe then does nothing until the stack swaps in.
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, PanResponder, Pressable, Easing } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Animated, PanResponder, AccessibilityInfo, Pressable } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import Svg, { Circle, Ellipse, Path } from 'react-native-svg';
-import { isReduceMotion } from '../theme/motion';
 import { Screen, IconCircle, Chip, accent } from '../components/ui';
 import { palette, fonts, radii } from '../theme/tokens';
 import { useT, useLanguageStore } from '../store/languageStore';
@@ -21,41 +20,20 @@ const PILLS = [
     { tone: 'coral', icon: 'notifications-none', labelKey: 'splash_pill_alerts', offset: 90 },
 ];
 
-// A small face for each capsule: blinks now and then, beams when tapped.
-function PillFace({ tone, happy }) {
-    const [blink, setBlink] = useState(false);
-    useEffect(() => {
-        if (isReduceMotion()) return undefined;
-        let timer;
-        const schedule = () => {
-            timer = setTimeout(() => {
-                setBlink(true);
-                timer = setTimeout(() => { setBlink(false); schedule(); }, 140);
-            }, 2400 + Math.random() * 3200);
-        };
-        schedule();
-        return () => clearTimeout(timer);
-    }, []);
+// The Pill Pal face (components/PillPals.js) on each capsule: same eyes,
+// cheeks and smile, drawn still.
+function PillFace({ tone }) {
     const ink = palette.ink;
     const cheek = tone === 'coral' ? palette.badge : palette.coral;
-    const closed = blink || happy;
     return (
-        <Svg width={44} height={30} viewBox="0 0 44 30">
-            {closed ? (
-                <Path d={happy ? 'M10 11Q14 6 18 11M26 11Q30 6 34 11' : 'M10 10H18M26 10H34'} stroke={ink} strokeWidth={2.2} strokeLinecap="round" fill="none" />
-            ) : (
-                <>
-                    <Ellipse cx={14} cy={10} rx={3.2} ry={4} fill={ink} />
-                    <Ellipse cx={30} cy={10} rx={3.2} ry={4} fill={ink} />
-                    <Circle cx={15.2} cy={8.4} r={1.1} fill="#FFFFFF" />
-                    <Circle cx={31.2} cy={8.4} r={1.1} fill="#FFFFFF" />
-                </>
-            )}
-            <Circle cx={7} cy={18} r={3.4} fill={cheek} fillOpacity={0.7} />
-            <Circle cx={37} cy={18} r={3.4} fill={cheek} fillOpacity={0.7} />
-            {happy
-                ? <Path d="M16 18Q22 27 28 18Z" fill={ink} />
-                : <Path d="M16 19Q22 24 28 19" stroke={ink} strokeWidth={2.2} strokeLinecap="round" fill="none" />}
+        <Svg width={50} height={34} viewBox="33 56 54 36">
+            <Ellipse cx={48} cy={66} rx={5} ry={6.5} fill={ink} />
+            <Ellipse cx={72} cy={66} rx={5} ry={6.5} fill={ink} />
+            <Circle cx={50} cy={63.5} r={1.8} fill="#FFFFFF" />
+            <Circle cx={74} cy={63.5} r={1.8} fill="#FFFFFF" />
+            <Circle cx={39} cy={80} r={6} fill={cheek} fillOpacity={tone === 'coral' ? 0.55 : 0.8} />
+            <Circle cx={81} cy={80} r={6} fill={cheek} fillOpacity={tone === 'coral' ? 0.55 : 0.8} />
+            <Path d="M51 80Q60 89 69 80" fill="none" stroke={ink} strokeWidth={2.5} strokeLinecap="round" />
         </Svg>
     );
 }
@@ -68,45 +46,25 @@ export default function SplashScreen({ navigation }) {
     const setLanguage = useLanguageStore(state => state.setLanguage);
     const trackRef = useRef(0);
     const knobX = useRef(new Animated.Value(0)).current;
-    // Capsules slide up from the bottom one by one; each one that lands pushes
-    // its neighbour aside a little as it squeezes into place. No looping motion.
-    // A tap lifts a capsule ("discover") and its neighbours lean away.
-    const rise = useRef(PILLS.map(() => new Animated.Value(isReduceMotion() ? 1 : 0))).current;
-    const push = useRef(PILLS.map(() => new Animated.Value(0))).current;
-    const lift = useRef(PILLS.map(() => new Animated.Value(0))).current;
-    const [happy, setHappy] = useState(-1);
+    const drift = useRef(PILLS.map(() => new Animated.Value(0))).current;
     const done = useRef(false);
 
-    const ease = Easing.out(Easing.cubic);
-    const nudge = (i, dir) => {
-        if (i < 0 || i >= PILLS.length) return;
-        Animated.sequence([
-            Animated.timing(push[i], { toValue: dir * 7, duration: 160, easing: ease, useNativeDriver: true }),
-            Animated.timing(push[i], { toValue: 0, duration: 340, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        ]).start();
-    };
-
+    // Slow drift, skipped when the user has asked the OS for reduced motion.
     useEffect(() => {
-        if (isReduceMotion()) return;
-        rise.forEach((v, i) => Animated.timing(v, {
-            toValue: 1, duration: 720, delay: 120 + i * 150, easing: ease, useNativeDriver: true,
-        }).start(({ finished }) => { if (finished) nudge(i - 1, -1); }));
-    }, [rise]);
-
-    const discover = (i) => {
-        setHappy(i);
-        if (!isReduceMotion()) {
-            Animated.sequence([
-                Animated.timing(lift[i], { toValue: 1, duration: 260, easing: ease, useNativeDriver: true }),
-                Animated.delay(600),
-                Animated.timing(lift[i], { toValue: 0, duration: 420, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-            ]).start(() => setHappy(h => (h === i ? -1 : h)));
-            nudge(i - 1, -1);
-            nudge(i + 1, 1);
-        } else {
-            setTimeout(() => setHappy(h => (h === i ? -1 : h)), 900);
-        }
-    };
+        let loops = [];
+        AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
+            if (reduce) return;
+            loops = drift.map((v, i) => {
+                const loop = Animated.loop(Animated.sequence([
+                    Animated.timing(v, { toValue: 1, duration: 3000 + i * 400, useNativeDriver: true }),
+                    Animated.timing(v, { toValue: 0, duration: 3000 + i * 400, useNativeDriver: true }),
+                ]));
+                loop.start();
+                return loop;
+            });
+        });
+        return () => loops.forEach(l => l.stop());
+    }, [drift]);
 
     const maxX = () => Math.max(trackRef.current - KNOB - TRACK_PAD * 2, 0);
 
@@ -153,25 +111,15 @@ export default function SplashScreen({ navigation }) {
             <View style={styles.pills} importantForAccessibility="no-hide-descendants">
                 {PILLS.map((p, i) => {
                     const a = accent(p.tone);
-                    const translateY = Animated.add(
-                        rise[i].interpolate({ inputRange: [0, 1], outputRange: [520, 0] }),
-                        lift[i].interpolate({ inputRange: [0, 1], outputRange: [0, -18] }),
-                    );
-                    // Each capsule arrives slightly turned and straightens as it lands.
-                    const turn = rise[i].interpolate({ inputRange: [0, 1], outputRange: [i % 2 ? '7deg' : '-7deg', '0deg'] });
+                    const translateY = drift[i].interpolate({ inputRange: [0, 1], outputRange: [0, -10] });
                     return (
-                        <Pressable key={p.tone} onPress={() => discover(i)} accessible={false}>
-                            <Animated.View style={[styles.pill, {
-                                backgroundColor: a.bg, marginTop: p.offset,
-                                transform: [{ translateX: push[i] }, { translateY }, { rotateZ: turn }],
-                            }]}>
-                                <View style={{ alignItems: 'center', gap: 8 }}>
-                                    <IconCircle icon={p.icon} color={a.ink} borderColor="rgba(0,0,0,0.15)" size={52} />
-                                    <PillFace tone={p.tone} happy={happy === i} />
-                                </View>
-                                <Text style={[styles.pillLabel, { color: a.ink }]}>{t(p.labelKey)}</Text>
-                            </Animated.View>
-                        </Pressable>
+                        <Animated.View key={p.tone} style={[styles.pill, { backgroundColor: a.bg, marginTop: p.offset, transform: [{ translateY }] }]}>
+                            <View style={{ alignItems: 'center', gap: 8 }}>
+                                <IconCircle icon={p.icon} color={a.ink} borderColor="rgba(0,0,0,0.15)" size={52} />
+                                <PillFace tone={p.tone} />
+                            </View>
+                            <Text style={[styles.pillLabel, { color: a.ink }]}>{t(p.labelKey)}</Text>
+                        </Animated.View>
                     );
                 })}
             </View>
