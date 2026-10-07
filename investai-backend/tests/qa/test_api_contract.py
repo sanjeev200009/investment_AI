@@ -766,6 +766,13 @@ def test_chat_sessions_stream_and_message(api, monkeypatch):
     lst = api.get(f"{API}/chat/sessions").json()
     contract(List[SessionOut], lst)
     assert lst[0]["message_count"] == 2
+    assert lst[0]["title"] == "What is ASPI?"          # first question names the chat
+    assert lst[0]["last_activity"] is not None
+    # An empty new chat is still listed (sorted by its start time).
+    newer = api.post(f"{API}/chat/sessions").json()["session_id"]
+    ids = [x["session_id"] for x in api.get(f"{API}/chat/sessions").json()]
+    assert set(ids) == {sid, newer}
+    api.delete(f"{API}/chat/sessions/{newer}")
     assert api.delete(f"{API}/chat/sessions/{sid}").status_code == 204
     assert api.get(f"{API}/chat/sessions?active_only=true").json() == []
 

@@ -5,12 +5,12 @@
 // above the floating tab bar.
 import { tokenStore } from '../store/tokenStore';
 import React, { useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TextInput, KeyboardAvoidingView, Platform, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TextInput, KeyboardAvoidingView, Platform, StatusBar, Modal, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TouchableTick from '../components/TouchableTick';
-import { Screen, Header, PillButton, Loading } from '../components/ui';
+import { Screen, Header, PillButton, Loading, CircleButton } from '../components/ui';
 import { MiniPills, PillPal } from '../components/PillPals';
 import Markdown from '../components/Markdown';
 import { planApi } from '../api/api';
@@ -83,20 +83,34 @@ export default function ChatScreen({ navigation, route }) {
   const { t } = useT();
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [inputText, setInputText] = useState('');
-  // The server keeps the conversation (chat_sessions / chat_messages) and feeds
-  // it back to the model as memory, but the screen used to start blank on every
-  // open, so the user could not see the thread the assistant was continuing.
+  // Like ChatGPT: the screen opens on a fresh chat; earlier chats live in the
+  // History sheet (chat_sessions on the server) and can be reopened there.
+  // A chat's session is created when its first message is sent.
   const [sessionId, setSessionId] = useState(null);
-  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [pastChats, setPastChats] = useState(null);
 
-  const loadConversation = useCallback(async () => {
-    setHistoryLoading(true);
+  const loadPastChats = useCallback(async () => {
+    setPastChats(null);
     try {
-      const { data: sessions } = await api.get('/chat/sessions', { params: { active_only: true } });
-      const current = sessions?.[0];
-      if (!current) { setSessionId(null); setMessages([]); return; }
-      setSessionId(current.session_id);
-      const { data: rows } = await api.get(`/chat/sessions/${current.session_id}/messages`, { params: { limit: 50 } });
+      const { data } = await api.get('/chat/sessions', { params: { active_only: true } });
+      setPastChats((data || []).filter(s => s.message_count > 0));
+    } catch (_) {
+      setPastChats([]);
+    }
+  }, []);
+
+  const openHistory = () => { setHistoryOpen(true); loadPastChats(); };
+
+  const openChat = useCallback(async (id) => {
+    if (abortRef.current) abortRef.current();
+    setHistoryOpen(false);
+    setHistoryLoading(true);
+    setMessages([]);
+    setSessionId(id);
+    try {
+      const { data: rows } = await api.get(`/chat/sessions/${id}/messages`, { params: { limit: 200 } });
       setMessages((rows || []).map(m => ({
         id: `m${m.message_id}`,
         type: m.sender_type === 'user' ? 'user' : 'ai',
@@ -104,13 +118,11 @@ export default function ChatScreen({ navigation, route }) {
         tools: [],
       })));
     } catch (_) {
-      // History is a convenience; an empty screen still works for a new question.
+      Alert.alert(t('chat_history_title'), t('chat_error_unreachable'));
     } finally {
       setHistoryLoading(false);
     }
-  }, []);
-
-  React.useEffect(() => { loadConversation(); }, [loadConversation]);
+  }, [t]);
 
   // "Ask the assistant" on a stock screen arrives with a ready question. It is
   // placed in the input, not sent, so the user can edit it first.
@@ -122,17 +134,26 @@ export default function ChatScreen({ navigation, route }) {
     }
   }, [route?.params?.prompt, navigation]);
 
-  const startNewChat = useCallback(async () => {
+  // A new chat leaves the old one in History; its session starts on first send.
+  const startNewChat = useCallback(() => {
     if (abortRef.current) abortRef.current();
-    try {
-      if (sessionId) await api.delete(`/chat/sessions/${sessionId}`);
-      const { data } = await api.post('/chat/sessions');
-      setSessionId(data.session_id);
-    } catch (_) {
-      setSessionId(null);  // the server opens one on the next message
-    }
+    setHistoryOpen(false);
+    setSessionId(null);
     setMessages([]);
-  }, [sessionId]);
+  }, []);
+
+  const deleteChat = (chat) => {
+    Alert.alert(t('chat_delete_title'), t('chat_delete_body'), [
+      { text: t('cancel'), style: 'cancel' },
+      {
+        text: t('chat_delete'), style: 'destructive', onPress: async () => {
+          try { await api.delete(`/chat/sessions/${chat.session_id}`); } catch (_) { /* list refreshes below */ }
+          if (chat.session_id === sessionId) startNewChat();
+          loadPastChats();
+        },
+      },
+    ]);
+  };
   const [quickActions, setQuickActions] = useState([]);
   // Starters for an empty chat: the personal plan's prompts when there is a
   // plan, otherwise the shuffled general questions.
@@ -211,11 +232,22 @@ export default function ChatScreen({ navigation, route }) {
     // One attempt; on a 401 the access token has expired (they last about an
     // hour), so refresh through the same shared path axios uses and retry once.
     // The stream reads the token itself and bypasses axios's interceptor.
+    // First message of a new chat: open its own session, so it never lands in
+    // an older one (the server would otherwise reuse the latest active chat).
+    let sid = sessionId;
+    if (!sid) {
+      try {
+        const { data } = await api.post('/chat/sessions');
+        sid = data.session_id;
+        setSessionId(sid);
+      } catch (_) { /* the server opens one itself */ }
+    }
+
     const start = async (retried) => {
       const token = await tokenStore.get('token');
       abortRef.current = streamSSE({
         url: '/chat/stream',
-        body: sessionId ? { message: userText, session_id: sessionId } : { message: userText },
+        body: sid ? { message: userText, session_id: sid } : { message: userText },
         token,
         onEvent: (event) => {
           switch (event.type) {
@@ -230,13 +262,6 @@ export default function ChatScreen({ navigation, route }) {
               break;
             case 'done':
               patchAi({ isTyping: false });
-              // First message of a fresh conversation: the server opened the
-              // session, so pick up its id for the messages that follow.
-              if (!sessionId) {
-                api.get('/chat/sessions', { params: { active_only: true } })
-                  .then(({ data }) => { if (data?.[0]) setSessionId(data[0].session_id); })
-                  .catch(() => {});
-              }
               break;
             case 'error':
               patchAi({
@@ -415,17 +440,68 @@ export default function ChatScreen({ navigation, route }) {
           title={t('chat_title')}
           subtitle={t('chat_subtitle')}
           right={(
-            <PillButton
-              variant="secondary"
-              title={t('chat_new_chat')}
-              label={t('chat_new_chat_a11y')}
-              onPress={startNewChat}
-              disabled={newChatOff}
-              style={styles.newChat}
-            />
+            <View style={styles.headerBtns}>
+              <CircleButton icon="history" label={t('chat_history')} onPress={openHistory} />
+              <PillButton
+                variant="secondary"
+                title={t('chat_new_chat')}
+                label={t('chat_new_chat_a11y')}
+                onPress={startNewChat}
+                disabled={newChatOff}
+                style={styles.newChat}
+              />
+            </View>
           )}
         />
       </View>
+
+      {/* Chat history: past chats, most recently used first. Tap to continue one. */}
+      <Modal visible={historyOpen} animationType="slide" transparent onRequestClose={() => setHistoryOpen(false)}>
+        <View style={styles.sheetBackdrop}>
+          <View style={styles.sheet}>
+            <View style={styles.sheetHead}>
+              <Text style={styles.sheetTitle} accessibilityRole="header">{t('chat_history_title')}</Text>
+              <CircleButton icon="close" label={t('chat_history_close')} onPress={() => setHistoryOpen(false)} />
+            </View>
+            <PillButton title={t('chat_new_chat')} icon="add" onPress={startNewChat} />
+            {pastChats === null ? <Loading /> : (
+              <FlatList
+                data={pastChats}
+                keyExtractor={c => String(c.session_id)}
+                ListEmptyComponent={<Text style={styles.sheetEmpty}>{t('chat_history_empty')}</Text>}
+                contentContainerStyle={{ gap: 8, paddingBottom: 24 }}
+                renderItem={({ item }) => {
+                  const when = new Date(item.last_activity || item.start_time);
+                  const date = when.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                  const time = when.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                  const title = item.title || t('chat_history_untitled').replace('{date}', date);
+                  return (
+                    <View style={[styles.chatRow, item.session_id === sessionId && styles.chatRowCurrent]}>
+                      <TouchableTick
+                        style={{ flex: 1, gap: 2 }}
+                        onPress={() => openChat(item.session_id)}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('chat_open_a11y').replace('{title}', title)}
+                      >
+                        <Text style={styles.chatRowTitle} numberOfLines={1}>{title}</Text>
+                        <Text style={styles.chatRowMeta}>{date} · {time}</Text>
+                      </TouchableTick>
+                      <TouchableTick
+                        onPress={() => deleteChat(item)}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('chat_delete_title')}
+                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      >
+                        <MaterialIcons name="delete-outline" size={22} color={palette.muted} />
+                      </TouchableTick>
+                    </View>
+                  );
+                }}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -500,6 +576,22 @@ const styles = StyleSheet.create({
   screen: { paddingHorizontal: 0, paddingBottom: 0, gap: 0 },
   headerWrap: { paddingHorizontal: 20 },
   newChat: { height: 56, paddingHorizontal: 18 },
+  headerBtns: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.25)' },
+  sheet: {
+    maxHeight: '80%', backgroundColor: '#FFFFFF', borderTopLeftRadius: 32, borderTopRightRadius: 32,
+    paddingHorizontal: 20, paddingTop: 20, gap: 14,
+  },
+  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sheetTitle: { color: palette.ink, fontFamily: fonts.medium, fontSize: 22 },
+  sheetEmpty: { color: palette.muted, fontFamily: fonts.regular, fontSize: 15, paddingVertical: 16 },
+  chatRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 60,
+    borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: palette.glassSoft,
+  },
+  chatRowCurrent: { backgroundColor: palette.lime },
+  chatRowTitle: { color: palette.ink, fontFamily: fonts.medium, fontSize: 16 },
+  chatRowMeta: { color: palette.muted, fontFamily: fonts.regular, fontSize: 13 },
   messageList: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 16, gap: 16, flexGrow: 1 },
   userBubble: {
     alignSelf: 'flex-end', maxWidth: '80%', backgroundColor: palette.ink,

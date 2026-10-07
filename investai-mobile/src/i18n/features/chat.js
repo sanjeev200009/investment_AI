@@ -4,6 +4,15 @@
 // Learn's recommendation label.
 export default {
   en: {
+    chat_history: 'Chat history',
+    chat_history_title: 'Your chats',
+    chat_history_empty: 'No past chats yet. Your conversations will appear here.',
+    chat_history_untitled: 'Chat on {date}',
+    chat_history_close: 'Close',
+    chat_open_a11y: 'Open chat: {title}',
+    chat_delete_title: 'Delete chat?',
+    chat_delete_body: 'This chat will be removed from your history.',
+    chat_delete: 'Delete',
     toast_notif_all_read: 'All alerts marked as read',
     toast_notif_deleted: 'Alert deleted',
     // Chat: sources, follow-ups, empty state
@@ -60,6 +69,15 @@ export default {
     learn_recommended: 'Recommended for you',
   },
   si: {
+    chat_history: 'කතාබස් ඉතිහාසය',
+    chat_history_title: 'ඔබේ කතාබස්',
+    chat_history_empty: 'තවම පැරණි කතාබස් නැත. ඔබේ සංවාද මෙහි දිස් වේ.',
+    chat_history_untitled: '{date} කතාබස',
+    chat_history_close: 'වසන්න',
+    chat_open_a11y: 'කතාබස විවෘත කරන්න: {title}',
+    chat_delete_title: 'කතාබස මකන්නද?',
+    chat_delete_body: 'මෙම කතාබස ඔබේ ඉතිහාසයෙන් ඉවත් කෙරේ.',
+    chat_delete: 'මකන්න',
     toast_notif_all_read: 'සියලු දැනුම්දීම් කියවූ ලෙස සලකුණු කළා',
     toast_notif_deleted: 'දැනුම්දීම මකා දැමුවා',
     chat_src_market: 'වෙළඳපොළ දත්ත',
@@ -112,6 +130,15 @@ export default {
     learn_recommended: 'ඔබට නිර්දේශිතයි',
   },
   ta: {
+    chat_history: 'அரட்டை வரலாறு',
+    chat_history_title: 'உங்கள் அரட்டைகள்',
+    chat_history_empty: 'இன்னும் பழைய அரட்டைகள் இல்லை. உங்கள் உரையாடல்கள் இங்கே தோன்றும்.',
+    chat_history_untitled: '{date} அரட்டை',
+    chat_history_close: 'மூடு',
+    chat_open_a11y: 'அரட்டையைத் திற: {title}',
+    chat_delete_title: 'அரட்டையை நீக்கவா?',
+    chat_delete_body: 'இந்த அரட்டை உங்கள் வரலாற்றிலிருந்து நீக்கப்படும்.',
+    chat_delete: 'நீக்கு',
     toast_notif_all_read: 'அனைத்து எச்சரிக்கைகளும் படித்ததாகக் குறிக்கப்பட்டன',
     toast_notif_deleted: 'எச்சரிக்கை நீக்கப்பட்டது',
     chat_src_market: 'சந்தைத் தரவு',
