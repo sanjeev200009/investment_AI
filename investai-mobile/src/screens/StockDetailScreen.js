@@ -376,16 +376,22 @@ export default function StockDetailScreen({ route, navigation }) {
                     <>
                         {/* Not `bezier`: a spline overshoots between real closes and
                             draws prices the exchange never printed. */}
-                        <LineChart
-                            data={chartData}
-                            width={width - 80}
-                            height={200}
-                            chartConfig={chartConfig}
-                            style={styles.chart}
-                            withHorizontalLines={false}
-                            withVerticalLines={false}
-                            withShadow={false}
-                        />
+                        {/* pointerEvents none: chart-kit makes every point a touch
+                            target, which on Android grabs the finger and stops the page
+                            scrolling over the chart. The chart has no tap action. */}
+                        <View pointerEvents="none">
+                            <LineChart
+                                data={chartData}
+                                width={width - 80}
+                                height={200}
+                                chartConfig={chartConfig}
+                                style={styles.chart}
+                                withDots={points.length <= 40}
+                                withHorizontalLines={false}
+                                withVerticalLines={false}
+                                withShadow={false}
+                            />
+                        </View>
                         <Label style={styles.centred}>
                             {shortDate(history.first_date)} – {shortDate(history.last_date)} · {t('detail_daily_closes')}
                         </Label>
