@@ -9,7 +9,6 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { stackMotion, revealMotion } from '../theme/motion';
 import TabNavigator from './TabNavigator';
 import AuthNavigator from './AuthNavigator';
-import SplashScreen from '../screens/SplashScreen';
 import AssessmentScreen from '../screens/onboarding/AssessmentScreen';
 
 import { useAuthStore } from '../store/authStore';
@@ -58,8 +57,10 @@ const AppNavigator = () => {
     const isLoading = useAuthStore(state => state.isLoading);
     const isAuthenticated = useAuthStore(state => state.isAuthenticated);
 
+    // A plain loader while the saved session restores: the swipe-to-start splash
+    // belongs to onboarding (AuthNavigator), not to every launch of a signed-in app.
     if (isLoading) {
-        return <SplashScreen />;
+        return <ScreenLoader />;
     }
 
     return isAuthenticated ? <SignedInStack /> : <AuthNavigator />;

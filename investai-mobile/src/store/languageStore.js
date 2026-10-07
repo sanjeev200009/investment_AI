@@ -18,17 +18,32 @@ import { deviceApi } from '../api/api';
 import { translate } from '../i18n/translations';
 
 const KEY = 'app_language';
+// How much the user knows about investing; picks plain or expert wording.
+// Device-only: it changes words on screen, nothing the server needs.
+const LEVEL_KEY = 'app_word_level';
+const LEVELS = ['beginner', 'intermediate', 'expert'];
 // Codes supported end to end: the translations file, /me/language, and the
 // agent's language steering (app/services/agent/memory.py) must agree.
 const SUPPORTED = ['en', 'si', 'ta'];
 
 export const useLanguageStore = create((set) => ({
     language: 'en',
+    level: 'beginner',
     ready: false,
+
+    setLevel: async (level) => {
+        if (!LEVELS.includes(level)) return;
+        set({ level });
+        try { await AsyncStorage.setItem(LEVEL_KEY, level); } catch { /* best-effort */ }
+    },
 
     // syncToServer: after sign-in, push a language picked on the splash
     // (before there was an account to save it to) up to /me/language.
     init: async (syncToServer = false) => {
+        try {
+            const level = await AsyncStorage.getItem(LEVEL_KEY);
+            if (LEVELS.includes(level)) set({ level });
+        } catch { /* default stays beginner */ }
         try {
             const saved = await AsyncStorage.getItem(KEY);
             if (SUPPORTED.includes(saved)) {
@@ -65,5 +80,6 @@ export const useLanguageStore = create((set) => ({
 // automatically when the language changes.
 export const useT = () => {
     const language = useLanguageStore(state => state.language);
-    return { t: (key) => translate(language, key), language };
+    const level = useLanguageStore(state => state.level);
+    return { t: (key) => translate(language, key, level), language, level };
 };

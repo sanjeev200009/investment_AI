@@ -18,6 +18,7 @@ import taStrings from './screens/ta';
 import onboardingStrings from './features/onboarding';
 import chatStrings from './features/chat';
 import tourStrings from './features/tour';
+import { base, simple } from './simple';
 
 export const LANGUAGES = [
   { code: 'en', label: 'English' },
@@ -219,13 +220,20 @@ const ta = {
 // Per-screen strings. The si/ta tables above win over screens/si.js and
 // screens/ta.js; any key still missing falls back to English.
 const FEATURES = [onboardingStrings, chatStrings, tourStrings];
-Object.assign(en, authStrings, marketsStrings, accountStrings, ...FEATURES.map(f => f.en));
-const siAll = { ...siStrings, ...Object.assign({}, ...FEATURES.map(f => f.si)), ...si };
-const taAll = { ...taStrings, ...Object.assign({}, ...FEATURES.map(f => f.ta)), ...ta };
+Object.assign(en, authStrings, marketsStrings, accountStrings, ...FEATURES.map(f => f.en), base.en);
+const siAll = { ...siStrings, ...Object.assign({}, ...FEATURES.map(f => f.si)), ...si, ...base.si };
+const taAll = { ...taStrings, ...Object.assign({}, ...FEATURES.map(f => f.ta)), ...ta, ...base.ta };
 
 const TRANSLATIONS = { en, si: siAll, ta: taAll };
 
-export const translate = (lang, key) => {
+// level: 'beginner' | 'intermediate' | 'expert'. Below expert, the plain wording
+// in simple.js wins; a language without one keeps its own normal string.
+export const translate = (lang, key, level = 'beginner') => {
   const table = TRANSLATIONS[lang] || TRANSLATIONS.en;
+  if (level !== 'expert') {
+    const plain = (simple[lang] || simple.en)[key];
+    if (plain !== undefined) return plain;
+    if (table[key] === undefined && simple.en[key] !== undefined) return simple.en[key];
+  }
   return table[key] ?? TRANSLATIONS.en[key] ?? key;
 };

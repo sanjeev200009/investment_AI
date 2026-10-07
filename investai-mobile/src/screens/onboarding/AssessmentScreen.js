@@ -10,7 +10,7 @@ import Celebrate from '../../components/Celebrate';
 import VictoryScreen from './VictoryScreen';
 import { palette, fonts, radii } from '../../theme/tokens';
 import { useAuthStore } from '../../store/authStore';
-import { useT } from '../../store/languageStore';
+import { useT, useLanguageStore } from '../../store/languageStore';
 import { authApi } from '../../api/authApi';
 
 // The investor journey: 10 profile questions and 5 knowledge checks, in the
@@ -24,7 +24,12 @@ import { authApi } from '../../api/authApi';
 const P = (id, options) => ({ id, kind: 'profile', options });
 const K = (id, options, correct) => ({ id, kind: 'knowledge', options, correct });
 
+// Stop 1 is local: it sets how plain the app's wording is (i18n/simple.js) and is
+// never sent to the server.
+const LEVEL = { id: 'level', kind: 'level', options: ['beginner', 'intermediate', 'expert'] };
+
 const QUESTIONS = [
+  LEVEL,
   P(1, ['Retirement', 'Wealth Growth', 'Major Purchase (e.g., home)', 'Income Generation']),
   P(4, ['Never', 'Once or twice', 'Occasionally', 'Regularly']),
   K(101, ['A small part of the company', 'A loan you gave the company', 'A fixed-return savings deposit', 'A guarantee of future profits'], 0),
@@ -42,7 +47,7 @@ const QUESTIONS = [
   K(105, ['A fee you pay your stockbroker', 'A part of company profit paid to shareholders', 'A tax on selling shares', 'The gap between buying and selling prices'], 1),
 ];
 const KINDS = QUESTIONS.map(q => q.kind);
-const textKey = (q) => (q.kind === 'knowledge' ? `assess_k${q.id}` : `assess_q${q.id}`);
+const textKey = (q) => (q.kind === 'level' ? 'assess_level' : q.kind === 'knowledge' ? `assess_k${q.id}` : `assess_q${q.id}`);
 
 export default function AssessmentScreen({ navigation, route }) {
   // Also opened from Profile to retake it; that copy returns to Profile when
@@ -52,6 +57,7 @@ export default function AssessmentScreen({ navigation, route }) {
   const setProfileSetupDone = useAuthStore(state => state.setProfileSetupDone);
   const setAssessmentResults = useAuthStore(state => state.setAssessmentResults);
   const { t } = useT();
+  const setLevel = useLanguageStore(state => state.setLevel);
 
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -78,6 +84,7 @@ export default function AssessmentScreen({ navigation, route }) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       }
     }
+    if (q.kind === 'level') setLevel(option);
     setAnswers({ ...answers, [q.id]: option });
   };
 
@@ -104,7 +111,8 @@ export default function AssessmentScreen({ navigation, route }) {
     if (submitting) return;
     setSubmitting(true);
     try {
-      const profile = await setAssessmentResults({ ...answers });
+      const { level: _level, ...scored } = answers;
+      const profile = await setAssessmentResults(scored);
       // The plan is a bonus on the victory screen; Home fetches it again.
       const plan = await authApi.getPlan().catch(() => null);
       setDone({ profile, plan });
