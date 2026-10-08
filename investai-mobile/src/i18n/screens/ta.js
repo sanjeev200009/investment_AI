@@ -154,6 +154,7 @@ export default {
   val_email_invalid: 'சரியான மின்னஞ்சல் முகவரியை உள்ளிடுக',
   val_password_required: 'கடவுச்சொல் அவசியம்',
   val_password_short: 'கடவுச்சொல் குறைந்தது 8 எழுத்துகளைக் கொண்டிருக்க வேண்டும்',
+  val_password_weak: 'எழுத்துகளையும் எண்களையும் சேர்த்துப் பயன்படுத்தவும், உ.ம். invest2026',
   val_confirm_required: 'உங்கள் கடவுச்சொல்லை உறுதிப்படுத்துக',
   val_password_mismatch: 'கடவுச்சொற்கள் பொருந்தவில்லை',
   val_name_required: 'முழுப் பெயர் அவசியம்',

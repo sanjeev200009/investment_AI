@@ -154,6 +154,7 @@ export default {
   val_email_invalid: 'කරුණාකර වලංගු ඊමේල් ලිපිනයක් ඇතුළත් කරන්න',
   val_password_required: 'මුරපදය අවශ්‍යයි',
   val_password_short: 'මුරපදයේ අවම වශයෙන් අකුරු 8ක් තිබිය යුතුය',
+  val_password_weak: 'අකුරු සහ ඉලක්කම් දෙකම භාවිත කරන්න, උදා. invest2026',
   val_confirm_required: 'කරුණාකර ඔබේ මුරපදය තහවුරු කරන්න',
   val_password_mismatch: 'මුරපද නොගැළපේ',
   val_name_required: 'සම්පූර්ණ නම අවශ්‍යයි',

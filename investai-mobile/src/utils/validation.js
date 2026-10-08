@@ -28,6 +28,18 @@ export const validatePassword = (password) => {
 };
 
 /**
+ * Validates a NEW password (register, reset): 8+ characters with at least one
+ * letter and one number, so "12345678" or "password" are refused. Login keeps
+ * validatePassword above, so passwords chosen before this rule still sign in.
+ */
+export const validateNewPassword = (password) => {
+    const basic = validatePassword(password);
+    if (basic) return basic;
+    if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) return msg('val_password_weak');
+    return null;
+};
+
+/**
  * Validates that two passwords match.
  */
 export const validateConfirmPassword = (password, confirmPassword) => {

@@ -7,7 +7,7 @@ import { PillPal } from '../../components/PillPals';
 import TouchableTick from '../../components/TouchableTick';
 import { palette, fonts } from '../../theme/tokens';
 import { authApi } from '../../api/authApi';
-import { validatePassword, validateConfirmPassword } from '../../utils/validation';
+import { validateNewPassword, validateConfirmPassword } from '../../utils/validation';
 import { useT } from '../../store/languageStore';
 
 const ResetPasswordScreen = ({ navigation, route }) => {
@@ -24,7 +24,7 @@ const ResetPasswordScreen = ({ navigation, route }) => {
     const [loading, setLoading] = useState(false);
 
     const handleResetPassword = async () => {
-        const passwordError = validatePassword(password);
+        const passwordError = validateNewPassword(password);
         const confirmError = validateConfirmPassword(password, confirmPassword);
 
         if (passwordError || confirmError) {

@@ -8,9 +8,19 @@ from uuid import UUID
 # and "john@x.com" at login used to be two different accounts to us.
 Email = Annotated[EmailStr, AfterValidator(str.lower)]
 
+def _strong(password: str) -> str:
+    """New passwords need a letter and a number; login does not re-check old ones."""
+    if not any(c.isalpha() for c in password) or not any(c.isdigit() for c in password):
+        raise ValueError("Password must contain both letters and numbers")
+    return password
+
+
+NewPassword = Annotated[str, Field(min_length=8), AfterValidator(_strong)]
+
+
 class RegisterRequest(BaseModel):
     email: Email
-    password: str = Field(min_length=8)
+    password: NewPassword
     full_name: str = Field(min_length=2)
 
 class LoginRequest(BaseModel):
@@ -38,7 +48,7 @@ class OTPVerifyRequest(BaseModel):
     otp_code: str = Field(min_length=6, max_length=6)
     # Set on the Supabase account at verification, not at registration; see
     # routers/auth.py verify_registration_otp.
-    password: str = Field(min_length=8)
+    password: NewPassword
 
 class ForgotPasswordRequest(BaseModel):
     email: Email
@@ -50,7 +60,7 @@ class VerifyResetOTPRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     email: Email
     reset_token: str
-    new_password: str = Field(min_length=8)
+    new_password: NewPassword
 
 class UserOut(BaseModel):
     user_id: UUID

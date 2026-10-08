@@ -103,7 +103,7 @@ function PillTabBar({ state, navigation }) {
     }, [state.index]);
 
     // The retaken assessment has its own Previous/Next footer where the bar sits.
-    if (getFocusedRouteNameFromRoute(state.routes[state.index]) === 'RetakeAssessment') return null;
+    if (['RetakeAssessment', 'StockDetail'].includes(getFocusedRouteNameFromRoute(state.routes[state.index]))) return null;
 
     return (
         <View pointerEvents="box-none" style={[styles.wrap, { bottom: Math.max(insets.bottom, 12) }]}>
