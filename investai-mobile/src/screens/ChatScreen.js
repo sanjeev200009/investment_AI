@@ -17,6 +17,7 @@ import { planApi } from '../api/api';
 import api, { refreshSession } from '../api/axiosConfig';
 import { streamSSE } from '../api/sse';
 import { useT } from '../store/languageStore';
+import { splitOptions } from '../utils/chatOptions';
 import { palette, fonts, radii } from '../theme/tokens';
 
 const INITIAL_MESSAGES = [];
@@ -326,6 +327,9 @@ export default function ChatScreen({ navigation, route }) {
 
     const tools = item.tools || [];
     const finished = !item.streaming && !item.isTyping && !!item.text;
+    // A follow-up question from the assistant ends with "OPTIONS: a | b"; show
+    // the text without that line, and the choices as tap-to-answer chips.
+    const { body, options: choices } = splitOptions(item.text);
     const used = finished ? [...new Set(tools.map(x => x.name))] : [];
     const isLast = index === messages.length - 1;
     const question = messages[index - 1]?.type === 'user' ? messages[index - 1].text : '';
@@ -357,14 +361,14 @@ export default function ChatScreen({ navigation, route }) {
           <View
             style={styles.aiBubble}
             accessible
-            accessibilityLabel={item.isTyping ? t('chat_ai_name') : `${t('chat_ai_name')}: ${item.text}`}
+            accessibilityLabel={item.isTyping ? t('chat_ai_name') : `${t('chat_ai_name')}: ${body}`}
           >
             {item.isTyping ? (
               <View style={styles.typing}>
                 <MiniPills colors={[palette.lime, palette.yellow, palette.lavender]} size={18} />
               </View>
             ) : (
-              <Markdown text={item.text} />
+              <Markdown text={body} />
             )}
           </View>
         ) : null}
@@ -385,7 +389,23 @@ export default function ChatScreen({ navigation, route }) {
             {!HAS_DISCLAIMER.test(item.text) && (
               <Text style={styles.answerNote}>{t('chat_answer_disclaimer')}</Text>
             )}
-            {isLast && !isStreaming && (
+            {isLast && !isStreaming && choices.length > 0 && (
+              <View style={styles.followRow} accessible accessibilityLabel={t('chat_choices_a11y')}>
+                {choices.map(c => (
+                  <TouchableTick
+                    key={c}
+                    style={[styles.followChip, styles.choiceChip]}
+                    onPress={() => handleSend(c)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${t('chat_choice_a11y')}: ${c}`}
+                  >
+                    <MaterialIcons name="touch-app" size={16} color={palette.limeInk} />
+                    <Text style={[styles.followText, { color: palette.limeInk }]}>{c}</Text>
+                  </TouchableTick>
+                ))}
+              </View>
+            )}
+            {isLast && !isStreaming && choices.length === 0 && (
               <View style={styles.followRow}>
                 {followUps(tools, question, t).map(q => (
                   <TouchableTick
@@ -614,6 +634,7 @@ const styles = StyleSheet.create({
   afterLabel: { ...text, fontSize: 12, color: palette.muted, alignSelf: 'center', marginRight: 2 },
   answerNote: { ...text, fontSize: 11, color: palette.faint, paddingHorizontal: 4 },
   followRow: { gap: 8, alignItems: 'flex-start' },
+  choiceChip: { backgroundColor: palette.lime },
   followChip: {
     flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, maxWidth: '100%',
     borderRadius: radii.full, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: palette.lavender,

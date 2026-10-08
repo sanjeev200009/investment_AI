@@ -4,6 +4,8 @@
 // Learn's recommendation label.
 export default {
   en: {
+    chat_choices_a11y: 'Choose an answer',
+    chat_choice_a11y: 'Answer',
     chat_history: 'Chat history',
     chat_history_title: 'Your chats',
     chat_history_empty: 'No past chats yet. Your conversations will appear here.',
@@ -69,6 +71,8 @@ export default {
     learn_recommended: 'Recommended for you',
   },
   si: {
+    chat_choices_a11y: 'පිළිතුරක් තෝරන්න',
+    chat_choice_a11y: 'පිළිතුර',
     chat_history: 'කතාබස් ඉතිහාසය',
     chat_history_title: 'ඔබේ කතාබස්',
     chat_history_empty: 'තවම පැරණි කතාබස් නැත. ඔබේ සංවාද මෙහි දිස් වේ.',
@@ -130,6 +134,8 @@ export default {
     learn_recommended: 'ඔබට නිර්දේශිතයි',
   },
   ta: {
+    chat_choices_a11y: 'ஒரு பதிலைத் தேர்ந்தெடுக்கவும்',
+    chat_choice_a11y: 'பதில்',
     chat_history: 'அரட்டை வரலாறு',
     chat_history_title: 'உங்கள் அரட்டைகள்',
     chat_history_empty: 'இன்னும் பழைய அரட்டைகள் இல்லை. உங்கள் உரையாடல்கள் இங்கே தோன்றும்.',
