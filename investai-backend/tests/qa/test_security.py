@@ -801,6 +801,7 @@ def test_injected_tool_result_is_passed_as_tool_data_only(db, monkeypatch):
     db.add(s)
     db.commit()
     user = db.get(User, A_ID)
+    monkeypatch.setattr(core, "pending_followup", lambda db, sid: ("Any JKH news?", "Which news?\nOPTIONS: Today | This week"))
     answer, tools = asyncio.run(core.run_agent("Any JKH news?", s.session_id, db, user))
 
     second = seen[1]

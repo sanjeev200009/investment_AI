@@ -889,3 +889,26 @@ def test_market_session_notices(Session_):
     msgs = {n.user_id: n.message for n in db.query(Notification).filter(Notification.type == "market_close")}
     assert msgs[USER_A] == "The market has closed for today. ASPI 21,000.00 (-0.30%)."
     assert msgs[USER_B].startswith("இன்றைய சந்தை மூடப்பட்டது.")
+
+
+def test_pending_followup_reads_the_chat(Session_):
+    """followup.py step 2: a follow-up is pending only right after the bot asked one."""
+    from app.services.agent.followup import FOLLOWUP_TAG, pending_followup
+    db = Session_()
+    s = ChatSession(user_id=USER_A, is_active=True, start_time=datetime.now(timezone.utc))
+    db.add(s)
+    db.commit()
+    t0 = datetime.now(timezone.utc)
+
+    def say(sender, text, tag=None, secs=0):
+        db.add(ChatMessage(session_id=s.session_id, sender_type=sender, content=text,
+                           ai_model_used=tag, timestamp=t0 + timedelta(seconds=secs)))
+        db.commit()
+
+    assert pending_followup(db, s.session_id) is None                       # empty chat
+    say("user", "Which stock?", secs=1)
+    say("assistant", "Your goal? OPTIONS: Growth | Income", FOLLOWUP_TAG, secs=2)
+    assert pending_followup(db, s.session_id) == ("Which stock?", "Your goal? OPTIONS: Growth | Income")
+    say("user", "Income", secs=3)
+    say("assistant", "Here is the answer.", "nvidia", secs=4)
+    assert pending_followup(db, s.session_id) is None                       # answered: next is a new question

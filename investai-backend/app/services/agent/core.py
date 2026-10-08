@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.services import llm
 from app.services.agent.memory import ConversationMemory, ScriptCleaner, clean_script, reply_language
 from app.services.agent.tools import ToolExecutor, TOOL_SCHEMAS
+from app.services.agent.followup import FOLLOWUP_TAG, ask_followup, combined_question, pending_followup
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +31,13 @@ def _tools_for(loop_count: int):
     return TOOL_SCHEMAS if loop_count < MAX_LOOPS else None
 
 
-def _start(memory: ConversationMemory, user_message: str) -> list[dict]:
+def _start(memory: ConversationMemory, prompt: str, saved: str) -> list[dict]:
     # Build the context BEFORE saving: load_history() would otherwise return the
     # just-saved row and build_context() appends it again, so the model saw the
-    # question twice.
-    messages = memory.build_context(user_message)
-    memory.save_user_message(user_message)
+    # question twice. `prompt` goes to the model (the combined question); `saved`
+    # is what the user actually typed, which is what the chat shows.
+    messages = memory.build_context(prompt)
+    memory.save_user_message(saved)
     return messages
 
 
@@ -46,9 +48,24 @@ async def stream_agent(
     user
 ) -> AsyncGenerator[str, None]:
     memory = ConversationMemory(session_id, db, user)
+
+    # ── Follow-up flow (followup.py) ─────────────────────────────────────────
+    pending = pending_followup(db, session_id)
+    if pending is None:
+        # Step 1: a new question. Ask ONE follow-up first, then stop and wait.
+        memory.save_user_message(user_message)
+        text = await ask_followup(user_message, reply_language(user, user_message))
+        yield f"data: {json.dumps({'type': 'token', 'content': text})}\n\n"
+        msg_id = memory.save_assistant_message(text, FOLLOWUP_TAG)
+        yield f"data: {json.dumps({'type': 'done', 'message_id': msg_id})}\n\n"
+        return
+    # Step 2: this message answers our follow-up. Step 3: the agent below answers
+    # the ORIGINAL question, given the question, the follow-up and this answer.
+    agent_input = combined_question(*pending, user_message)
+
     tool_executor = ToolExecutor(db, str(user.user_id))
-    messages = _start(memory, user_message)
-    lang = reply_language(user, user_message)
+    messages = _start(memory, agent_input, user_message)
+    lang = reply_language(user, agent_input)
 
     final_response = ""
     # Which provider/model actually answered, for ai_model_used. Set per loop
@@ -152,9 +169,19 @@ async def run_agent(
     user
 ) -> tuple[str, list[dict]]:
     memory = ConversationMemory(session_id, db, user)
+
+    # Same follow-up flow as stream_agent (see followup.py).
+    pending = pending_followup(db, session_id)
+    if pending is None:
+        memory.save_user_message(user_message)
+        text = await ask_followup(user_message, reply_language(user, user_message))
+        memory.save_assistant_message(text, FOLLOWUP_TAG)
+        return text, []
+    agent_input = combined_question(*pending, user_message)
+
     tool_executor = ToolExecutor(db, str(user.user_id))
-    messages = _start(memory, user_message)
-    lang = reply_language(user, user_message)
+    messages = _start(memory, agent_input, user_message)
+    lang = reply_language(user, agent_input)
 
     parts: list[str] = []
     tools_used = []
