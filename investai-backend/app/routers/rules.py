@@ -36,13 +36,13 @@ router = APIRouter(prefix='/rules', tags=['Rules'])
 class RuleCreate(BaseModel):
     symbol: str = Field(min_length=1, max_length=20)
     condition_type: str = Field(min_length=1, max_length=80)
-    threshold: float
+    threshold: float = Field(allow_inf_nan=False)  # a NaN threshold can never trigger
 
 
 class RuleUpdate(BaseModel):
     """Partial update. Any field left None is left unchanged."""
     condition_type: str | None = None
-    threshold: float | None = None
+    threshold: float | None = Field(default=None, allow_inf_nan=False)
 
 
 class RuleOut(BaseModel):

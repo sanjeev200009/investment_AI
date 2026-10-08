@@ -15,14 +15,16 @@ import { HomeSkeleton } from '../components/Motion';
 import { MaterialIcons } from '@expo/vector-icons';
 import {
   Screen, CircleButton, IconCircle, PillButton, Chip, Card, StackCard, BigNumber, ChangePill,
-  Heading, Label, Body, Loading, accent, ACCENT_CYCLE, ScreenLoader,
+  Heading, Label, Body, Loading, accent, ACCENT_CYCLE, ScreenLoader, Field,
 } from '../components/ui';
+import { splitAmount } from '../utils/investPlan';
 import TouchableTick from '../components/TouchableTick';
 import InitialsAvatar from '../components/InitialsAvatar';
 import { useAuthStore } from '../store/authStore';
 import { useT } from '../store/languageStore';
+import { greetingKey, colomboTodayLabel } from '../utils/colomboTime';
 import { recommendationsApi, planApi } from '../api/api';
-import { EASE_OUT, isReduceMotion } from '../theme/motion';
+import { EASE_OUT, isReduceMotion, afterTransition } from '../theme/motion';
 import api from '../api/axiosConfig';
 import { palette, fonts, radii, changeTone } from '../theme/tokens';
 
@@ -177,7 +179,9 @@ function TipDeck({ t }) {
 
 export default function HomeScreen({ navigation }) {
   const user = useAuthStore(state => state.user);
-  const { t } = useT();
+  const { t, level } = useT();
+  // One line under each section saying what it is for; Beginner only.
+  const hint = (key) => (level === 'beginner' ? <Label style={styles.hint}>{t(key)}</Label> : null);
   const insets = useSafeAreaInsets();
   const scrollY = useRef(new Animated.Value(0)).current;
   const firstName = (user?.full_name || '').trim().split(/\s+/)[0] || t('home_investor');
@@ -195,6 +199,9 @@ export default function HomeScreen({ navigation }) {
   const [picksWeights, setPicksWeights] = useState({});
   const [riskCategory, setRiskCategory] = useState(null);
   const [expandedPick, setExpandedPick] = useState(null);
+  // "I have LKR X": whole shares of each pick that amount buys, fees included.
+  const [amount, setAmount] = useState('');
+  const split = useMemo(() => splitAmount(Number(amount.replace(/[^0-9.]/g, '')), picks), [amount, picks]);
 
   const [sectorChips, setSectorChips] = useState([]);
   const [activeChip, setActiveChip] = useState(ALL_MARKETS);
@@ -204,8 +211,8 @@ export default function HomeScreen({ navigation }) {
   const [plan, setPlan] = useState(null);
   useFocusEffect(useCallback(() => {
     let cancelled = false;
-    planApi.get().then(p => { if (!cancelled) setPlan(p); });
-    return () => { cancelled = true; };
+    const cancel = afterTransition(() => planApi.get().then(p => { if (!cancelled) setPlan(p); }));
+    return () => { cancelled = true; cancel(); };
   }, []));
 
   const openStep = (s) => {
@@ -319,7 +326,7 @@ export default function HomeScreen({ navigation }) {
     return <Screen><HomeSkeleton label={t('loading')} /></Screen>;
   }
 
-  const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  const today = colomboTodayLabel();
   const topPick = picks[0] || null;
   const topSector = sectors[0] || null;
 
@@ -339,7 +346,7 @@ export default function HomeScreen({ navigation }) {
   const bar = (
     <Animated.View pointerEvents="none" style={[styles.miniBar, { paddingTop: insets.top, height: insets.top + 56, opacity: fade(90, 150, 0, 1) }]}>
       <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
-      <Text style={styles.miniTitle} numberOfLines={1}>{t('home_greeting')}, {firstName}</Text>
+      <Text style={styles.miniTitle} numberOfLines={1}>{t(greetingKey())}, {firstName}</Text>
       {aspi ? <Text style={styles.miniValue}>ASPI {fmt(aspi.value)}</Text> : null}
     </Animated.View>
   );
@@ -350,7 +357,7 @@ export default function HomeScreen({ navigation }) {
       <Animated.View style={[styles.header, headerStyle]}>
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={styles.caption}>{today}</Text>
-          <Text style={styles.greeting} numberOfLines={1}>{t('home_greeting')}, {firstName}</Text>
+          <Text style={styles.greeting} numberOfLines={1}>{t(greetingKey())}, {firstName}</Text>
         </View>
         <TouchableTick onPress={() => navigation.navigate('ProfileMain')} accessibilityLabel={t('home_profile_settings')}>
           <InitialsAvatar name={user?.full_name} size={56} background={palette.coral} />
@@ -361,6 +368,7 @@ export default function HomeScreen({ navigation }) {
       {/* ASPI hero */}
       <Animated.View style={[{ gap: 10 }, heroStyle]}>
         <Label>{t('home_aspi')}{aspiAsOf ? ` · ${aspiAsOf}` : ''}</Label>
+        {hint('hint_market')}
         {aspi ? (
           <>
             <BigNumber value={aspi.value} size={64} />
@@ -374,6 +382,7 @@ export default function HomeScreen({ navigation }) {
       </Animated.View>
 
       {/* Three headline stats */}
+      {hint('hint_stats')}
       <View style={styles.stats}>
         <View style={styles.stat}>
           <IconCircle icon="bar-chart" />
@@ -432,6 +441,7 @@ export default function HomeScreen({ navigation }) {
           <Label>{t('home_your_portfolio')}</Label>
           <MaterialIcons name="arrow-forward" size={20} color={palette.ink} />
         </View>
+        {hint('hint_portfolio')}
         {hasPortfolio ? (
           <>
             <BigNumber value={portfolioValue} prefix="LKR" size={40} />
@@ -473,6 +483,7 @@ export default function HomeScreen({ navigation }) {
       {sectors.length > 0 && (
         <Card style={{ gap: 14 }}>
           <Label>{t('home_turnover_by_sector')}</Label>
+          {hint('hint_sectors')}
           <View style={styles.stackBar}>
             {sectors.map(s => <View key={s.code} style={{ flex: Math.max(s.share, 0.5), backgroundColor: s.colour, borderRadius: radii.full }} />)}
           </View>
@@ -492,6 +503,7 @@ export default function HomeScreen({ navigation }) {
       {insights.length > 0 && (
         <View style={{ gap: 12 }}>
           <Heading>{t('home_market_notes')}</Heading>
+          {hint('hint_notes')}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 20 }}>
             {insights.map((item, i) => {
               const tone = ACCENT_CYCLE[(i + 2) % ACCENT_CYCLE.length];
@@ -517,9 +529,21 @@ export default function HomeScreen({ navigation }) {
               {riskCategory ? t('home_weighted_for_risk').replace('{risk}', riskCategory.toLowerCase()) : t('home_balanced_weighting')}
             </Label>
           </View>
+          {hint('hint_picks')}
+          <Field
+            icon="payments"
+            tone="lime"
+            label={t('home_amount_label')}
+            placeholder={t('home_amount_placeholder')}
+            keyboardType="numeric"
+            value={amount}
+            onChangeText={setAmount}
+            maxLength={12}
+          />
           <Card style={{ padding: 8 }}>
             {picks.map((pick, i) => {
               const open = expandedPick === pick.symbol;
+              const buy = split?.rows.find(r => r.symbol === pick.symbol);
               return (
                 <View key={pick.symbol}>
                   {i > 0 && <View style={styles.divider} />}
@@ -534,6 +558,13 @@ export default function HomeScreen({ navigation }) {
                     <View style={{ flex: 1, gap: 2 }}>
                       <Text style={styles.rowTitle}>{pick.symbol.split('.')[0]}</Text>
                       <Label numberOfLines={1}>{pick.name || pick.sector || ''}</Label>
+                      {buy && (
+                        <Label style={{ color: buy.shares ? palette.ink : palette.faint }}>
+                          {buy.shares
+                            ? t('home_amount_shares').replace('{n}', buy.shares.toLocaleString('en-US')).replace('{cost}', fmt(buy.cost + buy.fee))
+                            : t('home_amount_too_expensive').replace('{price}', fmt(pick.price))}
+                        </Label>
+                      )}
                     </View>
                     <MaterialIcons name={open ? 'expand-less' : 'expand-more'} size={24} color={palette.muted} />
                   </TouchableTick>
@@ -543,7 +574,7 @@ export default function HomeScreen({ navigation }) {
                         const tone = changeTone(f.contribution);
                         return (
                           <View key={key} style={styles.rowBetween}>
-                            <Body style={{ flex: 1 }}>{f.label || key}</Body>
+                            <Body style={{ flex: 1 }}>{t(`factor_${key}`) !== `factor_${key}` ? t(`factor_${key}`) : (f.label || key)}</Body>
                             <View style={[styles.factorPill, { backgroundColor: tone.background }]}>
                               <Text style={[styles.factorText, { color: tone.ink }]}>
                                 {tone.sign}{Math.abs(f.contribution).toFixed(1)} {t('home_pts')}
@@ -553,7 +584,7 @@ export default function HomeScreen({ navigation }) {
                         );
                       })}
                       <Label style={{ color: palette.faint }}>
-                        {t('home_weights')} {Object.entries(picksWeights).map(([k, w]) => `${k.replace('_', ' ')} ${(w * 100).toFixed(0)}%`).join(' · ')}.
+                        {t('home_weights')} {Object.entries(picksWeights).map(([k, w]) => `${t(`factor_${k}`)} ${(w * 100).toFixed(0)}%`).join(' · ')}.
                         {' '}{t('home_score_disclaimer')}
                       </Label>
                     </View>
@@ -562,6 +593,12 @@ export default function HomeScreen({ navigation }) {
               );
             })}
           </Card>
+          {split && (
+            <Label>
+              {t('home_amount_summary').replace('{spent}', fmt(split.spent)).replace('{fees}', fmt(split.fees)).replace('{left}', fmt(split.left))}
+              {' '}{t('home_amount_note')}
+            </Label>
+          )}
         </View>
       )}
 
@@ -573,6 +610,7 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.link}>{t('home_see_all')}</Text>
           </TouchableTick>
         </View>
+        {hint('hint_market_list')}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 20 }}>
           {[ALL_MARKETS, TOP_MOVERS, ...sectorChips.map(s => s.sector)].map(label => (
             <Chip
@@ -630,6 +668,7 @@ export default function HomeScreen({ navigation }) {
 const text = { color: palette.ink, fontFamily: fonts.regular };
 
 const styles = StyleSheet.create({
+  hint: { fontSize: 13, lineHeight: 18, color: palette.muted },
   miniBar: {
     position: 'absolute', top: 0, left: 0, right: 0, overflow: 'hidden',
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20,

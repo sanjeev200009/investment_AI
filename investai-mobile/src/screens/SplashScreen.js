@@ -7,6 +7,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, PanResponder, AccessibilityInfo, Pressable } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import Svg, { Circle, Ellipse, Path } from 'react-native-svg';
 import { Screen, IconCircle, Chip, accent } from '../components/ui';
 import { palette, fonts, radii } from '../theme/tokens';
 import { useT, useLanguageStore } from '../store/languageStore';
@@ -18,6 +19,24 @@ const PILLS = [
     { tone: 'lavender', icon: 'menu-book', labelKey: 'splash_pill_learn', offset: 18 },
     { tone: 'coral', icon: 'notifications-none', labelKey: 'splash_pill_alerts', offset: 90 },
 ];
+
+// The Pill Pal face (components/PillPals.js) on each capsule: same eyes,
+// cheeks and smile, drawn still.
+function PillFace({ tone }) {
+    const ink = palette.ink;
+    const cheek = tone === 'coral' ? palette.badge : palette.coral;
+    return (
+        <Svg width={50} height={34} viewBox="33 56 54 36">
+            <Ellipse cx={48} cy={66} rx={5} ry={6.5} fill={ink} />
+            <Ellipse cx={72} cy={66} rx={5} ry={6.5} fill={ink} />
+            <Circle cx={50} cy={63.5} r={1.8} fill="#FFFFFF" />
+            <Circle cx={74} cy={63.5} r={1.8} fill="#FFFFFF" />
+            <Circle cx={39} cy={80} r={6} fill={cheek} fillOpacity={tone === 'coral' ? 0.55 : 0.8} />
+            <Circle cx={81} cy={80} r={6} fill={cheek} fillOpacity={tone === 'coral' ? 0.55 : 0.8} />
+            <Path d="M51 80Q60 89 69 80" fill="none" stroke={ink} strokeWidth={2.5} strokeLinecap="round" />
+        </Svg>
+    );
+}
 
 const TRACK_PAD = 8;
 const KNOB = 56;
@@ -95,7 +114,10 @@ export default function SplashScreen({ navigation }) {
                     const translateY = drift[i].interpolate({ inputRange: [0, 1], outputRange: [0, -10] });
                     return (
                         <Animated.View key={p.tone} style={[styles.pill, { backgroundColor: a.bg, marginTop: p.offset, transform: [{ translateY }] }]}>
-                            <IconCircle icon={p.icon} color={a.ink} borderColor="rgba(0,0,0,0.15)" size={52} />
+                            <View style={{ alignItems: 'center', gap: 8 }}>
+                                <IconCircle icon={p.icon} color={a.ink} borderColor="rgba(0,0,0,0.15)" size={52} />
+                                <PillFace tone={p.tone} />
+                            </View>
                             <Text style={[styles.pillLabel, { color: a.ink }]}>{t(p.labelKey)}</Text>
                         </Animated.View>
                     );

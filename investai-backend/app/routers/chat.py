@@ -41,6 +41,9 @@ class SessionOut(BaseModel):
     is_active: bool
     start_time: datetime
     message_count: int
+    # For a chat-history list: the first question asked, and when the chat was last used.
+    title: Optional[str] = None
+    last_activity: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -80,27 +83,37 @@ def list_sessions(
     user: User = Depends(get_current_user),
     active_only: bool = Query(False),
 ):
-    """List all chat sessions for the authenticated user."""
+    """List the user's chat sessions, most recently used first.
+
+    Each carries a title (its first question, shortened) and its last message
+    time, which is what a chat-history list shows and sorts by.
+    """
     q = db.query(ChatSession).filter(ChatSession.user_id == user.user_id)
     if active_only:
         q = q.filter(ChatSession.is_active == True)
-    sessions = q.order_by(ChatSession.start_time.desc()).all()
 
+    # ponytail: a few queries per session; fine for a personal history list,
+    # aggregate in one query if users reach hundreds of chats.
     result = []
-    for s in sessions:
-        msg_count = (
-            db.query(ChatMessage)
-            .filter(ChatMessage.session_id == s.session_id)
-            .count()
-        )
+    for s in q.all():
+        msgs = db.query(ChatMessage).filter(ChatMessage.session_id == s.session_id)
+        first = (msgs.filter(ChatMessage.sender_type == "user")
+                 .order_by(ChatMessage.timestamp).first())
+        last = msgs.order_by(ChatMessage.timestamp.desc()).first()
+        title = " ".join(first.content.split()) if first else None
+        if title and len(title) > 60:
+            title = title[:57].rstrip() + "..."
         result.append(
             SessionOut(
                 session_id=s.session_id,
                 is_active=s.is_active,
                 start_time=s.start_time,
-                message_count=msg_count,
+                message_count=msgs.count(),
+                title=title,
+                last_activity=last.timestamp if last else s.start_time,
             )
         )
+    result.sort(key=lambda r: r.last_activity, reverse=True)
     return result
 
 
@@ -147,7 +160,7 @@ def close_session(
 @router.get("/sessions/{session_id}/messages", response_model=List[MessageOut])
 def get_messages(
     session_id: int,
-    limit: int = Query(50, le=200),
+    limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):

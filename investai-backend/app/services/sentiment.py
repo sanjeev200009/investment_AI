@@ -22,7 +22,23 @@ def _get_vader():
     if _vader_analyser is None:
         from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
         _vader_analyser = SentimentIntensityAnalyzer()
+        _vader_analyser.lexicon.update(MARKET_LEXICON)
     return _vader_analyser
+
+
+# VADER is tuned on social media and has no sense of market direction: "CSE
+# continues slide, falls 0.6% to new six-month low" scored +0.38 because the
+# body's "active" and "winners" outweighed it. Valences on VADER's -4..+4 scale.
+MARKET_LEXICON = {
+    "slide": -1.8, "slides": -1.8, "falls": -1.8, "fell": -1.8, "fall": -1.5,
+    "drop": -1.5, "drops": -1.5, "dropped": -1.5, "decline": -1.6, "declines": -1.6,
+    "declined": -1.6, "plunge": -2.5, "plunges": -2.5, "plunged": -2.5, "slump": -2.2,
+    "slumps": -2.2, "tumble": -2.2, "tumbles": -2.2, "losers": -1.5, "selloff": -2.0,
+    "sell-off": -2.0, "bearish": -2.0, "down": -1.0,
+    "gain": 1.5, "gains": 1.5, "gained": 1.5, "rise": 1.5, "rises": 1.5, "rose": 1.5,
+    "rally": 2.0, "rallies": 2.0, "rebound": 1.6, "rebounds": 1.6, "surge": 2.2,
+    "surges": 2.2, "bullish": 2.0, "up": 0.8,
+}
 
 
 async def analyse_text(text: str) -> tuple[float, str]:

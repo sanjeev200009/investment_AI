@@ -6,16 +6,20 @@
 // light lesson number; the last card is white.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
+import TouchableTick from '../components/TouchableTick';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  Screen, Header, StackCard, Title, Label, EmptyState, Loading, Chip, accent, ACCENT_CYCLE,
+  Screen, Header, StackCard, Card, Title, Label, EmptyState, Loading, Chip, accent, ACCENT_CYCLE,
 } from '../components/ui';
 import { learnApi, planApi } from '../api/api';
 import { useT } from '../store/languageStore';
 import { palette, fonts } from '../theme/tokens';
+import { afterTransition } from '../theme/motion';
 
 export default function LearnScreen({ navigation }) {
   const { t } = useT();
+  const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [lessons, setLessons] = useState(null);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -37,8 +41,8 @@ export default function LearnScreen({ navigation }) {
   const [plan, setPlan] = useState(null);
   useFocusEffect(useCallback(() => {
     let cancelled = false;
-    planApi.get().then(p => { if (!cancelled) setPlan(p); });
-    return () => { cancelled = true; };
+    const cancel = afterTransition(() => planApi.get().then(p => { if (!cancelled) setPlan(p); }));
+    return () => { cancelled = true; cancel(); };
   }, []));
 
   const { ordered, recommendedId } = useMemo(() => {
@@ -98,12 +102,38 @@ export default function LearnScreen({ navigation }) {
           })}
         </View>
       )}
+      {/* Words explained: every investing word the app uses, in plain language */}
+      <Card style={{ gap: 12 }}>
+        <TouchableTick
+          onPress={() => setGlossaryOpen(o => !o)}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: glossaryOpen }}
+          style={styles.glossHead}
+        >
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={styles.rowTitle}>{t('glossary_title')}</Text>
+            <Label>{t('glossary_sub')}</Label>
+          </View>
+          <MaterialIcons name={glossaryOpen ? 'expand-less' : 'expand-more'} size={26} color={palette.ink} />
+        </TouchableTick>
+        {glossaryOpen && GLOSSARY.map(n => (
+          <View key={n} style={{ gap: 2 }}>
+            <Text style={styles.term}>{t(`gl_${n}_t`)}</Text>
+            <Text style={styles.meaning}>{t(`gl_${n}_d`)}</Text>
+          </View>
+        ))}
+      </Card>
       <Label style={{ textAlign: 'center' }}>{t('learn_disclaimer')}</Label>
     </Screen>
   );
 }
 
+const GLOSSARY = Array.from({ length: 20 }, (_, i) => i + 1); // gl_1 … gl_20 in i18n/simple.js
+
 const styles = StyleSheet.create({
+  glossHead: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 44 },
+  term: { fontFamily: fonts.medium, fontSize: 16, color: palette.ink },
+  meaning: { fontFamily: fonts.regular, fontSize: 15, lineHeight: 21, color: palette.ink },
   card: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   number: { fontFamily: fonts.light, fontSize: 44, lineHeight: 50, width: 50 },
   rowTitle: { fontFamily: fonts.regular, fontSize: 19, lineHeight: 24 },

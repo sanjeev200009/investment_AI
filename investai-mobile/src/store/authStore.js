@@ -8,6 +8,7 @@
 // which app/dependencies.py verifies properly.
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { tokenStore } from './tokenStore';
 import { authApi } from '../api/authApi';
 import { setUnauthorizedHandler } from '../api/axiosConfig';
 import { pushApi } from '../api/api';
@@ -17,7 +18,8 @@ import { useLanguageStore } from './languageStore';
 const LEGACY_KEYS = ['education_enabled', 'assessment_completed', 'user_assessment'];
 
 const clearLocalSession = async (set) => {
-    await AsyncStorage.multiRemove(['token', 'refresh_token', 'cached_user', ...LEGACY_KEYS]);
+    await tokenStore.clear();
+    await AsyncStorage.multiRemove(['cached_user', ...LEGACY_KEYS]);
     set({ token: null, user: null, isAuthenticated: false, isLoading: false });
 };
 
@@ -29,11 +31,11 @@ export const useAuthStore = create((set) => ({
     hasCompletedProfileSetup: false,
 
     login: async (token, user, refreshToken) => {
-        await AsyncStorage.setItem('token', token);
+        await tokenStore.set('token', token);
         // Kept so axiosConfig can renew the access token silently; Supabase
         // access tokens expire in about an hour.
         if (refreshToken) {
-            await AsyncStorage.setItem('refresh_token', refreshToken);
+            await tokenStore.set('refresh_token', refreshToken);
         }
         // Cached so the app can open signed-in while offline.
         await AsyncStorage.setItem('cached_user', JSON.stringify(user));
@@ -68,7 +70,7 @@ export const useAuthStore = create((set) => ({
     // Called on app start to restore session
     restoreSession: async () => {
         set({ isLoading: true });
-        const token = await AsyncStorage.getItem('token');
+        const token = await tokenStore.get('token');
         if (token) {
             try {
                 // Set token in state FIRST so axios interceptor can see it
@@ -79,7 +81,7 @@ export const useAuthStore = create((set) => ({
                 // Re-read: if the access token had expired, axiosConfig's
                 // interceptor silently refreshed it during getMe(), and the
                 // value read above is now stale.
-                const currentToken = (await AsyncStorage.getItem('token')) || token;
+                const currentToken = (await tokenStore.get('token')) || token;
                 await AsyncStorage.setItem('cached_user', JSON.stringify(user));
                 set({
                     token: currentToken,
@@ -112,7 +114,7 @@ export const useAuthStore = create((set) => ({
                     return;
                 }
                 console.log('Session restore failed:', err?.message || err);
-                await AsyncStorage.multiRemove(['token', 'refresh_token']);
+                await tokenStore.clear();
                 set({ token: null, user: null, isAuthenticated: false, isLoading: false });
             }
         } else {

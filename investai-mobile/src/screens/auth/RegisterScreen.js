@@ -7,7 +7,7 @@ import { RegisterHero } from '../../components/PillPals';
 import TouchableTick from '../../components/TouchableTick';
 import { palette, fonts } from '../../theme/tokens';
 import { authApi } from '../../api/authApi';
-import { validateEmail, validatePassword, validateFullName, validateConfirmPassword } from '../../utils/validation';
+import { validateEmail, validateNewPassword, validateFullName, validateConfirmPassword } from '../../utils/validation';
 import { useT } from '../../store/languageStore';
 
 const RegisterScreen = ({ navigation }) => {
@@ -24,7 +24,7 @@ const RegisterScreen = ({ navigation }) => {
   const handleRegister = async () => {
     const nameError = validateFullName(name);
     const emailError = validateEmail(email);
-    const passwordError = validatePassword(password);
+    const passwordError = validateNewPassword(password);
     const confirmError = validateConfirmPassword(password, confirmPassword);
 
     if (nameError || emailError || passwordError || confirmError) {

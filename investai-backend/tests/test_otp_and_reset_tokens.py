@@ -391,3 +391,12 @@ def test_limits_are_per_email_and_purpose(db):
     create_otp(db, EMAIL, purpose="register")
     create_otp(db, OTHER, purpose="register")
     create_otp(db, EMAIL, purpose="reset_password")
+
+
+def test_purge_removes_only_codes_expired_over_a_day(db):
+    now = datetime.now(timezone.utc)
+    for ago in (timedelta(days=200), timedelta(days=2), timedelta(hours=2), -timedelta(minutes=5)):
+        db.add(OTPCode(email=EMAIL, otp_code="123456", purpose="register", expires_at=now - ago))
+    db.commit()
+    assert otp_service.purge_expired_otps(db) == 2
+    assert db.query(OTPCode).count() == 2  # recent ones stay for the rate limiter

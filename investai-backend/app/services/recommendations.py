@@ -44,7 +44,13 @@ logger = logging.getLogger(__name__)
 
 # The stated weights. They sum to 1.0 and each factor's contribution to a
 # symbol's score is weight × factor_value × 100.
-MIN_FACTORS = 2
+# Three of four: on two, one lucky day carried half the score (BREW ranked on
+# a single move). Persona test, Oct 2026.
+MIN_FACTORS = 3
+
+# Penny stocks (SEMB.X0000 at Rs 0.40 ranked #10 for a High-risk beginner)
+# swing tens of percent on a one-cent tick; not a place to send a first-timer.
+MIN_PRICE = 1.0
 
 FACTOR_WEIGHTS: dict[str, float] = {
     # Daily price momentum — a small tailwind, not a thesis.
@@ -217,7 +223,7 @@ def build_recommendations(
 
     items: list[dict[str, Any]] = []
     for q in quotes:
-        if q.symbol in held or not q.price:
+        if q.symbol in held or not q.price or q.price < MIN_PRICE:
             continue
 
         factors: dict[str, float] = {}
@@ -258,6 +264,9 @@ def build_recommendations(
         })
 
     items.sort(key=lambda r: r["score"], reverse=True)
+    # One line per company: VLL.N0000 and VLL.X0000 took #1 and #3.
+    seen: set[str] = set()
+    items = [i for i in items if not (i["symbol"].split(".")[0] in seen or seen.add(i["symbol"].split(".")[0]))]
     return {
         "model_version": MODEL_VERSION,
         "weights": weights,

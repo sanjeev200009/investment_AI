@@ -11,7 +11,7 @@
 //
 // Every interpolator falls back to a plain fade when the OS asks for reduced
 // motion.
-import { Animated, Easing, AccessibilityInfo } from 'react-native';
+import { Animated, Easing, AccessibilityInfo, InteractionManager } from 'react-native';
 
 let reduceMotion = false;
 AccessibilityInfo.isReduceMotionEnabled().then((v) => { reduceMotion = !!v; }).catch(() => {});
@@ -76,10 +76,13 @@ function cardLift({ current, layouts }) {
   };
 }
 
+// No swipe-to-close: with a vertical gesture the whole page was a drag handle,
+// and it fought the page's own scrolling, so the company page would not scroll.
+// The back button and Android's back gesture still close it.
 export const cardLiftMotion = {
   cardStyleInterpolator: cardLift,
   transitionSpec: { open: spec(480), close: spec(340) },
-  gestureDirection: 'vertical',
+  gestureEnabled: false,
 };
 
 export const stackMotion = {
@@ -97,16 +100,31 @@ export const revealMotion = {
   gestureEnabled: false,
 };
 
+// Tab switches slide a short way in the direction of travel (progress runs
+// -1 → 0 → 1 across the tab order) while cross-fading. freezeOnBlur stops
+// hidden tabs re-rendering behind the visible one, which is what made switches
+// stutter on mid-range phones.
 export const tabMotion = {
   headerShown: false,
-  animation: 'fade',
-  transitionSpec: spec(280),
+  freezeOnBlur: true,
+  animation: 'shift',
+  transitionSpec: spec(260),
   sceneStyleInterpolator: ({ current }) => ({
     sceneStyle: {
-      opacity: current.progress.interpolate({ inputRange: [-1, 0, 1], outputRange: [0, 1, 0] }),
+      opacity: current.progress.interpolate({ inputRange: [-1, -0.4, 0, 0.4, 1], outputRange: [0, 0.6, 1, 0.6, 0] }),
       transform: reduceMotion ? [] : [{
-        translateY: current.progress.interpolate({ inputRange: [-1, 0, 1], outputRange: [12, 0, 12] }),
+        translateX: current.progress.interpolate({ inputRange: [-1, 0, 1], outputRange: [-36, 0, 36] }),
       }],
     },
   }),
 };
+
+// Run `fn` once the screen has finished arriving: after the tab switch (260 ms,
+// which registers no interaction) and after any stack transition (which does).
+// Heavy re-renders and charts started mid-transition are what made switches
+// stutter. Returns a cancel function, so it fits useEffect / useFocusEffect.
+export function afterTransition(fn) {
+  let task;
+  const timer = setTimeout(() => { task = InteractionManager.runAfterInteractions(fn); }, 280);
+  return () => { clearTimeout(timer); task?.cancel(); };
+}

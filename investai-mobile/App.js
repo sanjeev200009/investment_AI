@@ -20,6 +20,7 @@ import {
   Roboto_800ExtraBold
 } from '@expo-google-fonts/roboto';
 import * as SplashScreenLib from 'expo-splash-screen';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppNavigator from './src/navigation/AppNavigator';
 import { useAuthStore } from './src/store/authStore';
 import { useLanguageStore } from './src/store/languageStore';
@@ -59,19 +60,34 @@ export default function App() {
     // Lazy-required for the same reason as in api.js: no native module on web.
     if (Platform.OS === 'web') return undefined;
     const Notifications = require('expo-notifications');
-    const openAlerts = () => { pendingAlerts.current = true; openPendingAlerts(); };
+    // Android keeps handing back the notification that once launched the app,
+    // on every later start and resume, so the app kept reopening on Alerts.
+    // Each tapped notification now opens Alerts once: its id is remembered.
+    const HANDLED = 'last_opened_notification';
+    const openAlerts = async (response) => {
+      const id = response?.notification?.request?.identifier;
+      if (!id) return;
+      try {
+        if ((await AsyncStorage.getItem(HANDLED)) === id) return;
+        await AsyncStorage.setItem(HANDLED, id);
+      } catch { /* storage failing: still honour this tap */ }
+      pendingAlerts.current = true;
+      openPendingAlerts();
+    };
     const responseSub = Notifications.addNotificationResponseReceivedListener(openAlerts);
     // Cold start: the tap that launched the app fired before the listener existed.
     Notifications.getLastNotificationResponseAsync()
       .then(response => {
         if (!response) return;
-        openAlerts();
+        openAlerts(response);
         Notifications.clearLastNotificationResponseAsync().catch(() => {});
       })
       .catch(() => {});
-    // FCM rotates tokens; send the new one while signed in.
-    const tokenSub = Notifications.addPushTokenListener(() => {
-      if (useAuthStore.getState().isAuthenticated) pushApi.register();
+    // FCM rotates tokens; send the new one while signed in. Use the token the
+    // event carries: calling register() here re-fetched the token, which fired
+    // this listener again, in an endless loop.
+    const tokenSub = Notifications.addPushTokenListener(({ data }) => {
+      if (useAuthStore.getState().isAuthenticated) pushApi.sendToken(data).catch(() => {});
     });
     return () => { responseSub.remove(); tokenSub.remove(); };
   }, [openPendingAlerts]);

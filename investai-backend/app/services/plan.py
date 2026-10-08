@@ -121,6 +121,11 @@ def build_plan(
     flags, viewed = _done_flags(db, user_id)
 
     plan_lessons = [STEP_LESSON[s] for s in steps if STEP_LESSON[s]]
+    # An income investor's first question is dividends; the dividend-yield lesson
+    # was seventh of nine for them.
+    if answers.get('1') == 'Income Generation' and 'fundamentals-basics' not in plan_lessons:
+        plan_lessons.append('fundamentals-basics')
+        default_prompts.insert(0, 'prompt_what_is_dividend')
     rest = [lesson['id'] for lesson in LESSONS if lesson['id'] not in plan_lessons]
     ordered = plan_lessons + rest
     lesson_ids = [l for l in ordered if l not in viewed] + [l for l in ordered if l in viewed]

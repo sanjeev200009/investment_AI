@@ -141,4 +141,25 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute="0", hour="16"),
         "options": {"queue": "default"},
     },
+    # Market open / close notices. CSE trades 09:30-14:30 Colombo, Mon-Fri; the
+    # open notice checks cse.lk's status and the close notice needs a trading
+    # day recorded, so holidays send nothing.
+    "market-open-notice": {
+        "task": "tasks.scrape_tasks.market_session_notice",
+        "schedule": crontab(minute="31", hour="9", day_of_week="mon-fri"),
+        "args": ("market_open",),
+        "options": {"queue": "default"},
+    },
+    "market-close-notice": {
+        "task": "tasks.scrape_tasks.market_session_notice",
+        "schedule": crontab(minute="40", hour="14", day_of_week="mon-fri"),
+        "args": ("market_close",),
+        "options": {"queue": "default"},
+    },
+    # Expired login codes and reset tokens: daily at 03:00, outside market hours.
+    "purge-expired-credentials": {
+        "task": "tasks.scrape_tasks.purge_expired_credentials",
+        "schedule": crontab(minute="0", hour="3"),
+        "options": {"queue": "default"},
+    },
 }

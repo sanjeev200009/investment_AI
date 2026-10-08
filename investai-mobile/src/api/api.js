@@ -112,8 +112,18 @@ export const deviceApi = {
 // expo-notifications is lazy-required: the module touches native code that is
 // absent from the web bundle, and a top-level import would crash `expo start
 // --web` even though nothing here runs there.
+let lastSentToken = null;
+let registering = null;
+
 export const pushApi = {
-  register: async () => {
+  // Single-flight: sign-in, app launch and token rotation can all ask at once.
+  register: () => {
+    if (!registering) {
+      registering = pushApi._register().finally(() => { registering = null; });
+    }
+    return registering;
+  },
+  _register: async () => {
     try {
       const Notifications = require('expo-notifications');
       // Without a handler, a push that lands while the app is open is dropped.
@@ -131,20 +141,38 @@ export const pushApi = {
         });
       }
       // Android 13+ and iOS both require an explicit grant before a token is
-      // useful; without asking, the token was obtained and pushes never shown.
-      const { status } = await Notifications.requestPermissionsAsync();
+      // useful. Ask only when not yet granted and the OS still allows asking:
+      // every request opens the system permission activity, even when it is
+      // already granted, which pauses and resumes the app.
+      let { status, canAskAgain } = await Notifications.getPermissionsAsync();
+      if (status !== 'granted' && canAskAgain) {
+        ({ status } = await Notifications.requestPermissionsAsync());
+      }
       if (status !== 'granted') return;
       const token = await Notifications.getDevicePushTokenAsync();
-      if (token?.data) {
-        await deviceApi.registerToken(token.data);
-      }
+      await pushApi.sendToken(token?.data);
     } catch (err) {
       // Expected on the iOS simulator and in Expo Go on iOS (FCM v1 push needs
       // a dev/EAS build there). Never blocks sign-in.
       if (__DEV__) console.warn('[Push] token registration skipped:', err?.message || err);
     }
   },
+  // Send a token to the backend once. getDevicePushTokenAsync() itself fires
+  // the push-token listener, and that listener used to call register() again:
+  // an endless request-permission loop that flipped the app in and out of the
+  // system permission screen (202 times in two minutes on an Android 16 phone).
+  sendToken: async (token) => {
+    if (!token || token === lastSentToken) return;
+    lastSentToken = token;
+    try {
+      await deviceApi.registerToken(token);
+    } catch (err) {
+      lastSentToken = null; // retry on the next launch or rotation
+      throw err;
+    }
+  },
   unregister: async () => {
+    lastSentToken = null; // the next account to sign in registers this device again
     try {
       await api.delete('/me/device-token');
     } catch (_) { /* best effort on logout */ }

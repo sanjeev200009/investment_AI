@@ -18,6 +18,7 @@ import { watchlistApi } from '../api/api';
 import { palette, fonts, radii } from '../theme/tokens';
 import { useT } from '../store/languageStore';
 import { CoinStar } from '../components/Motion';
+import { afterTransition } from '../theme/motion';
 
 const { width } = Dimensions.get('window');
 
@@ -91,6 +92,10 @@ export default function StockDetailScreen({ route, navigation }) {
     // The real daily-close series from GET /stocks/history/{symbol}.
     const [range, setRange] = useState('1M');
     const [history, setHistory] = useState(null);      // null while in flight
+    // The chart is drawn only once the page has finished opening: computing a
+    // year of points mid-transition is what made the opening stutter.
+    const [settled, setSettled] = useState(false);
+    useEffect(() => afterTransition(() => setSettled(true)), []);
     const [historyError, setHistoryError] = useState(null);
 
     // Fundamentals from GET /stocks/company/{symbol}. `undefined` while in flight,
@@ -368,7 +373,7 @@ export default function StockDetailScreen({ route, navigation }) {
                             {historyError === 'HISTORY_ERROR' ? t('detail_history_error') : historyError}
                         </Label>
                     </View>
-                ) : history === null ? (
+                ) : history === null || !settled ? (
                     <View style={styles.chartPlaceholder}>
                         <ActivityIndicator color={palette.ink} />
                     </View>
@@ -376,16 +381,22 @@ export default function StockDetailScreen({ route, navigation }) {
                     <>
                         {/* Not `bezier`: a spline overshoots between real closes and
                             draws prices the exchange never printed. */}
-                        <LineChart
-                            data={chartData}
-                            width={width - 80}
-                            height={200}
-                            chartConfig={chartConfig}
-                            style={styles.chart}
-                            withHorizontalLines={false}
-                            withVerticalLines={false}
-                            withShadow={false}
-                        />
+                        {/* pointerEvents none: chart-kit makes every point a touch
+                            target, which on Android grabs the finger and stops the page
+                            scrolling over the chart. The chart has no tap action. */}
+                        <View pointerEvents="none">
+                            <LineChart
+                                data={chartData}
+                                width={width - 80}
+                                height={200}
+                                chartConfig={chartConfig}
+                                style={styles.chart}
+                                withDots={points.length <= 40}
+                                withHorizontalLines={false}
+                                withVerticalLines={false}
+                                withShadow={false}
+                            />
+                        </View>
                         <Label style={styles.centred}>
                             {shortDate(history.first_date)} – {shortDate(history.last_date)} · {t('detail_daily_closes')}
                         </Label>

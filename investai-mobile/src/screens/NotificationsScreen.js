@@ -37,6 +37,8 @@ const typeStyle = (type) => {
     case 'rule_alert': return { icon: 'notifications-active', tone: 'yellow' };
     case 'TEST': return { icon: 'check-circle', tone: 'lime' };
     case 'news': return { icon: 'newspaper', tone: 'lavender' };
+    case 'market_open': return { icon: 'wb-sunny', tone: 'lime' };
+    case 'market_close': return { icon: 'nights-stay', tone: 'coral' };
     case 'system': return { icon: 'shield', tone: 'lavender' };
     default: return { icon: 'notifications', tone: 'lavender' };
   }
@@ -181,7 +183,10 @@ export default function NotificationsScreen({ navigation }) {
             const { icon, tone: typeTone } = typeStyle(alert.type);
             const tone = alert.is_read ? 'white' : typeTone;
             const a = accent(tone);
-            const title = t(alert.type === 'rule_alert' ? 'alerts_type_rule' : alert.type === 'TEST' ? 'alerts_type_test' : 'alerts_type_other');
+            const title = t({
+              rule_alert: 'alerts_type_rule', TEST: 'alerts_type_test',
+              market_open: 'alerts_type_market_open', market_close: 'alerts_type_market_close',
+            }[alert.type] || 'alerts_type_other');
             return (
               <Swipeable
                 key={alert.notif_id}

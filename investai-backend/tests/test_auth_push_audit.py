@@ -16,8 +16,18 @@ from app.services import email_service, fcm
 
 def test_request_emails_are_lowercased_and_trimmed():
     assert LoginRequest(email=" John@Example.COM ", password="x").email == "john@example.com"
-    assert RegisterRequest(email="A.B@X.com", password="12345678",
+    assert RegisterRequest(email="A.B@X.com", password="abcd1234",
                            full_name="Al").email == "a.b@x.com"
+
+
+def test_new_passwords_need_letters_and_numbers():
+    import pytest
+    from pydantic import ValidationError
+    for weak in ("12345678", "password", "abc12"):
+        with pytest.raises(ValidationError):
+            RegisterRequest(email="a@b.com", password=weak, full_name="Al")
+    # Login does not re-check strength, so passwords set before the rule still work.
+    assert LoginRequest(email="a@b.com", password="12345678").password == "12345678"
 
 
 class _Outage:

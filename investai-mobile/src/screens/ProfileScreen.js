@@ -26,6 +26,8 @@ export default function ProfileScreen({ navigation }) {
     // which language to answer in.
     const { t } = useT();
     const language = useLanguageStore(state => state.language);
+    const level = useLanguageStore(state => state.level);
+    const setLevel = useLanguageStore(state => state.setLevel);
     const setLanguage = useLanguageStore(state => state.setLanguage);
 
     // The store's user comes from GET /auth/me, i.e. our own `users` row.
@@ -161,6 +163,27 @@ export default function ProfileScreen({ navigation }) {
                                     style={styles.chipHit}
                                 >
                                     <Chip label={label} selected={language === code} />
+                                </TouchableTick>
+                            ))}
+                        </View>
+                    </View>
+                    <Divider />
+                    <View style={styles.langBlock}>
+                        <View style={styles.langHead}>
+                            <IconCircle icon="school" />
+                            <Text style={styles.rowLabel}>{t('profile_word_level')}</Text>
+                        </View>
+                        <View style={styles.chipRow}>
+                            {['beginner', 'intermediate', 'expert'].map(code => (
+                                <TouchableTick
+                                    key={code}
+                                    onPress={() => setLevel(code)}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={t(`level_${code}`)}
+                                    accessibilityState={{ selected: level === code }}
+                                    style={styles.chipHit}
+                                >
+                                    <Chip label={t(`level_${code}`)} selected={level === code} />
                                 </TouchableTick>
                             ))}
                         </View>

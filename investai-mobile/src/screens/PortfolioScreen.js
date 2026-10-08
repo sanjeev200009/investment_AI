@@ -14,6 +14,7 @@ import {
 import api from '../api/axiosConfig';
 import { useT } from '../store/languageStore';
 import { palette, fonts, radii, changeTone } from '../theme/tokens';
+import { afterTransition } from '../theme/motion';
 
 // Sector bucket for holdings with no sector; translated at render.
 const UNCLASSIFIED = 'Unclassified';
@@ -73,7 +74,7 @@ export default function PortfolioScreen({ navigation }) {
 
   // Reload whenever the tab regains focus, so a holding added elsewhere or a
   // newer price shows without restarting the app.
-  useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
+  useFocusEffect(useCallback(() => afterTransition(fetchData), [fetchData]));
 
   const closeAddModal = () => {
     setAddModalVisible(false);

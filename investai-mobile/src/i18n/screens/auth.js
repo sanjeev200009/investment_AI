@@ -173,6 +173,7 @@ export default {
   val_email_invalid: 'Please enter a valid email address',
   val_password_required: 'Password is required',
   val_password_short: 'Password must be at least 8 characters',
+  val_password_weak: 'Use letters and numbers together, for example invest2026',
   val_confirm_required: 'Please confirm your password',
   val_password_mismatch: 'Passwords do not match',
   val_name_required: 'Full name is required',
