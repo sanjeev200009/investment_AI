@@ -390,7 +390,7 @@ export default function ChatScreen({ navigation, route }) {
               <Text style={styles.answerNote}>{t('chat_answer_disclaimer')}</Text>
             )}
             {isLast && !isStreaming && choices.length > 0 && (
-              <View style={styles.followRow} accessible accessibilityLabel={t('chat_choices_a11y')}>
+              <View style={styles.followRow} accessibilityLabel={t('chat_choices_a11y')}>
                 {choices.map(c => (
                   <TouchableTick
                     key={c}
@@ -403,6 +403,7 @@ export default function ChatScreen({ navigation, route }) {
                     <Text style={[styles.followText, { color: palette.limeInk }]}>{c}</Text>
                   </TouchableTick>
                 ))}
+                <Text style={styles.answerNote}>{t('chat_or_type')}</Text>
               </View>
             )}
             {isLast && !isStreaming && choices.length === 0 && (
@@ -451,6 +452,10 @@ export default function ChatScreen({ navigation, route }) {
   );
 
   const newChatOff = isStreaming || messages.length === 0;
+  // The bot's last message is a follow-up question: invite a typed answer too.
+  const lastMsg = messages[messages.length - 1];
+  const awaitingAnswer = !isStreaming && lastMsg?.type === 'ai' && splitOptions(lastMsg.text).options.length > 0;
+  const inputHint = t(awaitingAnswer ? 'chat_answer_placeholder' : 'chat_input_placeholder');
 
   return (
     <Screen scroll={false} contentStyle={styles.screen}>
@@ -564,9 +569,9 @@ export default function ChatScreen({ navigation, route }) {
           <View style={styles.composer}>
             <TextInput
               style={styles.input}
-              placeholder={t('chat_input_placeholder')}
+              placeholder={inputHint}
               placeholderTextColor={palette.faint}
-              accessibilityLabel={t('chat_input_placeholder')}
+              accessibilityLabel={inputHint}
               value={inputText}
               onChangeText={setInputText}
               maxLength={2000}

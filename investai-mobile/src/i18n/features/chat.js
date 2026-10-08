@@ -4,6 +4,8 @@
 // Learn's recommendation label.
 export default {
   en: {
+    chat_or_type: 'or type your own answer below',
+    chat_answer_placeholder: 'Type your answer…',
     chat_choices_a11y: 'Choose an answer',
     chat_choice_a11y: 'Answer',
     chat_history: 'Chat history',
@@ -71,6 +73,8 @@ export default {
     learn_recommended: 'Recommended for you',
   },
   si: {
+    chat_or_type: 'නැතහොත් ඔබේම පිළිතුර පහතින් ටයිප් කරන්න',
+    chat_answer_placeholder: 'ඔබේ පිළිතුර ටයිප් කරන්න…',
     chat_choices_a11y: 'පිළිතුරක් තෝරන්න',
     chat_choice_a11y: 'පිළිතුර',
     chat_history: 'කතාබස් ඉතිහාසය',
@@ -134,6 +138,8 @@ export default {
     learn_recommended: 'ඔබට නිර්දේශිතයි',
   },
   ta: {
+    chat_or_type: 'அல்லது உங்கள் சொந்த பதிலைக் கீழே தட்டச்சு செய்யவும்',
+    chat_answer_placeholder: 'உங்கள் பதிலைத் தட்டச்சு செய்யவும்…',
     chat_choices_a11y: 'ஒரு பதிலைத் தேர்ந்தெடுக்கவும்',
     chat_choice_a11y: 'பதில்',
     chat_history: 'அரட்டை வரலாறு',
